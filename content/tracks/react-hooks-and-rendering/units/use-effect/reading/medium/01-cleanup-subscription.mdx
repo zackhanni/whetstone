@@ -1,0 +1,19 @@
+---
+id: cleanup-subscription
+title: Effects that start something must clean it up
+---
+
+Effects need **cleanup** whenever they start something that must later be stopped: a
+subscription, a timer, an event listener. The cleanup runs before the next effect *and* on
+unmount.
+
+```jsx
+useEffect(() => {
+  const conn = createConnection(roomId);
+  conn.connect();
+  return () => conn.disconnect(); // runs on roomId change + on unmount
+}, [roomId]);
+```
+
+Forget the cleanup and you leak a connection every time `roomId` changes. The dependency
+array is a claim: "re-run this effect only when these values change."

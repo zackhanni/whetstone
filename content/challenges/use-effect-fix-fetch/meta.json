@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "slug": "use-effect-fix-fetch",
+  "title": "Fix the search-as-you-type effect",
+  "prompt": "A live user search has a race condition and leaks in-flight requests. Make the tests pass by adding cleanup and a race guard.",
+  "skills": ["react", "hooks", "useEffect", "data-fetching", "AbortController"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "stack": ["react", "ts"],
+  "entry": "starter.tsx",
+  "testCommand": "vitest run",
+  "acceptanceCriteria": [
+    "Typing a query shows that query's results",
+    "A slow earlier response never overwrites a newer query's results",
+    "The in-flight request is aborted when the query changes or the component unmounts"
+  ]
+}

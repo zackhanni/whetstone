@@ -1,0 +1,20 @@
+---
+id: derived-state
+title: Don't derive state in an effect
+---
+
+> **Rule of thumb:** if you can compute it during render, don't put it in an Effect.
+
+```jsx
+// ❌ Don't: derive state with an Effect
+const [fullName, setFullName] = useState("");
+useEffect(() => {
+  setFullName(first + " " + last);
+}, [first, last]);
+
+// ✅ Do: just compute it during render
+const fullName = first + " " + last;
+```
+
+The Effect version renders once with a stale value and then re-renders. The plain version
+is correct on the very first render and does no extra work.
