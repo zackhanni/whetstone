@@ -23,6 +23,9 @@ testing, systems design).
 
 ## Status
 
-**Phase 0:** content schema + first lesson authored. The Next.js app is not yet scaffolded.
+**Phase 0:** content schema + first lesson authored (`react-hooks-and-rendering` → `use-effect`).
+The Next.js app is not yet scaffolded. `track.json` intentionally lists only units that
+exist; planned next units in this track: `use-state-and-functional-updates`, `use-ref`,
+`memoization`, `controlled-vs-uncontrolled`.
 
 To author a lesson, read `learning/PLAYBOOK.md` or run `/new-lesson <topic>`.

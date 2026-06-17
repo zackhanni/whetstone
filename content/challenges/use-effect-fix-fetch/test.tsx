@@ -78,4 +78,11 @@ describe("SearchUsers", () => {
     fireEvent.change(input, { target: { value: "ab" } });
     await waitFor(() => expect(pending["a"].aborted).toBe(true));
   });
+
+  it("aborts the in-flight request on unmount", async () => {
+    const { unmount } = render(<SearchUsers />);
+    fireEvent.change(screen.getByLabelText("search"), { target: { value: "a" } });
+    unmount();
+    await waitFor(() => expect(pending["a"].aborted).toBe(true));
+  });
 });

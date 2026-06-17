@@ -62,8 +62,11 @@ Deliberately *not* implemented, but the shape above supports them as non-breakin
 
 ## Rules the system enforces (don't fight them)
 
-Rule 1 is checked by `zod` (`learning/schema.ts`); rules 2–4 by the validator script and
-the `/new-lesson` gate, since they reach into `.mdx` and test runs that zod can't see.
+Rule 1 is checked by `zod` (`learning/schema.ts`) **today**. Rules 2–4 reach into `.mdx`,
+the filesystem, and test runs that zod can't see — they will be enforced by a
+`scripts/validate.ts` that ships with the app (**not built yet**). Until it exists, the
+`/new-lesson` checklist is the *manual* gate. Don't describe a rule as auto-enforced until
+the validator actually checks it.
 
 1. **Every quiz question / fill-blank / predict-output item has an `explanation`.** Wrong answers teach.
 2. **Every reading tier — Simple, Medium, Complex — has at least one example.** This is what
