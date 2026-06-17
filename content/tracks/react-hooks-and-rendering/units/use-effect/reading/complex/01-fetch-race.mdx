@@ -1,0 +1,27 @@
+---
+id: fetch-race
+title: Fetching in an effect — guard races and leaks
+---
+
+Fetching inside an Effect has two classic hazards:
+
+1. **Race conditions** — a slow earlier request resolves *after* a newer one and overwrites it.
+2. **Leaks** — the response comes back after unmount, and you set state on nothing.
+
+Guard both with `AbortController`:
+
+```jsx
+useEffect(() => {
+  const controller = new AbortController();
+  fetchResults(query, { signal: controller.signal })
+    .then(setResults)
+    .catch((err) => {
+      if (err.name !== "AbortError") throw err; // ignore cancellation, surface real errors
+    });
+  return () => controller.abort();
+}, [query]);
+```
+
+This is the exact bug you fix in the challenge at the end of this unit. In real apps, prefer
+a data-fetching library (TanStack Query) that handles this for you — but understand *why*
+it's needed.

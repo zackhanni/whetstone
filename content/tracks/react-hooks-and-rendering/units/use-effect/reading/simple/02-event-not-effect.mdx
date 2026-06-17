@@ -1,0 +1,23 @@
+---
+id: event-not-effect
+title: Put event logic in handlers, not effects
+---
+
+If something should happen *because the user did X*, it belongs in the event handler — not
+in an Effect that watches state for the change.
+
+```jsx
+// ❌ Don't: react to a click via an Effect
+useEffect(() => {
+  if (submitted) showToast("Saved!");
+}, [submitted]);
+
+// ✅ Do: handle it where the click happens
+function handleSubmit() {
+  save();
+  showToast("Saved!");
+}
+```
+
+Effects are for syncing with the outside world, not for sequencing your own app logic.
+Reserve them for subscriptions, timers, and the DOM.

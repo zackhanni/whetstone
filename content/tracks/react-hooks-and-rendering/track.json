@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "slug": "react-hooks-and-rendering",
+  "title": "React Hooks & Rendering",
+  "description": "The hooks and rendering model a senior React dev is expected to have cold: state and functional updates, effects (and when not to use them), refs, referential identity (memo/useMemo/useCallback), and controlled vs uncontrolled inputs.",
+  "skills": ["react", "hooks", "rendering", "frontend"],
+  "units": [
+    "use-effect"
+  ]
+}

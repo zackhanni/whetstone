@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "slug": "use-effect",
+  "title": "useEffect — and when not to use it",
+  "skills": ["react", "hooks", "useEffect", "data-fetching"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "blocks": [
+    { "type": "reading", "id": "read-intro", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-effects",
+      "questions": [
+        {
+          "id": "needs-effect",
+          "prompt": "Which of these genuinely needs a useEffect?",
+          "options": [
+            { "id": "full-name", "text": "Computing a user's full name from first + last name" },
+            { "id": "filter-list", "text": "Filtering a list based on a search box value" },
+            { "id": "websocket", "text": "Subscribing to a WebSocket and updating when messages arrive" },
+            { "id": "format-date", "text": "Formatting a date for display" }
+          ],
+          "answer": "websocket",
+          "explanation": "Effects synchronize with systems OUTSIDE React — subscriptions, timers, the DOM, the network. Full name, filtering, and date formatting are all derived during render; doing them in an Effect adds a render and can desync. Only the WebSocket reaches an external system."
+        },
+        {
+          "id": "deps-meaning",
+          "prompt": "What does the dependency array [roomId] actually promise React?",
+          "options": [
+            { "id": "rerun-on-change", "text": "Re-run this effect (after cleaning up the previous one) whenever roomId changes" },
+            { "id": "run-once", "text": "Run the effect only one time, ever" },
+            { "id": "memoize", "text": "Memoize roomId so it never changes" },
+            { "id": "debounce", "text": "Debounce the effect until roomId stops changing" }
+          ],
+          "answer": "rerun-on-change",
+          "explanation": "The dependency array is a claim about WHEN to re-synchronize: clean up with the previous values, then re-run with the new ones, whenever a listed value changes. [] means 'never re-run' (sync once); omitting the array entirely means 'run after every render'."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-cleanup",
+      "prompts": [
+        {
+          "id": "subscription-cleanup",
+          "prompt": "Complete the subscription effect: subscribe on mount, re-subscribe when roomId changes, and clean up to avoid leaks.",
+          "code": "useEffect(() => {\n  const conn = createConnection(roomId);\n  conn.connect();\n  return () => conn.___();\n}, [___]);",
+          "blanks": [
+            { "id": "b1", "accept": ["disconnect", "close"] },
+            { "id": "b2", "accept": ["roomId"] }
+          ],
+          "explanation": "The cleanup tears down the old connection before the next run (and on unmount). Listing roomId re-runs the effect — disconnect old, connect new — on every room change. Omit the cleanup and you leak one connection per switch."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-effects",
+      "snippets": [
+        {
+          "id": "stale-interval",
+          "code": "function Counter() {\n  const [count, setCount] = useState(0);\n  useEffect(() => {\n    const id = setInterval(() => setCount(count + 1), 1000);\n    return () => clearInterval(id);\n  }, []);\n  return <h1>{count}</h1>;\n}",
+          "question": "What value does the counter show after ~5 seconds, and why?",
+          "answer": "It shows 1 and never climbs.",
+          "acceptable": ["1", "stays at 1", "shows 1 forever", "stuck at 1"],
+          "explanation": "Empty deps → the effect runs once and closes over count = 0 forever (a stale closure). Every tick computes 0 + 1 = 1. Fix with the functional updater setCount(c => c + 1), which always reads the latest value and needs no count in the deps."
+        },
+        {
+          "id": "effect-after-render",
+          "code": "function App() {\n  const [n, setN] = useState(0);\n  console.log('render', n);\n  useEffect(() => {\n    console.log('effect', n);\n  });\n  return <button onClick={() => setN(n + 1)}>{n}</button>;\n}",
+          "question": "What is logged on the first render, then after one click?",
+          "answer": "render 0, effect 0, then render 1, effect 1",
+          "acceptable": ["render 0 effect 0 render 1 effect 1", "render then effect, each time"],
+          "explanation": "React runs render first (logs 'render n'), commits to the DOM, then runs effects (logs 'effect n') — effects fire AFTER paint, and with no dependency array, after every render. So 'render' always logs before 'effect', each time n changes."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-fix-fetch",
+      "challengeSlug": "use-effect-fix-fetch",
+      "mode": "in-browser"
+    }
+  ]
+}
