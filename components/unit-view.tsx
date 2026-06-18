@@ -35,12 +35,17 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
     return () => clearInterval(id);
   }, [mode, finished, startedAt]);
 
-  function switchMode(m: Mode) {
-    setMode(m);
+  function reset(drill: boolean) {
     setFinished(false);
     setResults({});
     setElapsed(0);
-    setStartedAt(m === "drill" ? Date.now() : null);
+    setStartedAt(drill ? Date.now() : null);
+  }
+
+  function switchMode(m: Mode) {
+    if (m === mode) return; // re-clicking the active mode shouldn't wipe progress
+    setMode(m);
+    reset(m === "drill");
   }
 
   const onResult = useCallback((key: string, r: Result) => {
@@ -146,7 +151,7 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
           </div>
           <button
             type="button"
-            onClick={() => switchMode("drill")}
+            onClick={() => reset(true)}
             className="mt-3 rounded-lg bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-500"
           >
             Retry

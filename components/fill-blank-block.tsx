@@ -46,6 +46,7 @@ function PromptView({
             {part}
             {i < p.blanks.length && (
               <input
+                aria-label={`Blank ${i + 1}`}
                 value={vals[i]}
                 disabled={revealed}
                 onChange={(e) =>

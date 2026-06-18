@@ -62,11 +62,12 @@ Deliberately *not* implemented, but the shape above supports them as non-breakin
 
 ## Rules the system enforces (don't fight them)
 
-Rule 1 is checked by `zod` (`learning/schema.ts`). Rules 2–3 reach into `.mdx` and the
-filesystem, so they're checked by **`scripts/validate.ts`** (`npm run validate`): it
-validates every track/unit against the schema and confirms each reading tier has ≥1
-example. Rule 4 (each challenge's tests pass against its solution) is the remaining gate —
-it lands with the in-browser runner. Don't describe a rule as auto-enforced until the
+Rule 1 is checked by `zod` (`learning/schema.ts`). **Rule 2** (each reading tier has ≥1
+example) is checked by **`scripts/validate.ts`** (`npm run validate`), which also re-runs
+schema validation and the challenge folder/entry contract across every track/unit.
+**Rule 3** (difficulty escalates down a unit) and **Rule 4** (each challenge's tests pass
+against its solution) are *not* auto-checked yet — rule 3 is an authoring guideline; rule 4
+lands with the in-browser runner. Don't describe a rule as auto-enforced until the
 validator actually checks it.
 
 1. **Every quiz question / fill-blank / predict-output item has an `explanation`.** Wrong answers teach.

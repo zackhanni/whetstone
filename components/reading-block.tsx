@@ -29,9 +29,10 @@ function ExampleCard({ ex }: { ex: ReadingExample }) {
 }
 
 function TierSection({ tier, examples }: { tier: Tier; examples: ReadingExample[] }) {
-  const [i, setI] = useState(0);
+  const [idx, setIdx] = useState(0);
   if (!examples || examples.length === 0) return null;
   const meta = TIER_META[tier];
+  const i = Math.min(idx, examples.length - 1); // clamp so a shrinking list never indexes undefined
   return (
     <div className="rounded-xl bg-slate-900/40 p-4 ring-1 ring-slate-800">
       <div className="mb-3 flex items-center justify-between">
@@ -40,14 +41,20 @@ function TierSection({ tier, examples }: { tier: Tier; examples: ReadingExample[
         </span>
         {examples.length > 1 && (
           <div className="flex items-center gap-2 text-xs text-slate-400">
-            <button onClick={() => setI((p) => Math.max(0, p - 1))} disabled={i === 0} className="disabled:opacity-30">
+            <button
+              aria-label="Previous example"
+              onClick={() => setIdx(Math.max(0, i - 1))}
+              disabled={i === 0}
+              className="disabled:opacity-30"
+            >
               ←
             </button>
             <span>
               {i + 1} / {examples.length}
             </span>
             <button
-              onClick={() => setI((p) => Math.min(examples.length - 1, p + 1))}
+              aria-label="Next example"
+              onClick={() => setIdx(Math.min(examples.length - 1, i + 1))}
               disabled={i === examples.length - 1}
               className="disabled:opacity-30"
             >

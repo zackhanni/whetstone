@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { Track as TrackSchema, Unit as UnitSchema, Challenge as ChallengeSchema, type Unit, type Challenge } from "@/learning/schema";
+import { parseFrontmatter } from "./frontmatter";
 
 const ROOT = process.cwd();
 const TIERS = ["simple", "medium", "complex"] as const;
@@ -16,19 +17,14 @@ export type UnitBundle = {
   challenges: Record<string, ChallengeBundle>; // keyed by challengeSlug
 };
 
-/** Minimal YAML-ish frontmatter parser (our mdx frontmatter is simple key: value). */
-export function parseFrontmatter(raw: string): { data: Record<string, string>; body: string } {
-  if (!raw.startsWith("---")) return { data: {}, body: raw };
-  const end = raw.indexOf("\n---", 3);
-  if (end === -1) return { data: {}, body: raw };
-  const fm = raw.slice(3, end).trim();
-  const body = raw.slice(end + 4).replace(/^\r?\n/, "");
-  const data: Record<string, string> = {};
-  for (const line of fm.split("\n")) {
-    const idx = line.indexOf(":");
-    if (idx > 0) data[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+/** Read a file, treating "missing" (ENOENT) as empty but surfacing real errors. */
+async function readOptional(p: string): Promise<string> {
+  try {
+    return await fs.readFile(p, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw e;
   }
-  return { data, body };
 }
 
 async function readJson(p: string) {
@@ -69,8 +65,14 @@ export async function loadUnit(trackSlug: string, unitSlug: string): Promise<Uni
     if (block.type === "challenge") {
       const cDir = path.join(ROOT, "content", "challenges", block.challengeSlug);
       const meta = ChallengeSchema.parse(await readJson(path.join(cDir, "meta.json")));
-      const readme = await fs.readFile(path.join(cDir, "README.md"), "utf8").catch(() => "");
-      const starter = await fs.readFile(path.join(cDir, meta.entry), "utf8").catch(() => "");
+      // Constrain meta.entry to the challenge dir — never read outside it.
+      const entryPath = path.resolve(cDir, meta.entry);
+      const base = path.resolve(cDir);
+      if (entryPath !== base && !entryPath.startsWith(base + path.sep)) {
+        throw new Error(`challenge ${block.challengeSlug}: entry "${meta.entry}" escapes the challenge directory`);
+      }
+      const readme = await readOptional(path.join(cDir, "README.md"));
+      const starter = await readOptional(entryPath);
       challenges[block.challengeSlug] = { meta, readme, starter };
     }
   }

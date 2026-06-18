@@ -1,6 +1,7 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { Track, Unit, Challenge } from "../learning/schema";
+import { parseFrontmatter } from "../lib/frontmatter";
 
 const ROOT = process.cwd();
 const TIERS = ["simple", "medium", "complex"] as const;
@@ -10,18 +11,6 @@ const fail = (m: string) => {
   console.error("  ✗", m);
   errors++;
 };
-
-function frontmatter(raw: string): Record<string, string> {
-  if (!raw.startsWith("---")) return {};
-  const end = raw.indexOf("\n---", 3);
-  if (end === -1) return {};
-  const data: Record<string, string> = {};
-  for (const line of raw.slice(3, end).trim().split("\n")) {
-    const idx = line.indexOf(":");
-    if (idx > 0) data[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-  }
-  return data;
-}
 
 async function readJson(p: string) {
   return JSON.parse(await fs.readFile(p, "utf8"));
@@ -66,7 +55,7 @@ async function main() {
             }
             if (files.length === 0) fail(`${us}: reading tier "${tier}" has no examples`);
             for (const f of files) {
-              const fm = frontmatter(await fs.readFile(path.join(tierDir, f), "utf8"));
+              const fm = parseFrontmatter(await fs.readFile(path.join(tierDir, f), "utf8")).data;
               if (!fm.id || !fm.title) fail(`${us}/${tier}/${f}: missing id/title frontmatter`);
             }
           }
@@ -74,7 +63,15 @@ async function main() {
         if (b.type === "challenge") {
           const cDir = path.join(ROOT, "content", "challenges", b.challengeSlug);
           try {
-            Challenge.parse(await readJson(path.join(cDir, "meta.json")));
+            const meta = Challenge.parse(await readJson(path.join(cDir, "meta.json")));
+            if (meta.slug !== b.challengeSlug) {
+              fail(`challenge ${b.challengeSlug}: meta.slug "${meta.slug}" does not match folder`);
+            }
+            try {
+              await fs.access(path.join(cDir, meta.entry));
+            } catch {
+              fail(`challenge ${b.challengeSlug}: entry file "${meta.entry}" not found`);
+            }
           } catch (e) {
             fail(`challenge ${b.challengeSlug}: ${(e as Error).message}`);
           }
