@@ -25,3 +25,24 @@ useEffect(() => {
 This is the exact bug you fix in the challenge at the end of this unit. In real apps, prefer
 a data-fetching library (TanStack Query) that handles this for you — but understand *why*
 it's needed.
+
+<!--more-->
+
+### Why not just a boolean `ignore` flag?
+
+A common alternative is an `ignore` flag instead of aborting:
+
+```jsx
+useEffect(() => {
+  let ignore = false;
+  fetchResults(query).then((r) => { if (!ignore) setResults(r); });
+  return () => { ignore = true; };
+}, [query]);
+```
+
+This fixes the *race* (stale results are ignored) but it does **not cancel the network
+request** — the work still completes, wasting bandwidth and battery. `AbortController` both
+ignores *and* cancels, which is why the challenge tests assert the request was aborted.
+
+Also: in React Strict Mode (dev only), effects run twice on mount to surface missing
+cleanup — another reason your fetch effect must be cancellable.
