@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { cache } from "react";
 import { Track as TrackSchema, Unit as UnitSchema, Challenge as ChallengeSchema, type Unit, type Challenge } from "@/learning/schema";
 import { parseFrontmatter } from "./frontmatter";
 
@@ -17,6 +18,10 @@ export type UnitBundle = {
   challenges: Record<string, ChallengeBundle>; // keyed by challengeSlug
 };
 
+async function readJson(p: string) {
+  return JSON.parse(await fs.readFile(p, "utf8"));
+}
+
 /** Read a file, treating "missing" (ENOENT) as empty but surfacing real errors. */
 async function readOptional(p: string): Promise<string> {
   try {
@@ -27,55 +32,95 @@ async function readOptional(p: string): Promise<string> {
   }
 }
 
-async function readJson(p: string) {
-  return JSON.parse(await fs.readFile(p, "utf8"));
+async function loadReadingTiers(dir: string): Promise<Record<Tier, ReadingExample[]>> {
+  const entries = await Promise.all(
+    TIERS.map(async (tier): Promise<[Tier, ReadingExample[]]> => {
+      const tierDir = path.join(dir, tier);
+      let files: string[] = [];
+      try {
+        files = (await fs.readdir(tierDir)).filter((f) => f.endsWith(".mdx")).sort();
+      } catch {
+        files = [];
+      }
+      const examples = await Promise.all(
+        files.map(async (f) => {
+          const { data, body } = parseFrontmatter(await fs.readFile(path.join(tierDir, f), "utf8"));
+          return { id: data.id ?? f, title: data.title ?? f, body };
+        }),
+      );
+      return [tier, examples];
+    }),
+  );
+  return Object.fromEntries(entries) as Record<Tier, ReadingExample[]>;
 }
 
-export async function loadUnit(trackSlug: string, unitSlug: string): Promise<UnitBundle> {
+async function loadChallenge(slug: string): Promise<ChallengeBundle> {
+  const cDir = path.join(ROOT, "content", "challenges", slug);
+  const meta = ChallengeSchema.parse(await readJson(path.join(cDir, "meta.json")));
+  // Constrain meta.entry to the challenge dir — never read outside it.
+  const base = path.resolve(cDir);
+  const entryPath = path.resolve(cDir, meta.entry);
+  if (entryPath !== base && !entryPath.startsWith(base + path.sep)) {
+    throw new Error(`challenge ${slug}: entry "${meta.entry}" escapes the challenge directory`);
+  }
+  const [readme, starter] = await Promise.all([
+    readOptional(path.join(cDir, "README.md")),
+    readOptional(entryPath),
+  ]);
+  return { meta, readme, starter };
+}
+
+/**
+ * Load a unit and everything it references. Wrapped in React `cache()` so repeat calls in
+ * one render are deduped. Pages are statically generated (see the route's
+ * `generateStaticParams`), so in production this runs at build time, not per request.
+ */
+export const loadUnit = cache(async (trackSlug: string, unitSlug: string): Promise<UnitBundle> => {
   const trackDir = path.join(ROOT, "content", "tracks", trackSlug);
-  const track = TrackSchema.parse(await readJson(path.join(trackDir, "track.json")));
   const unitDir = path.join(trackDir, "units", unitSlug);
-  const unit = UnitSchema.parse(await readJson(path.join(unitDir, "unit.json")));
+
+  // track.json and unit.json are independent — read them together.
+  const [track, unit] = await Promise.all([
+    readJson(path.join(trackDir, "track.json")).then((j) => TrackSchema.parse(j)),
+    readJson(path.join(unitDir, "unit.json")).then((j) => UnitSchema.parse(j)),
+  ]);
 
   const readings: UnitBundle["readings"] = {};
   const challenges: UnitBundle["challenges"] = {};
 
-  for (const block of unit.blocks) {
-    if (block.type === "reading") {
-      const tierMap = {} as Record<Tier, ReadingExample[]>;
-      for (const tier of TIERS) {
-        const tierDir = path.join(unitDir, block.dir, tier);
-        let files: string[] = [];
-        try {
-          files = (await fs.readdir(tierDir)).filter((f) => f.endsWith(".mdx")).sort();
-        } catch {
-          files = [];
-        }
-        tierMap[tier] = await Promise.all(
-          files.map(async (f) => {
-            const raw = await fs.readFile(path.join(tierDir, f), "utf8");
-            const { data, body } = parseFrontmatter(raw);
-            return { id: data.id ?? f, title: data.title ?? f, body };
-          }),
-        );
+  // Load every block's assets concurrently. Assigning into the maps is safe — JS is
+  // single-threaded, so the writes don't interleave mid-statement.
+  await Promise.all(
+    unit.blocks.map(async (block) => {
+      if (block.type === "reading") {
+        readings[block.id] = await loadReadingTiers(path.join(unitDir, block.dir));
+      } else if (block.type === "challenge") {
+        challenges[block.challengeSlug] = await loadChallenge(block.challengeSlug);
       }
-      readings[block.id] = tierMap;
-    }
-
-    if (block.type === "challenge") {
-      const cDir = path.join(ROOT, "content", "challenges", block.challengeSlug);
-      const meta = ChallengeSchema.parse(await readJson(path.join(cDir, "meta.json")));
-      // Constrain meta.entry to the challenge dir — never read outside it.
-      const entryPath = path.resolve(cDir, meta.entry);
-      const base = path.resolve(cDir);
-      if (entryPath !== base && !entryPath.startsWith(base + path.sep)) {
-        throw new Error(`challenge ${block.challengeSlug}: entry "${meta.entry}" escapes the challenge directory`);
-      }
-      const readme = await readOptional(path.join(cDir, "README.md"));
-      const starter = await readOptional(entryPath);
-      challenges[block.challengeSlug] = { meta, readme, starter };
-    }
-  }
+    }),
+  );
 
   return { track: { slug: track.slug, title: track.title }, unit, readings, challenges };
+});
+
+/** Enumerate every track/unit pair, for static generation. */
+export async function listUnits(): Promise<{ track: string; unit: string }[]> {
+  const tracksDir = path.join(ROOT, "content", "tracks");
+  let trackSlugs: string[] = [];
+  try {
+    trackSlugs = await fs.readdir(tracksDir);
+  } catch {
+    return [];
+  }
+  const nested = await Promise.all(
+    trackSlugs.map(async (track) => {
+      try {
+        const parsed = TrackSchema.parse(await readJson(path.join(tracksDir, track, "track.json")));
+        return parsed.units.map((unit) => ({ track, unit }));
+      } catch {
+        return [];
+      }
+    }),
+  );
+  return nested.flat();
 }

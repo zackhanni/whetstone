@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { loadUnit } from "@/lib/content";
+import { loadUnit, listUnits } from "@/lib/content";
 import { UnitView } from "@/components/unit-view";
 
-export const dynamic = "force-dynamic";
+export async function generateStaticParams() {
+  return listUnits();
+}
 
 export default async function UnitPage({
   params,
