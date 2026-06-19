@@ -42,6 +42,7 @@ function TierSection({ tier, examples }: { tier: Tier; examples: ReadingExample[
         {examples.length > 1 && (
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <button
+              type="button"
               aria-label="Previous example"
               onClick={() => setIdx(Math.max(0, i - 1))}
               disabled={i === 0}
@@ -53,6 +54,7 @@ function TierSection({ tier, examples }: { tier: Tier; examples: ReadingExample[
               {i + 1} / {examples.length}
             </span>
             <button
+              type="button"
               aria-label="Next example"
               onClick={() => setIdx(Math.min(examples.length - 1, i + 1))}
               disabled={i === examples.length - 1}
