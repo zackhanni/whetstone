@@ -1,7 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import {
+  Accordion as UIAccordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
+/**
+ * Thin wrapper that keeps our simple `<Accordion title>children</Accordion>` API while
+ * delegating to the accessible Radix-backed shadcn Accordion (aria-expanded, aria-controls,
+ * keyboard support). Styled to match our slate surfaces via className only.
+ */
 export function Accordion({
   title,
   children,
@@ -11,18 +21,17 @@ export function Accordion({
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-lg bg-slate-900/40 ring-1 ring-slate-800">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-200"
-      >
-        <span>{title}</span>
-        <span className="text-slate-500">{open ? "−" : "+"}</span>
-      </button>
-      {open && <div className="px-3 pb-3 pt-1">{children}</div>}
-    </div>
+    <UIAccordion
+      type="single"
+      collapsible
+      defaultValue={defaultOpen ? "item" : undefined}
+      className="rounded-lg bg-slate-900/40 px-3 ring-1 ring-slate-800"
+    >
+      <AccordionItem value="item" className="border-b-0">
+        <AccordionTrigger className="text-slate-200 hover:no-underline">{title}</AccordionTrigger>
+        <AccordionContent className="text-slate-300">{children}</AccordionContent>
+      </AccordionItem>
+    </UIAccordion>
   );
 }

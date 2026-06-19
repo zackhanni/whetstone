@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { Markdown } from "./markdown";
+import { WhetstoneButton } from "./whetstone-button";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { shuffle } from "@/lib/shuffle";
 
 type Option = { id: string; text: string };
@@ -23,6 +27,18 @@ function isCorrect(q: Question, selected: string[]) {
   return ans.length === selected.length && ans.every((a) => selected.includes(a));
 }
 
+function rowClass(revealed: boolean, sel: boolean, isAns: boolean) {
+  return clsx(
+    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm ring-1 transition",
+    revealed ? "cursor-default" : "cursor-pointer",
+    !revealed && sel && "bg-sky-500/10 ring-sky-500",
+    !revealed && !sel && "ring-slate-800 hover:ring-slate-600",
+    revealed && isAns && "bg-emerald-500/10 ring-emerald-500",
+    revealed && sel && !isAns && "bg-rose-500/10 ring-rose-500",
+    revealed && !isAns && !sel && "opacity-60 ring-slate-800",
+  );
+}
+
 function QuestionView({
   q,
   blockId,
@@ -36,12 +52,11 @@ function QuestionView({
   forceReveal: boolean;
   onResult: OnResult;
 }) {
-  // Render canonical order on the server + first client render (no hydration mismatch),
-  // then shuffle once after mount.
   const [options, setOptions] = useState(q.options);
   useEffect(() => {
     setOptions(q.shuffleOptions === false ? q.options : shuffle(q.options));
   }, [q]);
+
   const multi = Array.isArray(q.answer);
   const answerSet = new Set(Array.isArray(q.answer) ? q.answer : [q.answer]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -54,59 +69,67 @@ function QuestionView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
-  function toggle(id: string) {
-    if (revealed) return;
-    setSelected((s) => (multi ? (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]) : [id]));
+  const marker = (sel: boolean, isAns: boolean) =>
+    revealed && isAns ? (
+      <span className="ml-auto text-emerald-400">✓</span>
+    ) : revealed && sel && !isAns ? (
+      <span className="ml-auto text-rose-400">✗</span>
+    ) : null;
+
+  function Row({ o }: { o: Option }) {
+    const sel = selected.includes(o.id);
+    const isAns = answerSet.has(o.id);
+    const id = `${blockId}-${q.id}-${o.id}`;
+    return (
+      <Label htmlFor={id} className={rowClass(revealed, sel, isAns)}>
+        {multi ? (
+          <Checkbox
+            id={id}
+            checked={sel}
+            disabled={revealed}
+            onCheckedChange={(c) =>
+              setSelected((s) => (c === true ? [...s, o.id] : s.filter((x) => x !== o.id)))
+            }
+          />
+        ) : (
+          <RadioGroupItem id={id} value={o.id} />
+        )}
+        <span>{o.text}</span>
+        {marker(sel, isAns)}
+      </Label>
+    );
   }
 
   return (
     <div className="space-y-3">
       <p className="font-medium text-slate-100">{q.prompt}</p>
-      <div className="space-y-2">
-        {options.map((o) => {
-          const sel = selected.includes(o.id);
-          const isAns = answerSet.has(o.id);
-          return (
-            <button
-              key={o.id}
-              type="button"
-              disabled={revealed}
-              onClick={() => toggle(o.id)}
-              className={clsx(
-                "w-full rounded-lg px-3 py-2 text-left text-sm ring-1 transition",
-                !revealed && sel && "bg-sky-500/10 ring-sky-500",
-                !revealed && !sel && "ring-slate-800 hover:ring-slate-600",
-                revealed && isAns && "bg-emerald-500/10 ring-emerald-500",
-                revealed && sel && !isAns && "bg-rose-500/10 ring-rose-500",
-                revealed && !isAns && !sel && "opacity-60 ring-slate-800",
-              )}
-            >
-              {o.text}
-              {revealed && isAns && " ✓"}
-              {revealed && sel && !isAns && " ✗"}
-            </button>
-          );
-        })}
-      </div>
+
+      {multi ? (
+        <div className="grid gap-2">
+          {options.map((o) => (
+            <Row key={o.id} o={o} />
+          ))}
+        </div>
+      ) : (
+        <RadioGroup
+          value={selected[0] ?? ""}
+          disabled={revealed}
+          onValueChange={(v) => setSelected([v])}
+        >
+          {options.map((o) => (
+            <Row key={o.id} o={o} />
+          ))}
+        </RadioGroup>
+      )}
 
       {mode === "browse" && !checked && (
-        <button
-          type="button"
-          onClick={() => setChecked(true)}
-          disabled={selected.length === 0}
-          className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
-        >
+        <WhetstoneButton size="sm" disabled={selected.length === 0} onClick={() => setChecked(true)}>
           Check
-        </button>
+        </WhetstoneButton>
       )}
 
       {revealed && (
-        <div
-          className={clsx(
-            "rounded-lg p-3 text-sm",
-            correct ? "bg-emerald-500/10" : "bg-rose-500/10",
-          )}
-        >
+        <div className={clsx("rounded-lg p-3 text-sm", correct ? "bg-emerald-500/10" : "bg-rose-500/10")}>
           <span className={clsx("font-semibold", correct ? "text-emerald-300" : "text-rose-300")}>
             {correct ? "Correct" : "Not quite"}
           </span>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { Markdown } from "./markdown";
+import { WhetstoneButton } from "./whetstone-button";
 
 type Blank = { id: string; accept: string[] };
 type Prompt = { id: string; prompt: string; code: string; blanks: Blank[]; explanation: string };
@@ -72,14 +73,9 @@ function PromptView({
       </pre>
 
       {mode === "browse" && !checked && (
-        <button
-          type="button"
-          onClick={() => setChecked(true)}
-          disabled={vals.every((v) => !v.trim())}
-          className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
-        >
+        <WhetstoneButton size="sm" disabled={vals.every((v) => !v.trim())} onClick={() => setChecked(true)}>
           Check
-        </button>
+        </WhetstoneButton>
       )}
 
       {revealed && (
