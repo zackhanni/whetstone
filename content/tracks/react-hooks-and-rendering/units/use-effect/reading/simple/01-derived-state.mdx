@@ -18,3 +18,13 @@ const fullName = first + " " + last;
 
 The Effect version renders once with a stale value and then re-renders. The plain version
 is correct on the very first render and does no extra work.
+
+<!--more-->
+
+### The deeper reason
+
+Effects run *after* render and commit. Deriving state in an Effect means React paints once
+with the old value, then re-renders with the corrected one — a wasted render every time the
+inputs change, and a flash of stale UI in the worst case. Computing during render sidesteps
+the whole round-trip. If the computation is genuinely expensive, reach for `useMemo` — still
+during render, never an Effect.
