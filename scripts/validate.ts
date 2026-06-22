@@ -67,10 +67,17 @@ async function main() {
             if (meta.slug !== b.challengeSlug) {
               fail(`challenge ${b.challengeSlug}: meta.slug "${meta.slug}" does not match folder`);
             }
-            try {
-              await fs.access(path.join(cDir, meta.entry));
-            } catch {
-              fail(`challenge ${b.challengeSlug}: entry file "${meta.entry}" not found`);
+            // Mirror loadUnit's contract: meta.entry must resolve inside the challenge dir.
+            const base = path.resolve(cDir);
+            const entryPath = path.resolve(cDir, meta.entry);
+            if (entryPath !== base && !entryPath.startsWith(base + path.sep)) {
+              fail(`challenge ${b.challengeSlug}: entry "${meta.entry}" escapes the challenge directory`);
+            } else {
+              try {
+                await fs.access(entryPath);
+              } catch {
+                fail(`challenge ${b.challengeSlug}: entry file "${meta.entry}" not found`);
+              }
             }
           } catch (e) {
             fail(`challenge ${b.challengeSlug}: ${(e as Error).message}`);
