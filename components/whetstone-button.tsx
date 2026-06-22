@@ -22,6 +22,7 @@ export function WhetstoneButton({
   className,
   ...props
 }: React.ComponentProps<typeof Button> & { tone?: Tone }) {
+  const defaultType = props.asChild ? undefined : "button";
   // Default to type="button" (overridable via props) so a Button in a form never submits by accident.
-  return <Button type="button" className={cn(TONE[tone], className)} {...props} />;
+  return <Button type={defaultType} className={cn(TONE[tone], className)} {...props} />;
 }
