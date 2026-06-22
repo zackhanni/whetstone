@@ -32,6 +32,16 @@ async function readOptional(p: string): Promise<string> {
   }
 }
 
+/** Resolve `segments` under `base`, throwing if the result escapes it (path-traversal guard). */
+function resolveWithin(base: string, ...segments: string[]): string {
+  const root = path.resolve(base);
+  const resolved = path.resolve(base, ...segments);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new Error(`path "${segments.join("/")}" escapes ${base}`);
+  }
+  return resolved;
+}
+
 async function loadReadingTiers(dir: string): Promise<Record<Tier, ReadingExample[]>> {
   const entries = await Promise.all(
     TIERS.map(async (tier): Promise<[Tier, ReadingExample[]]> => {
@@ -39,7 +49,8 @@ async function loadReadingTiers(dir: string): Promise<Record<Tier, ReadingExampl
       let files: string[] = [];
       try {
         files = (await fs.readdir(tierDir)).filter((f) => f.endsWith(".mdx")).sort();
-      } catch {
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
         files = [];
       }
       const examples = await Promise.all(
@@ -55,14 +66,10 @@ async function loadReadingTiers(dir: string): Promise<Record<Tier, ReadingExampl
 }
 
 async function loadChallenge(slug: string): Promise<ChallengeBundle> {
-  const cDir = path.join(ROOT, "content", "challenges", slug);
+  // slug and meta.entry are both content-derived — keep their resolved paths in bounds.
+  const cDir = resolveWithin(path.join(ROOT, "content", "challenges"), slug);
   const meta = ChallengeSchema.parse(await readJson(path.join(cDir, "meta.json")));
-  // Constrain meta.entry to the challenge dir — never read outside it.
-  const base = path.resolve(cDir);
-  const entryPath = path.resolve(cDir, meta.entry);
-  if (entryPath !== base && !entryPath.startsWith(base + path.sep)) {
-    throw new Error(`challenge ${slug}: entry "${meta.entry}" escapes the challenge directory`);
-  }
+  const entryPath = resolveWithin(cDir, meta.entry);
   const [readme, starter] = await Promise.all([
     readOptional(path.join(cDir, "README.md")),
     readOptional(entryPath),
@@ -93,7 +100,7 @@ export const loadUnit = cache(async (trackSlug: string, unitSlug: string): Promi
   await Promise.all(
     unit.blocks.map(async (block) => {
       if (block.type === "reading") {
-        readings[block.id] = await loadReadingTiers(path.join(unitDir, block.dir));
+        readings[block.id] = await loadReadingTiers(resolveWithin(unitDir, block.dir));
       } else if (block.type === "challenge") {
         challenges[block.challengeSlug] = await loadChallenge(block.challengeSlug);
       }

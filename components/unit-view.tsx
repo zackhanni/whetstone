@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import clsx from "clsx";
 import type { UnitBundle, Tier, ReadingExample } from "@/lib/content";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { WhetstoneButton } from "./whetstone-button";
 import { ReadingBlock } from "./reading-block";
 import { QuizBlock } from "./quiz-block";
 import { FillBlankBlock } from "./fill-blank-block";
@@ -73,21 +74,26 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
         <div className="text-xs uppercase tracking-wide text-slate-500">{bundle.track.title}</div>
         <h1 className="text-2xl font-bold text-slate-50">{bundle.unit.title}</h1>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex rounded-lg p-0.5 text-sm ring-1 ring-slate-700">
-            {(["browse", "drill"] as Mode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => switchMode(m)}
-                className={clsx(
-                  "rounded-md px-3 py-1 capitalize",
-                  mode === m ? "bg-sky-600 text-white" : "text-slate-400 hover:text-slate-200",
-                )}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
+          <ToggleGroup
+            type="single"
+            value={mode}
+            onValueChange={(v) => v && switchMode(v as Mode)}
+            variant="outline"
+            size="sm"
+          >
+            <ToggleGroupItem
+              value="browse"
+              className="capitalize data-[state=on]:bg-sky-600 data-[state=on]:text-white"
+            >
+              Browse
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="drill"
+              className="capitalize data-[state=on]:bg-sky-600 data-[state=on]:text-white"
+            >
+              Drill
+            </ToggleGroupItem>
+          </ToggleGroup>
           {mode === "drill" && (
             <span className="tabular-nums text-sm text-slate-400">⏱ {fmt(elapsed)}</span>
           )}
@@ -133,13 +139,9 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
       })}
 
       {mode === "drill" && !finished && (
-        <button
-          type="button"
-          onClick={() => setFinished(true)}
-          className="w-full rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white hover:bg-emerald-500"
-        >
+        <WhetstoneButton tone="success" size="lg" className="w-full" onClick={() => setFinished(true)}>
           Finish &amp; score
-        </button>
+        </WhetstoneButton>
       )}
       {mode === "drill" && finished && (
         <div className="rounded-xl bg-slate-900/60 p-4 text-center ring-1 ring-slate-700">
@@ -149,13 +151,9 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
           <div className="text-sm text-slate-400">
             answered {answeredCount} · time {fmt(elapsed)}
           </div>
-          <button
-            type="button"
-            onClick={() => reset(true)}
-            className="mt-3 rounded-lg bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-500"
-          >
+          <WhetstoneButton size="sm" className="mt-3" onClick={() => reset(true)}>
             Retry
-          </button>
+          </WhetstoneButton>
         </div>
       )}
     </div>

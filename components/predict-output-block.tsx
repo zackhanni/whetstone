@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import clsx from "clsx";
 import { Markdown } from "./markdown";
+import { WhetstoneButton } from "./whetstone-button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 type Snippet = {
   id: string;
@@ -50,28 +52,23 @@ function SnippetView({
       <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-sm text-slate-200 ring-1 ring-slate-800">
         {s.code}
       </pre>
-      <label htmlFor={inputId} className="block font-medium text-slate-100">
+      <Label htmlFor={inputId} className="block font-medium text-slate-100">
         {s.question}
-      </label>
-      <textarea
+      </Label>
+      <Textarea
         id={inputId}
         value={val}
         disabled={revealed}
         rows={2}
         onChange={(e) => setVal(e.target.value)}
         placeholder="Your prediction…"
-        className="w-full rounded-lg bg-slate-800 p-2 text-sm text-slate-100 outline-none ring-1 ring-slate-700 focus:ring-sky-500"
+        className="bg-slate-800 text-slate-100"
       />
 
       {mode === "browse" && !checked && (
-        <button
-          type="button"
-          onClick={() => setChecked(true)}
-          disabled={!val.trim()}
-          className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
-        >
+        <WhetstoneButton size="sm" disabled={!val.trim()} onClick={() => setChecked(true)}>
           Reveal
-        </button>
+        </WhetstoneButton>
       )}
 
       {revealed && (
@@ -82,26 +79,22 @@ function SnippetView({
           <Markdown>{s.explanation}</Markdown>
           <div className="flex items-center gap-2 pt-1">
             <span className="text-slate-400">Did you get it?</span>
-            <button
-              type="button"
+            <WhetstoneButton
+              size="xs"
+              tone={selfCorrect === true ? "success" : "neutral"}
+              variant={selfCorrect === true ? "default" : "outline"}
               onClick={() => setSelfCorrect(true)}
-              className={clsx(
-                "rounded px-2 py-1 text-xs",
-                selfCorrect === true ? "bg-emerald-600 text-white" : "text-slate-300 ring-1 ring-slate-600",
-              )}
             >
               ✓ Yes
-            </button>
-            <button
-              type="button"
+            </WhetstoneButton>
+            <WhetstoneButton
+              size="xs"
+              tone={selfCorrect === false ? "danger" : "neutral"}
+              variant={selfCorrect === false ? "default" : "outline"}
               onClick={() => setSelfCorrect(false)}
-              className={clsx(
-                "rounded px-2 py-1 text-xs",
-                selfCorrect === false ? "bg-rose-600 text-white" : "text-slate-300 ring-1 ring-slate-600",
-              )}
             >
               ✗ No
-            </button>
+            </WhetstoneButton>
           </div>
         </div>
       )}
