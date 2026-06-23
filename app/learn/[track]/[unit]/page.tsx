@@ -13,9 +13,10 @@ export async function generateStaticParams() {
 export default async function UnitPage({
   params,
 }: {
-  params: { track: string; unit: string };
+  params: Promise<{ track: string; unit: string }>;
 }) {
-  const bundle = await loadUnit(params.track, params.unit).catch(() => notFound());
+  const { track, unit } = await params;
+  const bundle = await loadUnit(track, unit).catch(() => notFound());
   return (
     <main>
       <div className="mx-auto max-w-2xl px-4 pt-6">

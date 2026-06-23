@@ -54,6 +54,9 @@ function QuestionView({
 }) {
   const [options, setOptions] = useState(q.options);
   useEffect(() => {
+    // Client-only shuffle after mount: server + first client render stay in canonical order
+    // (no hydration mismatch), then randomize once mounted.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOptions(q.shuffleOptions === false ? q.options : shuffle(q.options));
   }, [q]);
 
@@ -155,6 +158,8 @@ export function QuizBlock({
 }) {
   const [questions, setQuestions] = useState(block.questions);
   useEffect(() => {
+    // Client-only shuffle after mount (see QuestionView) — avoids SSR hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuestions(shuffle(block.questions));
   }, [block]);
   return (
