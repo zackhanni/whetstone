@@ -69,8 +69,8 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
   const answeredCount = Object.values(results).filter((r) => r.answered).length;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
-      <header className="space-y-3">
+    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
+      <header className="max-w-3xl space-y-3">
         <div className="text-xs uppercase tracking-wide text-slate-500">{bundle.track.title}</div>
         <h1 className="text-2xl font-bold text-slate-50">{bundle.unit.title}</h1>
         <div className="flex flex-wrap items-center gap-3">
@@ -110,7 +110,10 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
         // Drill mode hides the teaching material — you're testing recall, not reading.
         if (block.type === "reading" && mode === "drill") return null;
         return (
-          <section key={block.id} className="space-y-3">
+          <section
+            key={block.id}
+            className={`space-y-3${block.type === "challenge" ? "" : " max-w-3xl"}`}
+          >
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             {LABELS[block.type] ?? block.type}
           </div>
@@ -139,12 +142,12 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
       })}
 
       {mode === "drill" && !finished && (
-        <WhetstoneButton tone="success" size="lg" className="w-full" onClick={() => setFinished(true)}>
+        <WhetstoneButton tone="success" size="lg" className="w-full max-w-3xl" onClick={() => setFinished(true)}>
           Finish &amp; score
         </WhetstoneButton>
       )}
       {mode === "drill" && finished && (
-        <div className="rounded-xl bg-slate-900/60 p-4 text-center ring-1 ring-slate-700">
+        <div className="max-w-3xl rounded-xl bg-slate-900/60 p-4 text-center ring-1 ring-slate-700">
           <div className="text-3xl font-bold text-slate-50">
             {correctCount} / {total}
           </div>

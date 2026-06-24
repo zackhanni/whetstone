@@ -1,11 +1,37 @@
 export type User = { id: number; name: string };
 
+const DIRECTORY: User[] = [
+  { id: 1, name: "Ann Lee" },
+  { id: 2, name: "Abby Chen" },
+  { id: 3, name: "Marco Diaz" },
+  { id: 4, name: "Priya Patel" },
+  { id: 5, name: "Sam Okafor" },
+];
+
 /**
- * Provided — do not edit. In tests this is replaced by a mock, so your component must
- * pass the AbortSignal through for cancellation to work.
+ * Default implementation — simulates a network call with latency and honors the abort
+ * signal. (Provided; you don't need to edit this file.)
  */
-export async function searchUsers(query: string, signal?: AbortSignal): Promise<User[]> {
-  const res = await fetch(`/api/users?q=${encodeURIComponent(query)}`, { signal });
-  if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-  return (await res.json()) as User[];
+let impl = (query: string, signal?: AbortSignal): Promise<User[]> =>
+  new Promise<User[]>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const q = query.trim().toLowerCase();
+      resolve(DIRECTORY.filter((u) => u.name.toLowerCase().includes(q)));
+    }, 350);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(Object.assign(new Error("Aborted"), { name: "AbortError" }));
+    });
+  });
+
+export function searchUsers(query: string, signal?: AbortSignal): Promise<User[]> {
+  return impl(query, signal);
+}
+
+/**
+ * Test seam: lets the grader swap the implementation without module mocking
+ * (Sandpack's in-browser Jest can't do `jest.mock`). Not used by the lesson code.
+ */
+export function __setSearchImpl(fn: typeof impl): void {
+  impl = fn;
 }

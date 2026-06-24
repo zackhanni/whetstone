@@ -9,7 +9,12 @@ const TIERS = ["simple", "medium", "complex"] as const;
 export type Tier = (typeof TIERS)[number];
 
 export type ReadingExample = { id: string; title: string; body: string };
-export type ChallengeBundle = { meta: Challenge; readme: string; starter: string };
+export type ChallengeBundle = {
+  meta: Challenge;
+  readme: string;
+  files: Record<string, string>; // Sandpack file set (excludes meta.json, README.md, solution.tsx)
+  solution: string | null; // solution.tsx content, for "show solution"
+};
 
 export type UnitBundle = {
   track: { slug: string; title: string };
@@ -69,12 +74,23 @@ async function loadChallenge(slug: string): Promise<ChallengeBundle> {
   // slug and meta.entry are both content-derived — keep their resolved paths in bounds.
   const cDir = resolveWithin(path.join(ROOT, "content", "challenges"), slug);
   const meta = ChallengeSchema.parse(await readJson(path.join(cDir, "meta.json")));
-  const entryPath = resolveWithin(cDir, meta.entry);
-  const [readme, starter] = await Promise.all([
-    readOptional(path.join(cDir, "README.md")),
-    readOptional(entryPath),
-  ]);
-  return { meta, readme, starter };
+  resolveWithin(cDir, meta.entry); // ensure the editable entry stays inside the challenge dir
+
+  const entries = await fs.readdir(cDir, { withFileTypes: true });
+  const files: Record<string, string> = {};
+  let readme = "";
+  let solution: string | null = null;
+  await Promise.all(
+    entries.map(async (e) => {
+      if (!e.isFile()) return;
+      const content = await fs.readFile(path.join(cDir, e.name), "utf8");
+      if (e.name === "meta.json") return;
+      else if (e.name === "README.md") readme = content;
+      else if (e.name === "solution.tsx") solution = content;
+      else files[e.name] = content;
+    }),
+  );
+  return { meta, readme, files, solution };
 }
 
 /**

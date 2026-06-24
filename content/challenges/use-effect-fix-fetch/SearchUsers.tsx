@@ -5,9 +5,9 @@ export function SearchUsers() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<User[]>([]);
 
-  // 🐛 BUG: no cleanup and no race guard.
-  // - A slow earlier response can overwrite a newer query's results.
-  // - The in-flight request is never aborted on query change / unmount.
+  // 🐛 BUG: no cleanup, no race guard. A slow earlier response can overwrite a newer
+  // query's results, and in-flight requests aren't cancelled on query change / unmount.
+  // Fix it with AbortController + a cleanup function so the tests pass.
   useEffect(() => {
     if (!query) {
       setResults([]);

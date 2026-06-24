@@ -19,7 +19,7 @@ export default async function UnitPage({
   const bundle = await loadUnit(track, unit).catch(() => notFound());
   return (
     <main>
-      <div className="mx-auto max-w-2xl px-4 pt-6">
+      <div className="mx-auto max-w-5xl px-4 pt-6">
         <Link href="/" className="text-sm text-slate-500 hover:text-slate-300">
           ← Whetstone
         </Link>

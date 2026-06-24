@@ -8,8 +8,7 @@
   "estimatedMinutes": 20,
   "runner": "in-browser",
   "stack": ["react", "ts"],
-  "entry": "starter.tsx",
-  "testCommand": "vitest run",
+  "entry": "SearchUsers.tsx",
   "acceptanceCriteria": [
     "Typing a query shows that query's results",
     "A slow earlier response never overwrites a newer query's results",
