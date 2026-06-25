@@ -27,16 +27,6 @@ async function readJson(p: string) {
   return JSON.parse(await fs.readFile(p, "utf8"));
 }
 
-/** Read a file, treating "missing" (ENOENT) as empty but surfacing real errors. */
-async function readOptional(p: string): Promise<string> {
-  try {
-    return await fs.readFile(p, "utf8");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return "";
-    throw e;
-  }
-}
-
 /** Resolve `segments` under `base`, throwing if the result escapes it (path-traversal guard). */
 function resolveWithin(base: string, ...segments: string[]): string {
   const root = path.resolve(base);
@@ -76,20 +66,27 @@ async function loadChallenge(slug: string): Promise<ChallengeBundle> {
   const meta = ChallengeSchema.parse(await readJson(path.join(cDir, "meta.json")));
   resolveWithin(cDir, meta.entry); // ensure the editable entry stays inside the challenge dir
 
-  const entries = await fs.readdir(cDir, { withFileTypes: true });
+  // Walk the whole challenge dir so nested helper files are included, keyed by their
+  // forward-slash relative path (what Sandpack expects).
+  const dirents = await fs.readdir(cDir, { recursive: true, withFileTypes: true });
   const files: Record<string, string> = {};
   let readme = "";
   let solution: string | null = null;
   await Promise.all(
-    entries.map(async (e) => {
-      if (!e.isFile()) return;
-      const content = await fs.readFile(path.join(cDir, e.name), "utf8");
-      if (e.name === "meta.json") return;
-      else if (e.name === "README.md") readme = content;
-      else if (e.name === "solution.tsx") solution = content;
-      else files[e.name] = content;
+    dirents.map(async (d) => {
+      if (!d.isFile()) return;
+      const abs = path.join(d.parentPath, d.name);
+      const rel = path.relative(cDir, abs).split(path.sep).join("/");
+      const content = await fs.readFile(abs, "utf8");
+      if (rel === "meta.json") return;
+      else if (rel === "README.md") readme = content;
+      else if (rel === "solution.tsx") solution = content;
+      else files[rel] = content;
     }),
   );
+  if (!(meta.entry in files)) {
+    throw new Error(`challenge ${slug}: entry "${meta.entry}" is not among its files`);
+  }
   return { meta, readme, files, solution };
 }
 

@@ -14,13 +14,18 @@ const DIRECTORY: User[] = [
  */
 let impl = (query: string, signal?: AbortSignal): Promise<User[]> =>
   new Promise<User[]>((resolve, reject) => {
+    const abortError = () => Object.assign(new Error("Aborted"), { name: "AbortError" });
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
     const timer = setTimeout(() => {
       const q = query.trim().toLowerCase();
       resolve(DIRECTORY.filter((u) => u.name.toLowerCase().includes(q)));
     }, 350);
     signal?.addEventListener("abort", () => {
       clearTimeout(timer);
-      reject(Object.assign(new Error("Aborted"), { name: "AbortError" }));
+      reject(abortError());
     });
   });
 

@@ -158,6 +158,14 @@ export const Challenge = z.object({
   testCommand: z.string().optional(), // for local/external runs
   externalUrl: z.string().url().optional(), // StackBlitz/CodeSandbox, when runner = "external"
   acceptanceCriteria: z.array(z.string()).min(1),
+}).superRefine((challenge, ctx) => {
+  if (challenge.runner === "external" && !challenge.externalUrl) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["externalUrl"],
+      message: 'externalUrl is required when runner is "external"',
+    });
+  }
 });
 
 export type Track = z.infer<typeof Track>;

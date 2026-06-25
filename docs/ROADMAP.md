@@ -11,8 +11,8 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ✅ shadcn/ui (Radix) + accessibility pass
 - ✅ Static generation, content path guards, content validator (`pnpm validate`)
 - ✅ Next 16 + React 19 + ESLint flat config + `pnpm check` gate
-- ⬜ **In-browser challenge runner** — Sandpack editor + Vitest grading. The challenge block
-  is preview-only today; this makes it interactive and auto-graded. *(last Phase-0 piece)*
+- ✅ **In-browser challenge runner** — Sandpack editor + live preview + in-browser test
+  grading (jest-style via `SandpackTests`, with a test seam in `api.ts`)
 - ⬜ Run `/new-lesson` end-to-end to author a 2nd unit (proves the authoring loop)
 
 ### Phase 1 — Solo, deployed

@@ -27,7 +27,7 @@ export function ChallengeBlock({ bundle }: { bundle: ChallengeBundle }) {
       </div>
       {meta.runner === "in-browser" ? (
         <ChallengeRunner bundle={bundle} />
-      ) : meta.externalUrl ? (
+      ) : (
         <a
           href={meta.externalUrl}
           target="_blank"
@@ -36,10 +36,6 @@ export function ChallengeBlock({ bundle }: { bundle: ChallengeBundle }) {
         >
           Open this challenge in a new tab →
         </a>
-      ) : (
-        <p className="text-sm text-slate-400">
-          This challenge runs locally — clone the repo and run its tests.
-        </p>
       )}
     </div>
   );
