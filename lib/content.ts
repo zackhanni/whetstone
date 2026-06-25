@@ -60,30 +60,45 @@ async function loadReadingTiers(dir: string): Promise<Record<Tier, ReadingExampl
   return Object.fromEntries(entries) as Record<Tier, ReadingExample[]>;
 }
 
+/**
+ * Recursively read all files under `dir`, keyed by forward-slash path relative to `base`.
+ * Tracks the path as it descends to avoid fs `Dirent.parentPath` (Node >= 20.12 only).
+ */
+async function walkFiles(dir: string, base: string = dir): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (e) => {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        Object.assign(out, await walkFiles(abs, base));
+      } else if (e.isFile()) {
+        const rel = path.relative(base, abs).split(path.sep).join("/");
+        out[rel] = await fs.readFile(abs, "utf8");
+      }
+    }),
+  );
+  return out;
+}
+
 async function loadChallenge(slug: string): Promise<ChallengeBundle> {
   // slug and meta.entry are both content-derived — keep their resolved paths in bounds.
   const cDir = resolveWithin(path.join(ROOT, "content", "challenges"), slug);
   const meta = ChallengeSchema.parse(await readJson(path.join(cDir, "meta.json")));
   resolveWithin(cDir, meta.entry); // ensure the editable entry stays inside the challenge dir
 
-  // Walk the whole challenge dir so nested helper files are included, keyed by their
-  // forward-slash relative path (what Sandpack expects).
-  const dirents = await fs.readdir(cDir, { recursive: true, withFileTypes: true });
+  // Include nested helper files too, keyed by forward-slash relative path (what Sandpack
+  // expects). walkFiles avoids Dirent.parentPath for broader Node compatibility.
+  const all = await walkFiles(cDir);
   const files: Record<string, string> = {};
   let readme = "";
   let solution: string | null = null;
-  await Promise.all(
-    dirents.map(async (d) => {
-      if (!d.isFile()) return;
-      const abs = path.join(d.parentPath, d.name);
-      const rel = path.relative(cDir, abs).split(path.sep).join("/");
-      const content = await fs.readFile(abs, "utf8");
-      if (rel === "meta.json") return;
-      else if (rel === "README.md") readme = content;
-      else if (rel === "solution.tsx") solution = content;
-      else files[rel] = content;
-    }),
-  );
+  for (const [rel, content] of Object.entries(all)) {
+    if (rel === "meta.json") continue;
+    else if (rel === "README.md") readme = content;
+    else if (rel === "solution.tsx") solution = content;
+    else files[rel] = content;
+  }
   if (!(meta.entry in files)) {
     throw new Error(`challenge ${slug}: entry "${meta.entry}" is not among its files`);
   }
