@@ -9,7 +9,12 @@ const TIERS = ["simple", "medium", "complex"] as const;
 export type Tier = (typeof TIERS)[number];
 
 export type ReadingExample = { id: string; title: string; body: string };
-export type ChallengeBundle = { meta: Challenge; readme: string; starter: string };
+export type ChallengeBundle = {
+  meta: Challenge;
+  readme: string;
+  files: Record<string, string>; // Sandpack file set (excludes meta.json, README.md, solution.tsx)
+  solution: string | null; // solution.tsx content, for "show solution"
+};
 
 export type UnitBundle = {
   track: { slug: string; title: string };
@@ -20,16 +25,6 @@ export type UnitBundle = {
 
 async function readJson(p: string) {
   return JSON.parse(await fs.readFile(p, "utf8"));
-}
-
-/** Read a file, treating "missing" (ENOENT) as empty but surfacing real errors. */
-async function readOptional(p: string): Promise<string> {
-  try {
-    return await fs.readFile(p, "utf8");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return "";
-    throw e;
-  }
 }
 
 /** Resolve `segments` under `base`, throwing if the result escapes it (path-traversal guard). */
@@ -65,16 +60,49 @@ async function loadReadingTiers(dir: string): Promise<Record<Tier, ReadingExampl
   return Object.fromEntries(entries) as Record<Tier, ReadingExample[]>;
 }
 
+/**
+ * Recursively read all files under `dir`, keyed by forward-slash path relative to `base`.
+ * Tracks the path as it descends to avoid fs `Dirent.parentPath` (Node >= 20.12 only).
+ */
+async function walkFiles(dir: string, base: string = dir): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (e) => {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        Object.assign(out, await walkFiles(abs, base));
+      } else if (e.isFile()) {
+        const rel = path.relative(base, abs).split(path.sep).join("/");
+        out[rel] = await fs.readFile(abs, "utf8");
+      }
+    }),
+  );
+  return out;
+}
+
 async function loadChallenge(slug: string): Promise<ChallengeBundle> {
   // slug and meta.entry are both content-derived — keep their resolved paths in bounds.
   const cDir = resolveWithin(path.join(ROOT, "content", "challenges"), slug);
   const meta = ChallengeSchema.parse(await readJson(path.join(cDir, "meta.json")));
-  const entryPath = resolveWithin(cDir, meta.entry);
-  const [readme, starter] = await Promise.all([
-    readOptional(path.join(cDir, "README.md")),
-    readOptional(entryPath),
-  ]);
-  return { meta, readme, starter };
+  resolveWithin(cDir, meta.entry); // ensure the editable entry stays inside the challenge dir
+
+  // Include nested helper files too, keyed by forward-slash relative path (what Sandpack
+  // expects). walkFiles avoids Dirent.parentPath for broader Node compatibility.
+  const all = await walkFiles(cDir);
+  const files: Record<string, string> = {};
+  let readme = "";
+  let solution: string | null = null;
+  for (const [rel, content] of Object.entries(all)) {
+    if (rel === "meta.json") continue;
+    else if (rel === "README.md") readme = content;
+    else if (rel === "solution.tsx") solution = content;
+    else files[rel] = content;
+  }
+  if (!(meta.entry in files)) {
+    throw new Error(`challenge ${slug}: entry "${meta.entry}" is not among its files`);
+  }
+  return { meta, readme, files, solution };
 }
 
 /**

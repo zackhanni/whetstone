@@ -1,27 +1,42 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Markdown } from "./markdown";
-import { Accordion } from "./accordion";
 import type { ChallengeBundle } from "@/lib/content";
 
+// Sandpack uses browser APIs and isn't SSR-safe; the unit page is statically generated,
+// so load the runner client-only.
+const ChallengeRunner = dynamic(
+  () => import("./challenge-runner").then((m) => m.ChallengeRunner),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-lg p-4 text-sm text-slate-500 ring-1 ring-slate-800">
+        Loading the in-browser editor…
+      </div>
+    ),
+  },
+);
+
 export function ChallengeBlock({ bundle }: { bundle: ChallengeBundle }) {
-  const { readme, starter, meta } = bundle;
+  const { readme, meta } = bundle;
   return (
     <div className="space-y-3">
       <div className="rounded-lg bg-slate-900/40 p-4 ring-1 ring-slate-800">
         {readme ? <Markdown>{readme}</Markdown> : <p className="text-slate-300">{meta.prompt}</p>}
       </div>
-      {starter && (
-        <Accordion title="Starter code (preview)">
-          <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-200 ring-1 ring-slate-800">
-            {starter}
-          </pre>
-        </Accordion>
+      {meta.runner === "in-browser" ? (
+        <ChallengeRunner bundle={bundle} />
+      ) : (
+        <a
+          href={meta.externalUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block text-sm text-sky-400 underline"
+        >
+          Open this challenge in a new tab →
+        </a>
       )}
-      <p className="text-xs text-slate-500">
-        ⚙️ The in-browser editor + Vitest grader lands next — this is a live preview of the
-        challenge prompt and starter.
-      </p>
     </div>
   );
 }
