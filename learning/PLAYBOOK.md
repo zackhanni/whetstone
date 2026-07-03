@@ -1,10 +1,10 @@
 # Whetstone — Lesson Authoring Playbook
 
 > **Core principle:** a lesson earns its place only if it changes what the learner can
-> *do*. Teach the mental model, then make them apply it under increasing pressure — and
+> _do_. Teach the mental model, then make them apply it under increasing pressure — and
 > make every wrong answer teach.
 
-This playbook holds the *judgment*; the machine-checkable rules live in
+This playbook holds the _judgment_; the machine-checkable rules live in
 `learning/schema.ts`. When the two disagree, fix one of them — don't work around it.
 Bias toward **simple**: add a field when a real need shows up, don't reshape the data in
 anticipation.
@@ -24,13 +24,13 @@ as tagged challenges.
 
 ## The five block types — and when to reach for each
 
-| Block | Use it to… | Quality bar |
-|---|---|---|
-| `reading` | Install the mental model | A folder of example `.mdx` files per tier (Simple/Medium/Complex), **1..n each**. Each tier is the same idea at higher resolution. |
-| `quiz` | Check recognition / discrimination | A list of questions; distractors are *real* misconceptions, not filler. |
-| `fill-blank` | Check recall of exact syntax/shape | A list of prompts; one concept per blank; accept reasonable equivalents. |
-| `predict-output` | Expose subtle runtime behavior | A list of snippets; reserve for the genuinely surprising (stale closures, batching, ordering). |
-| `challenge` | Prove transfer to real code | Real files + runnable tests + a reference solution. The tests are the grade. |
+| Block            | Use it to…                         | Quality bar                                                                                                                        |
+| ---------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `reading`        | Install the mental model           | A folder of example `.mdx` files per tier (Simple/Medium/Complex), **1..n each**. Each tier is the same idea at higher resolution. |
+| `quiz`           | Check recognition / discrimination | A list of questions; distractors are _real_ misconceptions, not filler.                                                            |
+| `fill-blank`     | Check recall of exact syntax/shape | A list of prompts; one concept per blank; accept reasonable equivalents.                                                           |
+| `predict-output` | Expose subtle runtime behavior     | A list of snippets; reserve for the genuinely surprising (stale closures, batching, ordering).                                     |
+| `challenge`      | Prove transfer to real code        | Real files + runnable tests + a reference solution. The tests are the grade.                                                       |
 
 ## Multiple examples & questions
 
@@ -52,7 +52,7 @@ now to keep the future cheap.
 
 ### Designed to grow — not built yet
 
-Deliberately *not* implemented, but the shape above supports them as non-breaking additions
+Deliberately _not_ implemented, but the shape above supports them as non-breaking additions
 (an optional field + app logic). Don't pre-build them:
 
 - **Pick-N / difficulty-mix quizzes** — "show 3 simple + 1 medium, random order." Later: a
@@ -83,10 +83,10 @@ the folder load into the sandbox as read-only support files.
 ## Rules the system enforces (don't fight them)
 
 Rule 1 is checked by `zod` (`learning/schema.ts`). **Rule 2** (each reading tier has ≥1
-example) is checked by **`scripts/validate.ts`** (`npm run validate`), which also re-runs
+example) is checked by **`scripts/validate.ts`** (`pnpm run validate`), which also re-runs
 schema validation and the challenge folder/entry contract across every track/unit.
 **Rule 3** (difficulty escalates down a unit) and **Rule 4** (starter fails / solution
-passes the challenge tests) are *not* auto-checked yet — rule 3 is an authoring guideline;
+passes the challenge tests) are _not_ auto-checked yet — rule 3 is an authoring guideline;
 rule 4 is graded in the browser (Sandpack) and must be verified there by the author, since
 there's no headless challenge-test run at authoring time (a known gap). Don't describe a
 rule as auto-enforced until the validator actually checks it.
@@ -105,7 +105,7 @@ rule as auto-enforced until the validator actually checks it.
 - `advanced` — the edge cases that separate "uses it" from "understands it."
 
 Be direct. Prefer the smallest example that still shows the real hazard. When the wrong way
-is a common habit, show the wrong way *and* the right way side by side.
+is a common habit, show the wrong way _and_ the right way side by side.
 
 ## Authoring flow
 
@@ -125,10 +125,10 @@ reads it and edits content **directly** — this repo's git history is the safet
 - **A `schemaVersion` bump is a louder event.** Land it as its own dedicated commit with the
   cross-lesson sweep isolated, so "what did the template change do to every lesson?" is one
   clean, reviewable diff — never tangled into content edits.
-- When an improvement is *general* (a better way to structure any lesson), fix the
+- When an improvement is _general_ (a better way to structure any lesson), fix the
   template/schema and sweep it across existing lessons — don't just patch the one lesson.
 
-Feedback is often about the *interface* (how a lesson is presented), not the content.
+Feedback is often about the _interface_ (how a lesson is presented), not the content.
 Capture which it is, because the fix lives in a different place (the app / ordering vs. the prose).
 
 ## Quality checklist (before a lesson is done)
