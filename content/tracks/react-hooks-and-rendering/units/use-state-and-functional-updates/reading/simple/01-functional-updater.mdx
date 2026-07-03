@@ -1,0 +1,17 @@
+---
+id: functional-updater
+title: Use the functional updater when new state depends on old
+---
+
+`useState`'s setter accepts either a value or a function. When the next value is
+computed from the previous one, pass a function — it receives the latest state.
+
+```jsx
+// ❌ reads a possibly-stale snapshot
+setCount(count + 1);
+
+// ✅ receives the latest value
+setCount((c) => c + 1);
+```
+
+Rule of thumb: if the new value mentions the old value, use `setX((prev) => ...)`.

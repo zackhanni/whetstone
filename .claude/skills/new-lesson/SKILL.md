@@ -2,7 +2,7 @@
 name: new-lesson
 description: Scaffold a new Whetstone lesson (track/unit/blocks + a coding challenge) from the schema. Use when adding a skill to learn, e.g. "add a lesson on useRef" or "make a track for TanStack Query".
 argument-hint: "<skill or topic> [--track <slug>] [--difficulty intro|core|advanced]"
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(npx:*), Bash(vitest:*), Bash(git:*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(pnpm:*), Bash(git:*)
 ---
 
 # /new-lesson — author a Whetstone lesson
@@ -25,13 +25,17 @@ output must validate against `learning/schema.ts`. Bias toward simple.
 3. **Surprise.** Add a `predict-output` block (a list of snippets) only where runtime
    behavior defies intuition (stale closures, batching, ordering). Skip it if the topic has
    no such trap.
-4. **Transfer.** Author the `challenge` under `content/challenges/<slug>/`: `meta.json`,
-   `README.md` (problem + acceptance checklist), shared files, `starter.tsx`,
-   `solution.tsx`, `test.tsx`. Reuse patterns from the user's archive where relevant. Set
-   `mode`/`runner`: `in-browser` for single-file React/TS drills, `external` for full
-   multi-file projects (provide `externalUrl`).
-5. **Validate (gate).** Run schema validation and **run the challenge tests against the
-   reference solution** (`vitest run`). Either failing → not done.
+4. **Transfer.** Author the `challenge` under `content/challenges/<slug>/` following the
+   **In-browser challenge contract** in `learning/PLAYBOOK.md` (read it — the Sandpack
+   conventions are specific). In short: `meta.json` (`runner: "in-browser"`,
+   `entry: "<Component>.tsx"`), `README.md`, the editable buggy `<Component>.tsx`, `App.tsx`
+   (preview root), `<Component>.test.tsx` (**jest-style** — no `vitest` import, RTL, plain
+   matchers, DOM via `data-testid`), and `solution.tsx` (same export, fixed). For big
+   multi-file projects use `runner: "external"` + `externalUrl` instead.
+5. **Validate (gate).** `pnpm validate` (schema + reading tiers + challenge contract) and
+   `pnpm build` must pass. Then verify the challenge **in the browser** — open the unit, hit
+   *Run tests*: the starter must FAIL and *Show solution* must PASS. (No headless
+   challenge-test run yet — see PLAYBOOK "Rule 4".)
 6. **Land it.** Order blocks so difficulty escalates (reading → recognition → recall →
    predict → challenge). Commit small with a clear message; append a line to
    `docs/lesson-changelog.md`.
