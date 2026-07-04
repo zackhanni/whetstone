@@ -1,0 +1,26 @@
+---
+id: controlled-input
+title: A controlled input — value + onChange driven by state
+---
+
+A **controlled** input has its value owned by React state. You pass the current
+value down with `value`, and every keystroke flows back up through `onChange`:
+
+```jsx
+function SearchBox() {
+  const [query, setQuery] = useState("");
+  return (
+    <input
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
+    />
+  );
+}
+```
+
+The two props are a pair. `value` makes React the single source of truth for what's
+shown; `onChange` is how the input tells state to update. Leave out `onChange` and
+the field becomes read-only — typing does nothing, and React warns you.
+
+Rule of thumb: if you need to _read_ or _react to_ the value as the user types
+(filtering a list, validating, enabling a button), make it controlled.

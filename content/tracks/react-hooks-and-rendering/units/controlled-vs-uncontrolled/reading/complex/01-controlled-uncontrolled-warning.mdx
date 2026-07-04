@@ -1,0 +1,44 @@
+---
+id: controlled-uncontrolled-warning
+title: The "changing an uncontrolled input to be controlled" warning
+---
+
+React decides an input is controlled or uncontrolled on its **first render**, based
+on whether `value` is defined. If `value` starts `undefined` and later becomes a
+string, you flip an uncontrolled input into a controlled one — and React warns:
+
+> A component is changing an uncontrolled input to be controlled.
+
+The classic cause is state initialized without a matching key, so `value` is
+`undefined` at first:
+
+```jsx
+function Form({ user }) {
+  // 🐛 user.name is undefined until the fetch resolves
+  const [name, setName] = useState(user.name);
+  // value={undefined} on render 1  →  value="Ada" on render 2
+  return <input value={name} onChange={(e) => setName(e.target.value)} />;
+}
+```
+
+The fix is to keep `value` **always defined** — never let it be `undefined`. Default
+it to an empty string:
+
+```jsx
+const [name, setName] = useState(user.name ?? "");
+// or, at the prop:
+<input value={name ?? ""} onChange={(e) => setName(e.target.value)} />;
+```
+
+The mirror-image warning — _"changing a controlled input to be uncontrolled"_ —
+happens when `value` goes from a string back to `undefined`/`null` (e.g. resetting
+state to `undefined`). Same rule fixes both: pick controlled **or** uncontrolled and
+keep `value` consistently defined (or consistently absent) for the input's whole
+life.
+
+<!--more-->
+
+Why it matters: the warning is React telling you the input just changed _who owns
+its value_ mid-flight. That's almost never intentional, and it usually means state
+is seeded from data that isn't there yet — coalesce to `""` and the ambiguity
+disappears.

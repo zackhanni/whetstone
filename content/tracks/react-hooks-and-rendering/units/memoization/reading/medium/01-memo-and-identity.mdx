@@ -1,0 +1,31 @@
+---
+id: memo-and-identity
+title: memo skips a re-render — but only if props are shallow-equal
+---
+
+By default, when a parent re-renders, all its children re-render too. `React.memo`
+wraps a component so it **skips** re-rendering when its props are shallow-equal to
+last time (`Object.is` on each prop).
+
+```jsx
+const Row = memo(function Row({ label }) {
+  return <li>{label}</li>;
+});
+```
+
+The catch is **referential identity**. `memo` compares references, not contents.
+An inline object, array, or function is created fresh on every parent render, so
+it's a new reference every time — and `memo`'s shallow check fails:
+
+```jsx
+function List({ items }) {
+  return items.map((it) => (
+    // ❌ new arrow + new object each render → Row re-renders every time
+    <Row key={it.id} label={it.label} onClick={() => pick(it)} style={{ pad: 4 }} />
+  ));
+}
+```
+
+`memo` only pays off when the props you pass are **stable**. For primitive props
+(strings, numbers, booleans) that's automatic. For objects and functions, you have
+to stabilize the reference yourself — that's what `useMemo` and `useCallback` are for.

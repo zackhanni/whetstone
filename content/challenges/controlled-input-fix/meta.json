@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "slug": "controlled-input-fix",
+  "title": "Fix the search box that won't type",
+  "prompt": "The search input sets `value` from state but has no `onChange`, so typing does nothing and the list never filters. Make it properly controlled so typing updates the value and filters the list.",
+  "skills": ["react", "forms", "controlled-components", "state"],
+  "difficulty": "core",
+  "estimatedMinutes": 10,
+  "runner": "in-browser",
+  "stack": ["react", "ts"],
+  "entry": "SearchList.tsx",
+  "acceptanceCriteria": [
+    "Typing in the search box updates the input's displayed value",
+    "The list filters to items matching the typed text (case-insensitive)",
+    "Clearing the box shows all items again"
+  ]
+}

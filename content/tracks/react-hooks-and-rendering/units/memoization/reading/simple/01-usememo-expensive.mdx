@@ -1,0 +1,26 @@
+---
+id: usememo-expensive
+title: useMemo caches an expensive computation across renders
+---
+
+A component re-renders often. If it recomputes something expensive every time —
+sorting a big list, filtering, a heavy calculation — you pay that cost on every
+render, even when the inputs didn't change.
+
+`useMemo(factory, deps)` runs the factory once, caches the result, and only
+recomputes when a value in `deps` changes.
+
+```jsx
+function Report({ rows, query }) {
+  // ❌ re-sorts on every render, even when `rows` didn't change
+  const sorted = rows.slice().sort(bySize);
+
+  // ✅ re-sorts only when `rows` changes
+  const sorted = useMemo(() => rows.slice().sort(bySize), [rows]);
+
+  return <Table rows={sorted} />;
+}
+```
+
+Rule of thumb: reach for `useMemo` when the computation is genuinely expensive —
+or when you need the result to keep a **stable reference** across renders.

@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "slug": "memoization",
+  "title": "Memoization: memo, useMemo & useCallback",
+  "skills": ["react", "hooks", "memo", "useMemo", "useCallback", "rendering", "performance", "referential-identity"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "blocks": [
+    { "type": "reading", "id": "read-intro", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-memoization",
+      "questions": [
+        {
+          "id": "what-memo-does",
+          "prompt": "What does wrapping a component in React.memo() actually do?",
+          "options": [
+            { "id": "shallow-props", "text": "Skips re-rendering when its props are shallow-equal to the previous render's props" },
+            { "id": "cache-jsx", "text": "Caches the returned JSX forever, so the component never re-renders again" },
+            { "id": "memo-state", "text": "Memoizes the component's internal state so it survives unmounts" },
+            { "id": "deep-equal", "text": "Deep-compares every prop, no matter how nested, before re-rendering" }
+          ],
+          "answer": "shallow-props",
+          "explanation": "memo does a shallow comparison of props (Object.is on each). If every prop is the same reference/value as last time, React reuses the previous render and skips the child. It does NOT deep-compare, and a parent re-render alone won't re-render a memo child — only changed props (or the child's own state/context) will."
+        },
+        {
+          "id": "why-still-rerenders",
+          "prompt": "A memo() child still re-renders every time its parent updates. The most likely cause?",
+          "options": [
+            { "id": "fresh-identity", "text": "The parent passes a prop that is a freshly-created object/array/function each render, so shallow comparison fails" },
+            { "id": "memo-broken", "text": "memo() is broken and needs a custom areEqual comparator to work at all" },
+            { "id": "child-has-state", "text": "The child has its own useState, which disables memo" },
+            { "id": "parent-fast", "text": "The parent renders too fast for memo to catch up" }
+          ],
+          "answer": "fresh-identity",
+          "explanation": "An inline object literal, array, or arrow function gets a brand-new reference on every parent render. Object.is sees a different reference, so memo's shallow check fails and the child re-renders. Stabilize the identity with useMemo (values) or useCallback (functions)."
+        },
+        {
+          "id": "usememo-vs-usecallback",
+          "prompt": "What's the difference between useMemo and useCallback?",
+          "options": [
+            { "id": "value-vs-fn", "text": "useMemo caches the return value of a function; useCallback caches the function itself" },
+            { "id": "same-thing", "text": "Nothing — they're aliases for the same hook" },
+            { "id": "async-only", "text": "useCallback is only for async functions; useMemo is for sync ones" },
+            { "id": "usememo-effects", "text": "useMemo runs side effects; useCallback runs computations" }
+          ],
+          "answer": "value-vs-fn",
+          "explanation": "useMemo(fn, deps) runs fn and caches its result, recomputing only when deps change. useCallback(fn, deps) caches the function reference itself. In fact useCallback(fn, deps) is just useMemo(() => fn, deps). Reach for useMemo to skip an expensive computation or stabilize a derived object; useCallback to keep a function's identity stable for a memoized child or an effect dependency."
+        },
+        {
+          "id": "when-not-to-memo",
+          "prompt": "When is adding useMemo/useCallback/memo most likely to be premature optimization?",
+          "options": [
+            { "id": "cheap-fast", "text": "When the wrapped work is cheap and the child re-renders fast — the memo bookkeeping can cost more than it saves" },
+            { "id": "always-helps", "text": "Never — memoizing always makes an app faster" },
+            { "id": "only-lists", "text": "Only when rendering lists; everywhere else it's mandatory" },
+            { "id": "server-comp", "text": "Only in server components, which can't use hooks" }
+          ],
+          "answer": "cheap-fast",
+          "explanation": "Memoization isn't free: it allocates the cache, stores deps, and runs a comparison every render. For cheap computations or components that render quickly, that overhead can exceed the re-render you avoided — and it clutters the code. Measure first; memoize the hot paths (expensive compute, big subtrees, stable props into memo children), not everything."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-memoization",
+      "prompts": [
+        {
+          "id": "usememo-expensive",
+          "prompt": "Cache this expensive sort so it only recomputes when `items` changes.",
+          "code": "const sorted = ___(() => items.slice().sort(compare), [___]);",
+          "blanks": [
+            { "id": "b1", "accept": ["useMemo", "React.useMemo"] },
+            { "id": "b2", "accept": ["items"] }
+          ],
+          "explanation": "useMemo(factory, deps) runs the factory and caches its result, re-running only when a dep changes (here, items). Between changes, `sorted` keeps the same reference — cheap for renders and stable if you pass it to a memo child."
+        },
+        {
+          "id": "usecallback-stable",
+          "prompt": "Give this handler a stable identity so a memo() child doesn't re-render.",
+          "code": "const handleClick = ___(() => onSelect(id), [onSelect, ___]);",
+          "blanks": [
+            { "id": "b1", "accept": ["useCallback", "React.useCallback"] },
+            { "id": "b2", "accept": ["id"] }
+          ],
+          "explanation": "useCallback returns the same function reference across renders until a dep changes. Because the closure reads onSelect and id, both are deps — otherwise the callback would call a stale onSelect or the wrong id."
+        },
+        {
+          "id": "memo-wrap",
+          "prompt": "Wrap this child so it skips re-rendering when its props are shallow-equal.",
+          "code": "const Row = ___(function Row({ label }) {\n  return <li>{label}</li>;\n});",
+          "blanks": [
+            { "id": "b1", "accept": ["memo", "React.memo"] }
+          ],
+          "explanation": "memo(Component) returns a memoized component that shallow-compares its props and reuses the last render when they're unchanged. It only pays off if the props passed in are actually stable — pair it with useMemo/useCallback for object and function props."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-memoization",
+      "snippets": [
+        {
+          "id": "inline-callback-defeats-memo",
+          "code": "const Child = memo(function Child({ onClick }: { onClick: () => void }) {\n  console.log(\"Child render\");\n  return <button onClick={onClick}>child</button>;\n});\n\nfunction Parent() {\n  const [count, setCount] = useState(0);\n  return (\n    <>\n      <button onClick={() => setCount((c) => c + 1)}>{count}</button>\n      <Child onClick={() => console.log(\"clicked\")} />\n    </>\n  );\n}",
+          "question": "Every time you click the count button, does the memo'd Child re-render (does \"Child render\" log again)?",
+          "answer": "Yes — Child re-renders on every parent update",
+          "acceptable": ["yes", "yes, it re-renders", "it re-renders every time", "yes it logs again", "child render logs every click"],
+          "explanation": "The onClick arrow is created fresh on every Parent render, so it's a new reference each time. memo's shallow prop check sees onClick change and re-renders Child — the memo buys nothing. Wrap the handler in useCallback(() => console.log('clicked'), []) to give it a stable identity; then Child renders once and skips the unrelated count updates."
+        },
+        {
+          "id": "usememo-reference-stability",
+          "code": "const Child = memo(function Child({ style }: { style: object }) {\n  console.log(\"Child render\");\n  return <div style={style}>hi</div>;\n});\n\nfunction Parent() {\n  const [n, setN] = useState(0);\n  const style = useMemo(() => ({ color: \"red\" }), []);\n  return (\n    <>\n      <button onClick={() => setN(n + 1)}>{n}</button>\n      <Child style={style} />\n    </>\n  );\n}",
+          "question": "With `style` wrapped in useMemo([]), does clicking the button re-render Child?",
+          "answer": "No — Child does not re-render",
+          "acceptable": ["no", "no, it does not re-render", "child renders only once", "it stays memoized", "no it doesn't log again"],
+          "explanation": "useMemo(() => ({ color: 'red' }), []) computes the object once and returns the same reference on every subsequent render. memo's shallow check sees an unchanged style prop and skips Child, so \"Child render\" logs only on the first mount. (Remove the useMemo and the inline object would break memo just like the inline callback above.)"
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-stop-rerender",
+      "challengeSlug": "memoization-stop-rerender",
+      "mode": "in-browser"
+    }
+  ]
+}

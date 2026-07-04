@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "slug": "controlled-vs-uncontrolled",
+  "title": "Controlled vs uncontrolled inputs",
+  "skills": ["react", "forms", "controlled-components", "refs", "state"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "blocks": [
+    { "type": "reading", "id": "read-intro", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-controlled",
+      "questions": [
+        {
+          "id": "what-makes-controlled",
+          "prompt": "What makes an <input> a controlled component in React?",
+          "options": [
+            { "id": "value-and-onchange", "text": "Its value comes from state via `value`, and `onChange` writes every change back to state" },
+            { "id": "defaultvalue", "text": "It uses `defaultValue` and a ref" },
+            { "id": "usestate-anywhere", "text": "The component calls useState somewhere" },
+            { "id": "onchange-only", "text": "It has an `onChange` handler, regardless of `value`" }
+          ],
+          "answer": "value-and-onchange",
+          "explanation": "Controlled = React state owns the value. You pass the current value in with `value` and push every keystroke back to state with `onChange`. The two are a pair: `value` alone (no `onChange`) makes the field read-only and triggers a warning; `onChange` alone without `value` is just an uncontrolled input with a listener."
+        },
+        {
+          "id": "value-no-onchange",
+          "prompt": "You render `<input value={query} />` with no `onChange`. What happens when the user types?",
+          "options": [
+            { "id": "nothing-warns", "text": "Nothing changes on screen and React warns you supplied `value` without `onChange`" },
+            { "id": "updates-fine", "text": "It updates normally — `value` tracks the DOM automatically" },
+            { "id": "updates-not-state", "text": "The input updates but `query` stays stale" },
+            { "id": "throws", "text": "React throws a runtime error" }
+          ],
+          "answer": "nothing-warns",
+          "explanation": "With `value` set to a state variable that never changes, React re-renders the input back to that fixed value on every keystroke, so the field appears frozen (effectively read-only). React warns that you provided `value` without `onChange` (unless you meant `readOnly`). Add `onChange={(e) => setQuery(e.target.value)}` to make it controlled."
+        },
+        {
+          "id": "when-uncontrolled",
+          "prompt": "When is an uncontrolled input (`defaultValue` + a ref) a reasonable choice?",
+          "options": [
+            { "id": "final-value-only", "text": "When you only need the value at a single moment (e.g. on submit) and don't need to react to each keystroke" },
+            { "id": "always-simpler", "text": "Always — controlled inputs are legacy" },
+            { "id": "live-validation", "text": "When you want to validate or filter as the user types" },
+            { "id": "never", "text": "Never — every input should be controlled" }
+          ],
+          "answer": "final-value-only",
+          "explanation": "Uncontrolled inputs let the DOM own the value; you read it from a ref on demand. That's a fine fit when you only care about the final value (form submit), for file inputs (which are always uncontrolled), or to avoid a re-render per keystroke. If you need to react as the user types — live filtering, validation, enabling a button — go controlled."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-controlled",
+      "prompts": [
+        {
+          "id": "wire-controlled",
+          "prompt": "Wire up a controlled text input bound to the `query` state.",
+          "code": "<input value={query} ___={(e) => setQuery(e.target.___)} />",
+          "blanks": [
+            { "id": "handler", "accept": ["onChange"] },
+            { "id": "prop", "accept": ["value"] }
+          ],
+          "explanation": "A controlled input pairs `value={query}` with `onChange`, and the new text lives at `e.target.value`. Together they keep React state as the single source of truth for the field."
+        },
+        {
+          "id": "keep-value-defined",
+          "prompt": "Seed the state so `value` is never undefined, avoiding the uncontrolled-to-controlled warning when `user.name` is missing.",
+          "code": "const [name, setName] = useState(user.name ___ \"\");",
+          "blanks": [
+            { "id": "coalesce", "accept": ["??", "||"] }
+          ],
+          "explanation": "If `user.name` is `undefined`, `value` starts undefined (uncontrolled) and becomes a string later (controlled) — React warns. Coalescing to `\"\"` with `??` (or `||`) keeps `value` a defined string from the first render, so the input is controlled its whole life."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-warning",
+      "snippets": [
+        {
+          "id": "undefined-flip",
+          "code": "function NameField({ user }) {\n  // user starts as {} then updates to { name: \"Ada\" } after a fetch\n  const [name, setName] = useState(user.name);\n  return <input value={name} onChange={(e) => setName(e.target.value)} />;\n}",
+          "question": "What warning does React log when `user.name` goes from undefined to a string?",
+          "answer": "A component is changing an uncontrolled input to be controlled.",
+          "acceptable": [
+            "changing an uncontrolled input to be controlled",
+            "uncontrolled to controlled",
+            "uncontrolled input to be controlled"
+          ],
+          "explanation": "On the first render `user.name` is undefined, so `value={undefined}` makes the input uncontrolled. Once the data loads, `value` becomes a string and the input flips to controlled — React warns: \"A component is changing an uncontrolled input to be controlled.\" Fix it by keeping `value` always defined: `useState(user.name ?? \"\")`."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-controlled-input",
+      "challengeSlug": "controlled-input-fix",
+      "mode": "in-browser"
+    }
+  ]
+}

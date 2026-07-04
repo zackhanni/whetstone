@@ -1,0 +1,24 @@
+---
+id: mutable-ref
+title: A ref is a box whose .current survives re-renders
+---
+
+`useRef(initial)` gives you a plain object `{ current: initial }`. React keeps the
+*same* object across every render, so `ref.current` is a stable place to stash a
+value — and **changing it does not trigger a re-render.**
+
+```jsx
+function Timer() {
+  const renders = useRef(0);
+  renders.current += 1; // mutate freely — no re-render
+  return <p>This component has rendered {renders.current} times</p>;
+}
+```
+
+Contrast with a normal `let count = 0` inside the component: that resets to `0` on
+every render. `ref.current` persists. Contrast with `useState`: state also persists,
+but writing to it *schedules a render*. A ref writes silently.
+
+Reach for a ref when you need to remember something between renders but the UI
+doesn't need to react to it — a timer id, a previous value, a "did this already run"
+flag.
