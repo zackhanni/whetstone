@@ -159,3 +159,67 @@ export async function listUnits(): Promise<{ track: string; unit: string }[]> {
   );
   return nested.flat();
 }
+
+export type TrackSummary = {
+  slug: string;
+  title: string;
+  description: string;
+  skills: string[];
+  unitCount: number;
+};
+
+/** All tracks with light metadata, for the home index. */
+export async function listTracks(): Promise<TrackSummary[]> {
+  const tracksDir = path.join(ROOT, "content", "tracks");
+  let slugs: string[] = [];
+  try {
+    slugs = await fs.readdir(tracksDir);
+  } catch {
+    return [];
+  }
+  const tracks = await Promise.all(
+    slugs.map(async (slug) => {
+      try {
+        const t = TrackSchema.parse(await readJson(path.join(tracksDir, slug, "track.json")));
+        return {
+          slug: t.slug,
+          title: t.title,
+          description: t.description,
+          skills: t.skills,
+          unitCount: t.units.length,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return tracks.filter((t): t is TrackSummary => t !== null);
+}
+
+export type UnitSummary = {
+  slug: string;
+  title: string;
+  difficulty: string;
+  estimatedMinutes: number;
+  skills: string[];
+};
+export type TrackDetail = { slug: string; title: string; description: string; units: UnitSummary[] };
+
+/** A track plus its units' metadata, for the track index page. */
+export const loadTrack = cache(async (trackSlug: string): Promise<TrackDetail> => {
+  const trackDir = resolveWithin(path.join(ROOT, "content", "tracks"), trackSlug);
+  const track = TrackSchema.parse(await readJson(path.join(trackDir, "track.json")));
+  const units = await Promise.all(
+    track.units.map(async (us) => {
+      const u = UnitSchema.parse(await readJson(path.join(trackDir, "units", us, "unit.json")));
+      return {
+        slug: u.slug,
+        title: u.title,
+        difficulty: u.difficulty,
+        estimatedMinutes: u.estimatedMinutes,
+        skills: u.skills,
+      };
+    }),
+  );
+  return { slug: track.slug, title: track.title, description: track.description, units };
+});

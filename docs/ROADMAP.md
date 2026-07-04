@@ -17,7 +17,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 
 ### Phase 1 — Solo, deployed
 - ⬜ Finish the React Hooks track (useState/`prev`, useRef, memoization, controlled-vs-uncontrolled)
-- ⬜ Track / unit index + navigation (home → track → unit)
+- ✅ Track / unit index + navigation (home → track → unit)
 - ⬜ Import the `software-engineer-job-test-folder` archive as tagged challenges
 - ⬜ Deploy to Vercel + PWA (mobile "read on the go")
 - ⬜ Drill polish — per-unit time config, results history

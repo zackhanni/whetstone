@@ -20,8 +20,11 @@ export default async function UnitPage({
   return (
     <main>
       <div className="mx-auto max-w-5xl px-4 pt-6">
-        <Link href="/" className="text-sm text-slate-500 hover:text-slate-300">
-          ← Whetstone
+        <Link
+          href={`/learn/${bundle.track.slug}`}
+          className="text-sm text-slate-500 hover:text-slate-300"
+        >
+          ← {bundle.track.title}
         </Link>
       </div>
       <UnitView bundle={bundle} />
