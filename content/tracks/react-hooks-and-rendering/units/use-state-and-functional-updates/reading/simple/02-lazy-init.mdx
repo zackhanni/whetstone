@@ -1,0 +1,16 @@
+---
+id: lazy-initial-state
+title: Lazy initial state for expensive setup
+---
+
+`useState(initialValue)` evaluates `initialValue` on *every* render — even though
+React only uses it on the first. If that value is expensive to compute, pass a
+function instead and React will call it only once.
+
+```jsx
+// ❌ readFromStorage() runs on every render
+const [state, setState] = useState(readFromStorage());
+
+// ✅ runs only on the first render
+const [state, setState] = useState(() => readFromStorage());
+```

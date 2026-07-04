@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "slug": "use-state-and-functional-updates",
+  "title": "useState & functional updates",
+  "skills": ["react", "hooks", "useState", "state"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "blocks": [
+    { "type": "reading", "id": "read-intro", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-state",
+      "questions": [
+        {
+          "id": "three-updates",
+          "prompt": "count starts at 0. In one click handler you call setCount(count + 1) three times. What is count on the next render?",
+          "options": [
+            { "id": "one", "text": "1" },
+            { "id": "three", "text": "3" },
+            { "id": "zero", "text": "0" },
+            { "id": "error", "text": "It throws — you can't call setState twice" }
+          ],
+          "answer": "one",
+          "explanation": "During a render, `count` is a fixed snapshot (0). All three calls compute 0 + 1 = 1, and React batches them, so the result is 1. Use the functional updater setCount(c => c + 1) — each call receives the latest value — to get 3."
+        },
+        {
+          "id": "when-functional",
+          "prompt": "When should you use the functional updater form, setX(prev => ...)?",
+          "options": [
+            { "id": "depends-prev", "text": "When the next value is computed from the previous value" },
+            { "id": "always", "text": "Always — the direct form setX(value) is deprecated" },
+            { "id": "never", "text": "Never — it's only for class components" },
+            { "id": "effect-only", "text": "Only inside useEffect" }
+          ],
+          "answer": "depends-prev",
+          "explanation": "Reach for setX(prev => ...) whenever the new state depends on the old — multiple updates in one handler, updates inside async callbacks/closures, or anywhere the closed-over value might be stale. If you're setting a fresh value that doesn't read the old one, the direct form is fine."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-updater",
+      "prompts": [
+        {
+          "id": "functional-updater",
+          "prompt": "Rewrite this increment so three calls in a row reliably add 3, not 1.",
+          "code": "setCount(___ => ___ + 1);",
+          "blanks": [
+            { "id": "b1", "accept": ["c", "prev", "n", "count", "x"] },
+            { "id": "b2", "accept": ["c", "prev", "n", "count", "x"] }
+          ],
+          "explanation": "The functional updater setCount(c => c + 1) hands you React's most up-to-date value instead of the render-time snapshot, so stacked updates compound correctly. The parameter name is yours to choose (c, prev, n…)."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-state",
+      "snippets": [
+        {
+          "id": "direct-double",
+          "code": "function Counter() {\n  const [count, setCount] = useState(0);\n  function bump() {\n    setCount(count + 1);\n    setCount(count + 1);\n  }\n  return <button onClick={bump}>{count}</button>;\n}",
+          "question": "After clicking the button once, what does it show?",
+          "answer": "1",
+          "acceptable": ["shows 1", "count is 1", "just 1"],
+          "explanation": "Both calls read the same snapshot count = 0, so both set 1. React batches them into one re-render → 1, not 2."
+        },
+        {
+          "id": "functional-double",
+          "code": "function Counter() {\n  const [count, setCount] = useState(0);\n  function bump() {\n    setCount(c => c + 1);\n    setCount(c => c + 1);\n  }\n  return <button onClick={bump}>{count}</button>;\n}",
+          "question": "After clicking once, what does it show now?",
+          "answer": "2",
+          "acceptable": ["shows 2", "count is 2", "just 2"],
+          "explanation": "Each updater receives the result of the previous one: 0 → 1 → 2. Functional updates queue and compound, so you get 2."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-fix-counter",
+      "challengeSlug": "use-state-fix-counter",
+      "mode": "in-browser"
+    }
+  ]
+}

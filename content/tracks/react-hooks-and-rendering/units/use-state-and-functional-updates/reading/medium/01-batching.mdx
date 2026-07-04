@@ -1,0 +1,23 @@
+---
+id: batching
+title: State is a snapshot — updates batch
+---
+
+Inside a single event handler, `count` is a fixed snapshot for that render. Calling
+the setter doesn't change the variable; it schedules a re-render.
+
+```jsx
+function handleClick() {
+  setCount(count + 1); // count is 0 here...
+  setCount(count + 1); // ...and still 0 here
+}
+// → re-renders once with count = 1, not 2
+```
+
+React batches these updates. To make them compound, hand each one the latest value
+with the functional updater:
+
+```jsx
+setCount((c) => c + 1);
+setCount((c) => c + 1); // → 2
+```
