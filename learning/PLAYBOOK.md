@@ -83,7 +83,7 @@ the folder load into the sandbox as read-only support files.
 ## Rules the system enforces (don't fight them)
 
 Rule 1 is checked by `zod` (`learning/schema.ts`). **Rule 2** (each reading tier has ≥1
-example) is checked by **`scripts/validate.ts`** (`pnpm run validate`), which also re-runs
+example) is checked by **`scripts/validate.ts`** (`pnpm validate`), which also re-runs
 schema validation and the challenge folder/entry contract across every track/unit.
 **Rule 3** (difficulty escalates down a unit) and **Rule 4** (starter fails / solution
 passes the challenge tests) are _not_ auto-checked yet — rule 3 is an authoring guideline;
@@ -109,10 +109,12 @@ is a common habit, show the wrong way _and_ the right way side by side.
 
 ## Authoring flow
 
-Use `/new-lesson`. It scaffolds against the schema, generates the blocks, authors the
-challenge, then **validates with zod and runs the challenge tests against the reference
-solution** before anything counts as done. If the skill can't express what a lesson needs,
-that's a signal to improve the skill or the schema — not to hand-author around it.
+Use `/new-lesson`. It scaffolds against the schema, generates the blocks, and authors the
+challenge, then gates on **`pnpm validate`** (zod schema + reading tiers + challenge
+contract) and **`pnpm build`**. The challenge's own tests are graded **in the browser**
+(Sandpack) and must be verified there — starter fails, solution passes — since there's no
+headless challenge-test run yet (see Rule 4). If the skill can't express what a lesson
+needs, that's a signal to improve the skill or the schema — not to hand-author around it.
 
 ## The self-improvement loop (autonomous + audit log)
 
