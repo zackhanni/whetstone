@@ -5,6 +5,7 @@ import type { UnitBundle, Tier, ReadingExample } from "@/lib/content";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { WhetstoneButton } from "./whetstone-button";
 import { loadAttempts, saveAttempt, bestOf, type DrillAttempt } from "@/lib/drill-history";
+import { recordProgress } from "@/lib/progress";
 import { ReadingBlock } from "./reading-block";
 import { QuizBlock } from "./quiz-block";
 import { FillBlankBlock } from "./fill-blank-block";
@@ -86,6 +87,11 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
     (priorBest == null ||
       current.score > priorBest.score ||
       (current.score === priorBest.score && current.timeSec < priorBest.timeSec));
+
+  // Persist per-unit progress (visited on mount, answered as they go) for the dashboard.
+  useEffect(() => {
+    recordProgress(drillId, answeredCount, total);
+  }, [drillId, answeredCount, total]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">

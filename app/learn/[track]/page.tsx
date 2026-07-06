@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadTrack, listTracks } from "@/lib/content";
+import { UnitProgress } from "@/components/unit-progress";
 
 export const dynamicParams = false;
 
@@ -42,6 +43,9 @@ export default async function TrackPage({ params }: { params: Promise<{ track: s
                 <span className="shrink-0 text-xs text-slate-500">
                   {DIFFICULTY[u.difficulty] ?? u.difficulty} · ~{u.estimatedMinutes} min
                 </span>
+              </div>
+              <div className="mt-2">
+                <UnitProgress unitId={`${detail.slug}/${u.slug}`} />
               </div>
             </Link>
           </li>
