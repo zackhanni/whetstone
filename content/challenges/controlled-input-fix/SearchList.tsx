@@ -15,6 +15,7 @@ export function SearchList() {
   return (
     <div>
       <input
+        aria-label="Filter fruit"
         placeholder="Filter fruit…"
         value={query}
         data-testid="search"

@@ -12,6 +12,7 @@ export function SearchList() {
   return (
     <div>
       <input
+        aria-label="Filter fruit"
         placeholder="Filter fruit…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
