@@ -18,7 +18,11 @@ export default async function UnitPage({
   const { track, unit } = await params;
   const [bundle, trackDetail] = await Promise.all([
     loadUnit(track, unit).catch(() => notFound()),
-    loadTrack(track).catch(() => null),
+    loadTrack(track).catch((e) => {
+      // Degrade gracefully (no footer) but surface a malformed sibling unit instead of hiding it.
+      console.error(`Failed to load track "${track}" for the lesson footer:`, e);
+      return null;
+    }),
   ]);
 
   const units = trackDetail?.units ?? [];
