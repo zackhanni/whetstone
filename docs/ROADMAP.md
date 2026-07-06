@@ -16,8 +16,8 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ✅ Run `/new-lesson` end-to-end to author a 2nd unit (`use-state-and-functional-updates`) — loop proven; friction fed back into SKILL/PLAYBOOK
 
 ### Phase 1 — Solo, deployed
-- ⬜ Finish the React Hooks track (useState/`prev`, useRef, memoization, controlled-vs-uncontrolled)
-- ⬜ Track / unit index + navigation (home → track → unit)
+- ✅ Finish the React Hooks track (useState, useEffect, useRef, memoization, controlled-vs-uncontrolled)
+- ✅ Track / unit index + navigation (home → track → unit)
 - ⬜ Import the `software-engineer-job-test-folder` archive as tagged challenges
 - ⬜ Deploy to Vercel + PWA (mobile "read on the go")
 - ⬜ Drill polish — per-unit time config, results history
@@ -30,7 +30,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ⬜ Self-improvement loop wired to real feedback (`/improve-lesson`)
 
 ## Content tracks (the learning backlog)
-- 🔨 **React Hooks & Rendering** — useEffect ✅, useState/`prev` ✅; useRef, memoization, controlled-vs-uncontrolled ⬜
+- ✅ **React Hooks & Rendering** — 5 units: useState, useEffect, useRef, memoization, controlled-vs-uncontrolled
 - ⬜ **Data Fetching** — TanStack Query (invalidations, query keys), TanStack Router
 - ⬜ **Next.js & the Network** — server components vs actions vs API, cache-control/response headers, gzip, caching
 - ⬜ **Backend / NestJS** — contracts, controllers, modules, providers; Redis; microservices

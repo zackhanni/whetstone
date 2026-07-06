@@ -1,0 +1,33 @@
+---
+id: ref-vs-state
+title: Ref vs state — does this change need to re-render?
+---
+
+State and refs both persist across renders. The one question that decides between
+them: **when this value changes, should the screen update?**
+
+- **Yes → `useState`.** The value is shown, or drives what's shown. Writing it
+  re-renders.
+- **No → `useRef`.** The value is bookkeeping the render doesn't read. Writing it is
+  silent.
+
+```jsx
+function Stopwatch() {
+  const [elapsed, setElapsed] = useState(0); // shown → state
+  const intervalId = useRef(null);           // plumbing → ref
+
+  function start() {
+    intervalId.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+  }
+  function stop() {
+    clearInterval(intervalId.current); // read it back later, no render needed
+  }
+
+  return <button onClick={start}>{elapsed}s</button>;
+}
+```
+
+The elapsed time is on screen, so it's state. The interval id is only there so
+`stop()` can clear it — nothing renders it — so it's a ref. Putting the id in state
+would cause a pointless re-render; putting `elapsed` in a ref would freeze the
+display, since mutating `.current` never tells React to repaint.

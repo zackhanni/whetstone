@@ -1,0 +1,40 @@
+---
+id: uncontrolled-ref
+title: An uncontrolled input — defaultValue + a ref, DOM owns the value
+---
+
+An **uncontrolled** input lets the DOM keep the value. You seed the initial value
+with `defaultValue` (not `value`) and read the current value from a ref when you
+need it — usually on submit:
+
+```jsx
+function ProfileForm() {
+  const nameRef = useRef(null);
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    console.log(nameRef.current.value); // read on demand
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input defaultValue="Ada" ref={nameRef} />
+      <button>Save</button>
+    </form>
+  );
+}
+```
+
+Because there's no state update per keystroke, the component doesn't re-render as
+the user types. That's fine — and even preferable — when you only care about the
+value at a single moment (form submit) and don't need to react to each change.
+
+When to reach for uncontrolled:
+
+- You just need the final value on submit.
+- You're integrating a non-React widget or a file input (`<input type="file">` is
+  always uncontrolled — its value can't be set programmatically).
+- Per-keystroke re-renders would be wasteful and you gain nothing from them.
+
+Note: `defaultValue` only seeds the field on the first render. Changing it later
+won't update what the user sees — the DOM is in charge now.

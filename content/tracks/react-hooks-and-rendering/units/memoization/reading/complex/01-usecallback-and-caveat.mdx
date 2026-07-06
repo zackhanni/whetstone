@@ -1,0 +1,54 @@
+---
+id: usecallback-and-caveat
+title: useCallback keeps a handler stable — and the "don't memo everything" caveat
+---
+
+A `memo` child that takes a function prop re-renders on every parent update if the
+function is defined inline, because the arrow gets a new identity each render.
+`useCallback(fn, deps)` returns the **same function reference** until a dep changes,
+so the child's shallow prop check passes and it skips the re-render.
+
+```jsx
+const Child = memo(function Child({ onSave }) {
+  console.log("Child render");
+  return <button onClick={onSave}>Save</button>;
+});
+
+function Form() {
+  const [draft, setDraft] = useState("");
+  const [count, setCount] = useState(0);
+
+  // ✅ stable across renders; recreated only if `draft` changes
+  const onSave = useCallback(() => api.save(draft), [draft]);
+
+  return (
+    <>
+      <button onClick={() => setCount((c) => c + 1)}>{count}</button>
+      <Child onSave={onSave} /> {/* skips re-render when only `count` changes */}
+    </>
+  );
+}
+```
+
+Bumping `count` re-renders `Form`, but `onSave` keeps its identity, so `memo` skips
+`Child`. Note the deps: because the closure reads `draft`, it must be a dep —
+otherwise `onSave` would save a **stale** draft.
+
+`useCallback(fn, deps)` is literally `useMemo(() => fn, deps)`: one caches a
+function, the other caches a value.
+
+## The caveat: don't memo everything
+
+Memoization isn't free. Each `useMemo`/`useCallback` allocates a cache, stores its
+deps, and runs a comparison on every render; `memo` runs a shallow prop scan. For
+cheap work and fast components, that overhead can **cost more than the re-render you
+avoided** — and it clutters the code with deps you now have to keep correct.
+
+Memoize deliberately:
+
+- Wrap a child in `memo` **and** stabilize its object/function props (otherwise
+  `memo` is dead weight).
+- Use `useMemo` for genuinely expensive computations or references that flow into a
+  `memo` child or an effect's deps.
+- Otherwise, leave it out. Re-rendering is usually cheap; profile first, then
+  memoize the hot path — not everything.

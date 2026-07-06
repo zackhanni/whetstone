@@ -1,0 +1,24 @@
+---
+id: dom-ref
+title: Attach a ref to a DOM node to focus or measure it
+---
+
+The other job of `useRef` is reaching a real DOM element. Pass the ref to a JSX
+element's `ref` attribute; after React commits, `ref.current` is that node.
+
+```jsx
+function SearchBox() {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current.focus(); // the node exists after mount
+  }, []);
+
+  return <input ref={inputRef} placeholder="Search…" />;
+}
+```
+
+Before the first commit `inputRef.current` is `null`, which is why DOM work goes in
+an effect (or an event handler) — never in the render body. Use this for imperative
+things React has no declarative prop for: `.focus()`, `.scrollIntoView()`,
+`.getBoundingClientRect()`, playing a `<video>`.
