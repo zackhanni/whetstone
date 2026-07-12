@@ -32,9 +32,13 @@ export default async function Home() {
 
       <section className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tracks</h2>
-        {details.length === 0 ? (
+        {slugs.length === 0 ? (
           <p className="rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400 ring-1 ring-slate-800">
             No tracks yet — check back soon.
+          </p>
+        ) : details.length === 0 ? (
+          <p className="rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400 ring-1 ring-slate-800">
+            Tracks are temporarily unavailable — please try again later.
           </p>
         ) : (
           details.map((d) => (

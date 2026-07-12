@@ -53,8 +53,7 @@ role — it runs the same merge (`nextEntry`) and lets `persist` own storage, so
 `recordProgress` collapses into the middleware.
 
 1. **Add dep:** `pnpm add zustand`.
-2. **Create the store** `lib/stores/progress-store.ts` (illustrative — `migrateProgress` is the
-   extracted `readMap()` logic):
+2. **Create the store** `lib/stores/progress-store.ts` (illustrative):
 
    ```ts
    import { create } from "zustand";
@@ -81,11 +80,13 @@ role — it runs the same merge (`nextEntry`) and lets `persist` own storage, so
        {
          name: "whetstone:progress",
          version: 1, // keep in sync with the current VERSION
-         migrate: migrateProgress, // extract readMap()'s legacy/bare-map handling into this fn
-         // Use the setter, not `state.hasHydrated = true`: a direct mutation won't notify
-         // subscribers, so the gate would never flip.
-         onRehydrateStorage: () => (state) => {
-           state?.setHasHydrated(true);
+         migrate: migrateBlob, // versioned-blob upgrades ONLY — see the notes below
+         // Return a post-hydration callback and flip the gate UNCONDITIONALLY: it fires on error
+         // too, and `state` may be undefined, so leaving it false would strand the UI. Go through
+         // the setter (never `state.hasHydrated = true`, which wouldn't notify subscribers).
+         onRehydrateStorage: () => (state, error) => {
+           if (error) console.error("progress rehydrate failed", error);
+           useProgressStore.getState().setHasHydrated(true);
          },
        },
      ),
@@ -95,8 +96,14 @@ role — it runs the same merge (`nextEntry`) and lets `persist` own storage, so
    - Keep the pure helpers (`nextEntry`, `clampCount`, `isValidProgress`, `sanitizeMap`) — move
      them next to the store; they carry the content-change robustness (clamp `answered` to
      current `total`, recompute `completed`) and must not be lost in the port.
-   - Port `readMap()`'s legacy per-key + pre-version handling into `migrateProgress` (referenced
-     by `persist`'s `migrate`).
+   - **`persist.migrate` upgrades the versioned blob only.** It runs solely when a persisted
+     `whetstone:progress` blob exists _and_ its `version` differs — it never sees the legacy
+     `whetstone:progress:<id>` keys, and doesn't run at all for a new/empty store. So point
+     `migrateBlob` at future `v1 → v2 …` transforms, not legacy discovery.
+   - **Keep the legacy / bare-map migration as a separate one-time bootstrap** — the job
+     `migrateLegacy()` does today (scan the old per-unit keys, fold them into the blob, clean
+     up). Run it once at/just before store creation, since `persist.migrate` can't reach those
+     keys.
 3. **Replace the gate:** components read `const hasHydrated = useProgressStore(s => s.hasHydrated)`
    in place of `ready`, and select the slice they need (`s.units[id]`, `s.record`) rather than
    consuming the whole context.
