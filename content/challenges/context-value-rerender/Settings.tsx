@@ -20,8 +20,8 @@ export function Settings() {
     <ThemeContext.Provider value={value}>
       <div>
         <p data-testid="ticks">ticks: {ticks}</p>
-        <button onClick={() => setTicks((t) => t + 1)}>Tick</button>
-        <button onClick={toggleTheme}>Toggle theme</button>
+        <button type="button" onClick={() => setTicks((t) => t + 1)}>Tick</button>
+        <button type="button" onClick={toggleTheme}>Toggle theme</button>
         <ThemeLabel />
       </div>
     </ThemeContext.Provider>

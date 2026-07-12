@@ -173,7 +173,10 @@ export async function listTrackSlugs(): Promise<string[]> {
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
       .sort();
-  } catch {
+  } catch (e) {
+    // Only a missing tracks/ dir means "no tracks"; surface permission/transient errors so a
+    // broken build fails loudly instead of silently emptying the catalog (matches loadReadingTiers).
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     return [];
   }
 }
