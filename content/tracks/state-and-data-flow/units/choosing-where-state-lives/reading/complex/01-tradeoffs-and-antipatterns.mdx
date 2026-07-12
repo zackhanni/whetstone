@@ -1,0 +1,51 @@
+---
+id: tradeoffs-and-antipatterns
+title: The trade-offs that decide it — and the anti-patterns
+---
+
+The ladder gets you 90% there. The last 10% is knowing the sharp edges.
+
+**Context's re-render cost is real and non-obvious.** A consumer re-renders when the context
+`value` changes _by identity_ — even if it only reads one field, even if it's wrapped in
+`memo`. Two consequences:
+
+- An inline `value={{ user, logout }}` creates a new object every provider render → all
+  consumers re-render every time. Memoize it: `useMemo(() => ({ user, logout }), [user, logout])`
+  (and stabilize the functions with `useCallback`). This is the exact bug in this unit's
+  challenge.
+- For a value that _does_ change often, memoizing won't save you — the identity legitimately
+  changes. The fixes are **splitting the context** (a stable "dispatch" context separate from
+  the changing "state" context, so components that only dispatch don't re-render) or moving to
+  a **store with selectors**.
+
+<!--more-->
+
+**Don't put server data in a client store.** It's the most common architecture mistake. Server
+data has a lifecycle (fetch, cache, stale, refetch, invalidate) that a client store doesn't
+model. You'll reimplement it and get the edge cases wrong — two components fetching the same
+thing, stale data after a mutation, no retry. Let a server-state library own remote data; keep
+the client store for genuine client state (UI mode, selections, drafts).
+
+**SSR/hydration is a gate, not a detail.** In Next.js, anything backed by `localStorage`
+doesn't exist on the server. If you read it during render, server HTML ≠ client HTML →
+hydration mismatch. Whether you use Context or Zustand, you need a "has it hydrated yet?" gate
+before showing persisted state. Zustand's `persist` middleware doesn't remove this — it gives
+you `hasHydrated()` to implement the same gate.
+
+**Persistence and cross-tab are storage concerns, not Context concerns.** If state must
+survive reload (progress, settings) or sync across tabs, that's a persistence layer
+(localStorage now, a DB later) — orthogonal to how you _transport_ it in the tree.
+
+### Case study: Whetstone's own progress state
+
+This app's local-first progress is a live example. We needed one map of progress, read by many
+dashboard components, persisted to `localStorage`, and correct under SSR. We chose **Context
+(loaded once at the root) over a client store** — deliberately — because at _one_ persisted
+store the win from selectors is marginal, and Zustand wouldn't remove the hydration gate we'd
+have to write anyway. The plan is to switch to Zustand the moment a _second_ persisted store
+appears (settings, streaks), where selector subscriptions and a shared
+`persist({ version, migrate })` start paying for themselves. The decision and its trigger are
+written down in `docs/zustand-migration.md`.
+
+The lesson: **there's rarely a single right container — there's the right one for your current
+scale, and a known trigger for when to graduate.**

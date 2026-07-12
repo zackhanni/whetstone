@@ -1,0 +1,25 @@
+---
+id: derive-and-colocate
+title: Before you store it, ask if you even need to
+---
+
+Two questions kill most unnecessary state.
+
+**Can I derive it?** If a value can be computed from existing state/props during render, don't
+store it — compute it.
+
+```jsx
+// ❌ redundant state that can drift out of sync
+const [total, setTotal] = useState(0);
+useEffect(() => setTotal(items.reduce((n, i) => n + i.price, 0)), [items]);
+
+// ✅ derive during render — always correct, no extra state
+const total = items.reduce((n, i) => n + i.price, 0);
+```
+
+**Who actually needs it?** Keep state as close to where it's used as possible (colocation). A
+search box's text belongs _in the search box_, not in a global store — until something far
+away genuinely needs it. Premature globalization is a tax you pay forever: every unrelated
+change touches the same store, and nothing can be reasoned about in isolation.
+
+The cheapest state is the state you don't keep.

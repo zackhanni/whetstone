@@ -22,6 +22,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ✅ Deploy to Vercel (PWA deferred — works in mobile browser as-is)
 - 🔨 Drill polish — results history ✅ (best/recent attempts); per-unit time config ⬜
 - ✅ Local-first progress tracking — dashboard, per-track/unit bars, "continue where you left off"
+- ⬜ **Swipe feed** — a third study mode (alongside Browse + Drill) for micro-learning. Design note in "Planned features" below; build later.
 
 ### Phase 2 — Multi-user
 - ⬜ Supabase auth
@@ -32,6 +33,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 
 ## Content tracks (the learning backlog)
 - ✅ **React Hooks & Rendering** — 5 units: useState, useEffect, useRef, memoization, controlled-vs-uncontrolled
+- ✅ **State & Data Flow** — 1 unit: choosing where state lives (local → lift → Context → client store → server state → URL)
 - ⬜ **Data Fetching** — TanStack Query (invalidations, query keys), TanStack Router
 - ⬜ **Next.js & the Network** — server components vs actions vs API, cache-control/response headers, gzip, caching
 - ⬜ **Backend / NestJS** — contracts, controllers, modules, providers; Redis; microservices
@@ -48,6 +50,34 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ⬜ Pick-N / difficulty-mix quizzes (schema already supports the shape)
 - ⬜ More "Go deeper" reading tiers across units
 - ⬜ CI — run `pnpm check` + build on PRs
+
+## Planned features (design later)
+
+### Swipe feed — "Reels/TikTok"-style quick practice
+
+**Idea:** a vertical, one-question-at-a-time feed for when you have a few minutes and want quick
+reps. Swipe up → a random question; answer it inline → immediate result + explanation; swipe up
+again → the next one. Low-commitment micro-learning that complements the two existing modes
+(Browse = read untimed, Drill = timed test). Not building now — capturing the plan.
+
+**What it reuses:** the existing assessment renderers (`quiz`, `fill-blank`, `predict-output`)
+in a single-item, "reveal after answer" mode. Readings and challenges are excluded from the feed
+(too long for a card).
+
+**Design questions to resolve before building:**
+- **Sampling.** Start with uniform random across all assessment items; evolve toward weighted /
+  spaced-repetition (favor unseen, previously-wrong, or low-rated items). Depends on the Phase-2
+  ratings + richer progress data.
+- **Item index.** Needs a flat, cross-track index of every assessment item (a new content query
+  over tracks → units → blocks), tagged by skill so the feed can be filtered by track/skill.
+- **Progress semantics.** Feed answers probably shouldn't count toward *unit completion* (it's
+  cross-unit) — track them as their own thing: a "practiced N today" count / streak. Pairs with a
+  future streaks/XP store (and is a likely trigger for the Context → Zustand switch).
+- **Session shape.** Endless scroll vs a capped "10-card session" with a little summary at the end.
+- **Interaction.** Mobile-first vertical snap-scroll; arrow-key (↑/↓) navigation on desktop; no
+  timer (each card self-grades on answer).
+- **Persistence.** Per-item "seen/answered/last-result" state — localStorage first, Supabase later
+  (same local-first → cloud path as progress).
 
 ## Conventions (quick reference)
 - Content in `content/`; schema `learning/schema.ts`; pedagogy `learning/PLAYBOOK.md`.
