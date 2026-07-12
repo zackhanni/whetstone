@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { loadTrack, listTracks } from "@/lib/content";
+import { loadTrack, listTrackSlugs } from "@/lib/content";
 import { UnitProgress } from "@/components/unit-progress";
 
 export const dynamicParams = false;
 
 export async function generateStaticParams() {
-  return (await listTracks()).map((t) => ({ track: t.slug }));
+  return (await listTrackSlugs()).map((track) => ({ track }));
 }
 
 const DIFFICULTY: Record<string, string> = {

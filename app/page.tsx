@@ -1,11 +1,15 @@
 import Link from "next/link";
-import { listTracks, loadTrack } from "@/lib/content";
+import { listTrackSlugs, loadTrack, type TrackDetail } from "@/lib/content";
 import { ContinueLearning, type UnitRef } from "@/components/continue-learning";
 import { TrackProgress } from "@/components/track-progress";
 
 export default async function Home() {
-  const tracks = await listTracks();
-  const details = await Promise.all(tracks.map((t) => loadTrack(t.slug)));
+  const slugs = await listTrackSlugs();
+  // Skip a track whose content fails to load rather than failing the whole page (parity with
+  // the old listTracks() filtering); each track.json is parsed once, via loadTrack.
+  const details = (await Promise.all(slugs.map((s) => loadTrack(s).catch(() => null)))).filter(
+    (d): d is TrackDetail => d !== null,
+  );
 
   const allUnits: UnitRef[] = details.flatMap((d) =>
     d.units.map((u) => ({

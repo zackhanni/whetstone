@@ -46,8 +46,16 @@ Until then: stay on Context. Don't switch purely for aesthetics.
 The current API was built to make this a swap, not a rewrite. `ProgressMap`, `UnitProgress`,
 and the `record(id, answered, total)` signature stay identical; only the *container* changes.
 
+Two functions are in play, and the port keeps them distinct: the **provider-facing**
+`record(id, answered, total)` that components call, and the **storage helpers** (`recordProgress`
+/ `nextEntry`) that do the merge + persist. The store's `record` action below plays the provider
+role — it runs the same merge (`nextEntry`) and lets `persist` own storage, so the standalone
+`recordProgress` collapses into the middleware.
+
 1. **Add dep:** `pnpm add zustand`.
-2. **Create the store** `lib/stores/progress-store.ts`:
+2. **Create the store** `lib/stores/progress-store.ts` (illustrative — `migrateProgress` is the
+   extracted `readMap()` logic):
+
    ```ts
    import { create } from "zustand";
    import { persist } from "zustand/middleware";
@@ -55,6 +63,7 @@ and the `record(id, answered, total)` signature stay identical; only the *contai
    type ProgressState = {
      units: ProgressMap;
      hasHydrated: boolean;
+     setHasHydrated: (v: boolean) => void;
      record: (id: string, answered: number, total: number) => void;
    };
 
@@ -63,22 +72,31 @@ and the `record(id, answered, total)` signature stay identical; only the *contai
        (set, get) => ({
          units: {},
          hasHydrated: false,
+         setHasHydrated: (v) => set({ hasHydrated: v }),
          record: (id, answered, total) =>
-           set({ units: { ...get().units, [id]: nextEntry(get().units[id], answered, total, Date.now()) } }),
+           set({
+             units: { ...get().units, [id]: nextEntry(get().units[id], answered, total, Date.now()) },
+           }),
        }),
        {
          name: "whetstone:progress",
-         version: 1,                    // keep in sync with the current VERSION
-         migrate: (persisted, from) => /* port readMap()'s legacy/bare-map handling here */,
-         onRehydrateStorage: () => (state) => state && (state.hasHydrated = true),
+         version: 1, // keep in sync with the current VERSION
+         migrate: migrateProgress, // extract readMap()'s legacy/bare-map handling into this fn
+         // Use the setter, not `state.hasHydrated = true`: a direct mutation won't notify
+         // subscribers, so the gate would never flip.
+         onRehydrateStorage: () => (state) => {
+           state?.setHasHydrated(true);
+         },
        },
      ),
    );
    ```
+
    - Keep the pure helpers (`nextEntry`, `clampCount`, `isValidProgress`, `sanitizeMap`) — move
      them next to the store; they carry the content-change robustness (clamp `answered` to
      current `total`, recompute `completed`) and must not be lost in the port.
-   - Port `readMap()`'s legacy per-key + pre-version handling into `persist`'s `migrate`.
+   - Port `readMap()`'s legacy per-key + pre-version handling into `migrateProgress` (referenced
+     by `persist`'s `migrate`).
 3. **Replace the gate:** components read `const hasHydrated = useProgressStore(s => s.hasHydrated)`
    in place of `ready`, and select the slice they need (`s.units[id]`, `s.record`) rather than
    consuming the whole context.

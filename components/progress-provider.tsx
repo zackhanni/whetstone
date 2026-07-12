@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { loadAllProgress, recordProgress, type ProgressMap } from "@/lib/progress";
 
 type ProgressContextValue = {
@@ -40,11 +48,15 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     setState({ map: recordProgress(id, answered, total), ready: true });
   }, []);
 
-  return (
-    <ProgressContext.Provider value={{ map: state.map, ready: state.ready, record }}>
-      {children}
-    </ProgressContext.Provider>
+  // Memoize the context value so a re-render of the provider that doesn't change map/ready/record
+  // doesn't force every consumer to re-render — the exact Context pitfall the "choosing where
+  // state lives" lesson covers.
+  const value = useMemo(
+    () => ({ map: state.map, ready: state.ready, record }),
+    [state.map, state.ready, record],
   );
+
+  return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;
 }
 
 export function useProgress(): ProgressContextValue {

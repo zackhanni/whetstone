@@ -64,7 +64,14 @@ function migrateLegacy(): ProgressMap {
     if (!k || !k.startsWith(prefix)) continue;
     legacyKeys.push(k);
     const raw = window.localStorage.getItem(k);
-    if (raw && isValidProgress(JSON.parse(raw))) out[k.slice(prefix.length)] = JSON.parse(raw);
+    if (!raw) continue;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (isValidProgress(parsed)) out[k.slice(prefix.length)] = parsed;
+    } catch {
+      // One corrupt legacy entry must not abort migrating (or cleaning up) the rest — it's
+      // still in legacyKeys, so it gets removed below and won't re-trigger on the next load.
+    }
   }
   if (legacyKeys.length) {
     persist(out);

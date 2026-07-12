@@ -160,40 +160,22 @@ export async function listUnits(): Promise<{ track: string; unit: string }[]> {
   return nested.flat();
 }
 
-export type TrackSummary = {
-  slug: string;
-  title: string;
-  description: string;
-  skills: string[];
-  unitCount: number;
-};
-
-/** All tracks with light metadata, for the home index. */
-export async function listTracks(): Promise<TrackSummary[]> {
+/**
+ * Track slugs (directory names) only — no `track.json` parse. For callers that just need to
+ * enumerate tracks (home index, static params); pair with `loadTrack` for the detail. Filters
+ * to directories so a stray file under content/tracks/ isn't treated as a track.
+ */
+export async function listTrackSlugs(): Promise<string[]> {
   const tracksDir = path.join(ROOT, "content", "tracks");
-  let slugs: string[] = [];
   try {
-    slugs = await fs.readdir(tracksDir);
+    const entries = await fs.readdir(tracksDir, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
   } catch {
     return [];
   }
-  const tracks = await Promise.all(
-    slugs.map(async (slug) => {
-      try {
-        const t = TrackSchema.parse(await readJson(path.join(tracksDir, slug, "track.json")));
-        return {
-          slug: t.slug,
-          title: t.title,
-          description: t.description,
-          skills: t.skills,
-          unitCount: t.units.length,
-        };
-      } catch {
-        return null;
-      }
-    }),
-  );
-  return tracks.filter((t): t is TrackSummary => t !== null);
 }
 
 export type UnitSummary = {
