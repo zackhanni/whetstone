@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { loadProgress } from "@/lib/progress";
+import { useProgress } from "@/components/progress-provider";
 
 /** Per-track summary bar shown on the home index: N/total units completed. */
 export function TrackProgress({ unitIds }: { unitIds: string[] }) {
-  const [done, setDone] = useState(0);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDone(unitIds.filter((id) => loadProgress(id)?.completed).length);
-  }, [unitIds]);
-
+  const { map, ready } = useProgress();
   const total = unitIds.length;
+
+  // Reserve the row height until the shared read runs, so completed units don't flash 0%.
+  if (!ready) return <div className="mt-3 h-4" aria-hidden />;
+
+  const done = unitIds.filter((id) => map[id]?.completed).length;
   const pct = total ? Math.round((done / total) * 100) : 0;
   return (
     <div className="mt-3 flex items-center gap-2">

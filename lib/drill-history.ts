@@ -6,11 +6,29 @@ export type DrillAttempt = { score: number; total: number; timeSec: number; at: 
 const key = (id: string) => `whetstone:drill:${id}`;
 const MAX = 10;
 
+function isValidAttempt(v: unknown): v is DrillAttempt {
+  if (typeof v !== "object" || v === null) return false;
+  const a = v as Record<string, unknown>;
+  return (
+    typeof a.score === "number" &&
+    Number.isFinite(a.score) &&
+    typeof a.total === "number" &&
+    Number.isFinite(a.total) &&
+    typeof a.timeSec === "number" &&
+    Number.isFinite(a.timeSec) &&
+    typeof a.at === "number" &&
+    Number.isFinite(a.at)
+  );
+}
+
 export function loadAttempts(id: string): DrillAttempt[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(key(id));
-    return raw ? (JSON.parse(raw) as DrillAttempt[]) : [];
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    // Defend against corrupted/legacy values: bestOf/slice assume a well-formed array.
+    return Array.isArray(parsed) ? parsed.filter(isValidAttempt) : [];
   } catch {
     return [];
   }

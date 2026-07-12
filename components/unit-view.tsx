@@ -5,7 +5,7 @@ import type { UnitBundle, Tier, ReadingExample } from "@/lib/content";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { WhetstoneButton } from "./whetstone-button";
 import { loadAttempts, saveAttempt, bestOf, type DrillAttempt } from "@/lib/drill-history";
-import { recordProgress } from "@/lib/progress";
+import { useProgress } from "@/components/progress-provider";
 import { ReadingBlock } from "./reading-block";
 import { QuizBlock } from "./quiz-block";
 import { FillBlankBlock } from "./fill-blank-block";
@@ -32,6 +32,7 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [history, setHistory] = useState<DrillAttempt[]>([]);
+  const { record } = useProgress();
 
   const drillId = `${bundle.track.slug}/${bundle.unit.slug}`;
   useEffect(() => {
@@ -89,9 +90,10 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
       (current.score === priorBest.score && current.timeSec < priorBest.timeSec));
 
   // Persist per-unit progress (visited on mount, answered as they go) for the dashboard.
+  // Writes through the shared ProgressProvider so the dashboard reflects it live on navigation.
   useEffect(() => {
-    recordProgress(drillId, answeredCount, total);
-  }, [drillId, answeredCount, total]);
+    record(drillId, answeredCount, total);
+  }, [record, drillId, answeredCount, total]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
@@ -172,9 +174,18 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
           size="lg"
           className="w-full max-w-3xl"
           onClick={() => {
+            // Derive the final time from startedAt — the interval-driven `elapsed` can be up
+            // to a second stale (or 0 if finished within the first tick).
+            const finalSec = startedAt ? Math.floor((Date.now() - startedAt) / 1000) : elapsed;
             setFinished(true);
+            setElapsed(finalSec);
             setHistory(
-              saveAttempt(drillId, { score: correctCount, total, timeSec: elapsed, at: Date.now() }),
+              saveAttempt(drillId, {
+                score: correctCount,
+                total,
+                timeSec: finalSec,
+                at: Date.now(),
+              }),
             );
           }}
         >
