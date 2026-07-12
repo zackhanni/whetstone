@@ -19,8 +19,9 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ✅ Finish the React Hooks track (useState, useEffect, useRef, memoization, controlled-vs-uncontrolled)
 - ✅ Track / unit index + navigation (home → track → unit)
 - ⬜ Import the `software-engineer-job-test-folder` archive as tagged challenges
-- ⬜ Deploy to Vercel + PWA (mobile "read on the go")
-- ⬜ Drill polish — per-unit time config, results history
+- ✅ Deploy to Vercel (PWA deferred — works in mobile browser as-is)
+- 🔨 Drill polish — results history ✅ (best/recent attempts); per-unit time config ⬜
+- ✅ Local-first progress tracking — dashboard, per-track/unit bars, "continue where you left off"
 
 ### Phase 2 — Multi-user
 - ⬜ Supabase auth
@@ -43,6 +44,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 ## Deferred / cross-cutting
 - ⬜ zod 3 → 4 migration (`schema.ts`, `validate.ts`)
 - ⬜ TypeScript 5 → 6
+- ⬜ **Context → Zustand** for client state — switch when a 2nd/3rd persisted store lands (settings, streaks, drill history). Plan + triggers: `docs/zustand-migration.md`.
 - ⬜ Pick-N / difficulty-mix quizzes (schema already supports the shape)
 - ⬜ More "Go deeper" reading tiers across units
 - ⬜ CI — run `pnpm check` + build on PRs

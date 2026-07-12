@@ -15,6 +15,8 @@ export type ProgressMap = Record<string, UnitProgress>;
 
 const KEY = "whetstone:progress";
 // Bump when the *meaning* of stored data changes structurally; add a case in `readMap`.
+// This versioned-blob + readMap() migration is what Zustand's persist({ version, migrate })
+// would formalize once we outgrow Context — see docs/zustand-migration.md.
 const VERSION = 1;
 
 type Stored = { v: number; units: ProgressMap };

@@ -18,6 +18,11 @@ const ProgressContext = createContext<ProgressContextValue | null>(null);
  * after mount and shares it via context, so the dashboard's many progress components don't each
  * run their own effect/read. Lives in the root layout, so the in-memory map survives client
  * navigation — finishing a unit updates the dashboard without re-reading storage.
+ *
+ * NOTE: This provider is the thing a future Zustand migration replaces. We stay on Context while
+ * there's a single persisted store; switch when we add a 2nd/3rd (settings, streaks, drill
+ * history). The `record()` API + ProgressMap shape are intentionally store-agnostic so the swap
+ * is a container change, not a rewrite. Plan + triggers: docs/zustand-migration.md.
  */
 export function ProgressProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<{ map: ProgressMap; ready: boolean }>({
