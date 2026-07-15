@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { loadTrack, listTracks } from "@/lib/content";
+import { loadTrack, listTrackSlugs } from "@/lib/content";
+import { UnitProgress } from "@/components/unit-progress";
 
 export const dynamicParams = false;
 
 export async function generateStaticParams() {
-  return (await listTracks()).map((t) => ({ track: t.slug }));
+  return (await listTrackSlugs()).map((track) => ({ track }));
 }
 
 const DIFFICULTY: Record<string, string> = {
@@ -42,6 +43,9 @@ export default async function TrackPage({ params }: { params: Promise<{ track: s
                 <span className="shrink-0 text-xs text-slate-500">
                   {DIFFICULTY[u.difficulty] ?? u.difficulty} · ~{u.estimatedMinutes} min
                 </span>
+              </div>
+              <div className="mt-2">
+                <UnitProgress unitId={`${detail.slug}/${u.slug}`} />
               </div>
             </Link>
           </li>

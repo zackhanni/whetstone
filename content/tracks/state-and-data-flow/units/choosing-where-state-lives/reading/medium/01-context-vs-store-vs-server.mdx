@@ -1,0 +1,41 @@
+---
+id: context-vs-store-vs-server
+title: Context vs client store vs server state — what each is for
+---
+
+These three get conflated constantly. They solve different problems.
+
+**Context is a transport, not a state manager.** It moves a value down the tree without
+prop-drilling. It has no notion of "subscribe to part of the value": _every_ consumer
+re-renders whenever the provider's `value` changes identity. That's perfect for values that
+change _rarely_ (theme, auth user, locale) and a trap for values that change _often_.
+
+**A client store (Zustand) adds selector subscriptions.** You read a slice, and your component
+re-renders only when _that slice_ changes:
+
+```jsx
+// re-renders only when `theme` changes — not on every store update
+const theme = useAppStore((s) => s.theme);
+```
+
+Reach for it when app-wide client state changes frequently and is read widely, or when
+Context's "re-render everyone" cost starts to bite.
+
+**Server state is a different animal — use a server-state library.** Data you fetched (users,
+orders, this page's content) is a _cache of the server's data_. It goes stale, needs
+refetching, deduping, retries, and invalidation. TanStack Query gives you all of that:
+
+```jsx
+const { data, isPending } = useQuery({ queryKey: ["users"], queryFn: fetchUsers });
+```
+
+Putting server data in `useState` or Zustand means hand-rolling caching and invalidation —
+badly. The tell: if you've written a `useEffect` that fetches and stores into state, you're
+building a worse `useQuery`.
+
+Quick map:
+
+- Rarely-changing, tree-wide → **Context**
+- Often-changing, app-wide client state → **client store with selectors**
+- Remote data → **server-state library**
+- Shareable / refresh-surviving → **URL**

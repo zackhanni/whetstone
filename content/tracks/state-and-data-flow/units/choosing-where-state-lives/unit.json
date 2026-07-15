@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "slug": "choosing-where-state-lives",
+  "title": "Choosing where state lives",
+  "skills": ["react", "state-management", "context", "zustand", "tanstack-query", "architecture", "frontend"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "blocks": [
+    { "type": "reading", "id": "read-intro", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-placement",
+      "questions": [
+        {
+          "id": "belongs-in-server-state",
+          "prompt": "Which of these belongs in a server-state library (TanStack Query) rather than a global client store like Zustand or Redux?",
+          "options": [
+            { "id": "users-from-api", "text": "The list of users fetched from your /api/users endpoint" },
+            { "id": "theme", "text": "The current UI theme (light/dark)" },
+            { "id": "sidebar-open", "text": "Whether the sidebar is open" },
+            { "id": "form-draft", "text": "The text a user is typing into a form" }
+          ],
+          "answer": "users-from-api",
+          "explanation": "Server data is a cache of someone else's data: it needs fetching, deduping, caching, staleness, retries and invalidation — exactly what a server-state library provides. Theme, sidebar, and a form draft are genuine client state. Putting the users list in a client store means hand-rolling all the caching/invalidation a Query gives you for free."
+        },
+        {
+          "id": "context-highfreq",
+          "prompt": "You store a rapidly-changing value (say, the current playback time) in a Context that wraps half the app. What happens on each tick?",
+          "options": [
+            { "id": "only-readers", "text": "Only components that read that specific field re-render" },
+            { "id": "all-consumers", "text": "Every component consuming that context re-renders — even ones reading other fields" },
+            { "id": "nothing", "text": "Nothing re-renders; React batches context updates away" },
+            { "id": "auto-memo", "text": "React automatically memoizes the provider so consumers are skipped" }
+          ],
+          "answer": "all-consumers",
+          "explanation": "Context has no per-field subscription. When the provider's value changes identity, EVERY consumer re-renders regardless of which field it reads — and memo() on a consumer doesn't help. High-frequency values want a ref, a store with selectors, or a split context. This is the cost that pushes people off Context for hot values."
+        },
+        {
+          "id": "first-reach",
+          "prompt": "Two components three levels apart need to share one piece of state. What's the first thing to reach for?",
+          "options": [
+            { "id": "lift", "text": "Lift the state to their nearest common ancestor and pass it down" },
+            { "id": "global-store", "text": "Add a global store so both can import it" },
+            { "id": "context-now", "text": "Wrap the app in a Context immediately" },
+            { "id": "url", "text": "Put it in the URL" }
+          ],
+          "answer": "lift",
+          "explanation": "Colocation first: lift to the nearest common ancestor. Reach for Context or a store only when lifting causes real prop-drilling pain across many layers or many consumers. Globalizing by reflex is how everything ends up entangled in one store."
+        },
+        {
+          "id": "zustand-over-context",
+          "prompt": "What is the main practical reason to choose a client store like Zustand over Context for frequently-changing, app-wide client state?",
+          "options": [
+            { "id": "selectors", "text": "Components can subscribe to a slice, so unrelated updates don't re-render them" },
+            { "id": "no-hydration", "text": "It removes the SSR hydration problem that Context has" },
+            { "id": "required-ts", "text": "It's required for TypeScript support" },
+            { "id": "cant-persist-context", "text": "Context values can't be persisted to localStorage" }
+          ],
+          "answer": "selectors",
+          "explanation": "Zustand's selector subscriptions re-render a component only when its selected slice changes; Context re-renders all consumers on any value change. The others are wrong: both approaches still need an SSR hydration gate (Zustand's persist doesn't remove it), neither is tied to TypeScript, and state transported by Context can be persisted just fine."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-tools",
+      "prompts": [
+        {
+          "id": "server-state-hook",
+          "prompt": "Remote data belongs in a server-state cache, not useState. Complete the TanStack Query call.",
+          "code": "const { data } = ___({ queryKey: [\"users\"], queryFn: fetchUsers });",
+          "blanks": [{ "id": "b1", "accept": ["useQuery"] }],
+          "explanation": "useQuery owns the fetch/cache/staleness/invalidation lifecycle for remote data. If you find yourself writing a useEffect that fetches and stores into useState, you're re-implementing a worse version of this."
+        },
+        {
+          "id": "memoize-context-value",
+          "prompt": "Stop this provider from re-rendering every consumer on each render by giving the value a stable identity.",
+          "code": "const value = ___(() => ({ user, logout }), [user, logout]);\nreturn <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;",
+          "blanks": [{ "id": "b1", "accept": ["useMemo"] }],
+          "explanation": "An inline object literal is a new identity every render, so every consumer re-renders. useMemo pins the identity to its deps, so consumers re-render only when user or logout actually changes. Stabilize the functions with useCallback too."
+        },
+        {
+          "id": "url-state",
+          "prompt": "A search filter should be shareable via a link and survive a refresh, so it belongs in the URL. Read it from the query string.",
+          "code": "const q = new URLSearchParams(window.location.___).get(\"q\");",
+          "blanks": [{ "id": "b1", "accept": ["search"] }],
+          "explanation": "window.location.search is the query string (\"?q=react\"). Filters, tabs, and pagination in the URL are linkable, bookmarkable, and survive reload — things component state can't give you."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-context-rerender",
+      "snippets": [
+        {
+          "id": "unrelated-field-rerender",
+          "code": "const Ctx = createContext(null);\n\nfunction Provider({ children }) {\n  const [count, setCount] = useState(0);\n  const [name, setName] = useState(\"Ana\");\n  return (\n    <Ctx.Provider value={{ count, setCount, name, setName }}>\n      {children}\n    </Ctx.Provider>\n  );\n}\n\nfunction CountLabel() {\n  const { count } = useContext(Ctx);\n  console.log(\"CountLabel render\");\n  return <span>{count}</span>;\n}",
+          "question": "CountLabel reads only `count`. If you call setName(\"Bob\") (count unchanged), does CountLabel re-render?",
+          "answer": "Yes — CountLabel re-renders.",
+          "acceptable": ["yes", "it re-renders", "re-renders", "yes it re-renders"],
+          "explanation": "setName re-renders Provider, which builds a brand-new value object. Context compares by identity, so every consumer re-renders — including CountLabel, which never reads name. Context has no field-level subscription. To avoid this you split the context or use a store with selectors."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-context-value-rerender",
+      "challengeSlug": "context-value-rerender",
+      "mode": "in-browser"
+    }
+  ]
+}

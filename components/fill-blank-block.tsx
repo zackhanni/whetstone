@@ -60,11 +60,11 @@ function PromptView({
                 placeholder="___"
                 className={clsx(
                   "mx-1 w-28 rounded border-b bg-slate-800 px-1 font-mono text-sky-300 outline-none",
-                  revealed && results[i]
-                    ? "border-emerald-500"
-                    : revealed
-                      ? "border-rose-500"
-                      : "border-slate-600 focus:border-sky-500",
+                  {
+                    "border-emerald-500": revealed && results[i],
+                    "border-rose-500": revealed && !results[i],
+                    "border-slate-600 focus:border-sky-500": !revealed,
+                  },
                 )}
               />
             )}

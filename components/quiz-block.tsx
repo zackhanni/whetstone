@@ -72,12 +72,11 @@ function QuestionView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
-  const marker = (sel: boolean, isAns: boolean) =>
-    revealed && isAns ? (
-      <span className="ml-auto text-emerald-400">✓</span>
-    ) : revealed && sel && !isAns ? (
-      <span className="ml-auto text-rose-400">✗</span>
-    ) : null;
+  const marker = (sel: boolean, isAns: boolean) => {
+    if (revealed && isAns) return <span className="ml-auto text-emerald-400">✓</span>;
+    if (revealed && sel && !isAns) return <span className="ml-auto text-rose-400">✗</span>;
+    return null;
+  };
 
   function Row({ o }: { o: Option }) {
     const sel = selected.includes(o.id);

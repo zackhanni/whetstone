@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "slug": "context-value-rerender",
+  "title": "Stop a Context value from re-rendering every consumer",
+  "prompt": "A Context provider hands down a fresh value object on every render, so all consumers re-render on unrelated updates — even a memo()'d one. Give the value a stable identity so consumers re-render only when their data actually changes.",
+  "skills": ["react", "context", "referential-identity", "rendering", "performance", "state-management"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 15,
+  "runner": "in-browser",
+  "stack": ["react", "ts"],
+  "entry": "Settings.tsx",
+  "acceptanceCriteria": [
+    "The context consumer renders once on initial mount (render count shows 1)",
+    "Clicking the unrelated \"Tick\" button does NOT re-render the memo'd consumer (render count stays 1)",
+    "Toggling the theme still updates the consumer (theme text changes light -> dark)"
+  ]
+}
