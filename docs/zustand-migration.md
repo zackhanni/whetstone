@@ -21,8 +21,8 @@ loss:
 
 ## What Zustand genuinely buys us (and why it wins later)
 
-1. **Selector subscriptions.** `useStore(s => s.record)` re-renders a component only when *that
-   slice* changes. Context re-renders every consumer when any part of the value changes (e.g.
+1. **Selector subscriptions.** `useStore(s => s.record)` re-renders a component only when _that
+   slice_ changes. Context re-renders every consumer when any part of the value changes (e.g.
    `UnitView` currently re-renders on every `map` write even though it only needs `record`).
    Negligible at today's scale; real once many components read progress.
 2. **`version` + `migrate` built in.** The versioned blob + `readMap()` migration in
@@ -44,7 +44,7 @@ Until then: stay on Context. Don't switch purely for aesthetics.
 ## Migration plan (when the trigger fires)
 
 The current API was built to make this a swap, not a rewrite. `ProgressMap`, `UnitProgress`,
-and the `record(id, answered, total)` signature stay identical; only the *container* changes.
+and the `record(id, answered, total)` signature stay identical; only the _container_ changes.
 
 Two functions are in play, and the port keeps them distinct: the **provider-facing**
 `record(id, answered, total)` that components call, and the **storage helpers** (`recordProgress`
@@ -74,7 +74,10 @@ role — it runs the same merge (`nextEntry`) and lets `persist` own storage, so
          setHasHydrated: (v) => set({ hasHydrated: v }),
          record: (id, answered, total) =>
            set({
-             units: { ...get().units, [id]: nextEntry(get().units[id], answered, total, Date.now()) },
+             units: {
+               ...get().units,
+               [id]: nextEntry(get().units[id], answered, total, Date.now()),
+             },
            }),
        }),
        {
@@ -82,11 +85,11 @@ role — it runs the same merge (`nextEntry`) and lets `persist` own storage, so
          version: 1, // keep in sync with the current VERSION
          migrate: migrateBlob, // versioned-blob upgrades ONLY — see the notes below
          // Return a post-hydration callback and flip the gate UNCONDITIONALLY: it fires on error
-         // too, and `state` may be undefined, so leaving it false would strand the UI. Go through
-         // the setter (never `state.hasHydrated = true`, which wouldn't notify subscribers).
-         onRehydrateStorage: () => (state, error) => {
+         // too, and `state` may be undefined, so leaving it false would strand the UI. Use the
+         // closure-scoped `set` (never `state.hasHydrated = true`, which wouldn't notify subscribers).
+         onRehydrateStorage: () => (_state, error) => {
            if (error) console.error("progress rehydrate failed", error);
-           useProgressStore.getState().setHasHydrated(true);
+           set({ hasHydrated: true });
          },
        },
      ),
@@ -104,6 +107,7 @@ role — it runs the same merge (`nextEntry`) and lets `persist` own storage, so
      `migrateLegacy()` does today (scan the old per-unit keys, fold them into the blob, clean
      up). Run it once at/just before store creation, since `persist.migrate` can't reach those
      keys.
+
 3. **Replace the gate:** components read `const hasHydrated = useProgressStore(s => s.hasHydrated)`
    in place of `ready`, and select the slice they need (`s.units[id]`, `s.record`) rather than
    consuming the whole context.
