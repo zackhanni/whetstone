@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { listTrackSlugs, loadTrack, type TrackDetail } from "@/lib/content";
 import { ContinueLearning, type UnitRef } from "@/components/continue-learning";
 import { TrackProgress } from "@/components/track-progress";
+import { TagChips } from "@/components/tag-chips";
 
 const MESSAGE_CLASS = "rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400 ring-1 ring-slate-800";
 
@@ -47,6 +48,8 @@ export default async function Home() {
           </span>
         </div>
         <p className="mt-1 text-sm text-slate-400">{d.description}</p>
+        {/* Track tags = deduped union of its units' skills (unit-level is the source of truth). */}
+        <TagChips skills={d.units.flatMap((u) => u.skills)} className="mt-2" />
         <TrackProgress unitIds={d.units.map((u) => `${d.slug}/${u.slug}`)} />
       </Link>
     ));
