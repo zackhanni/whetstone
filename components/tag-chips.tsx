@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { labelOf, rollupForCard } from "@/lib/tags";
+import { HintTooltip } from "./hint-tooltip";
 
 const CHIP = "rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-300 ring-1 ring-slate-700";
 
@@ -29,8 +30,10 @@ export function TagChips({
         </li>
       ))}
       {overflow.length > 0 && (
-        <li className={cn(CHIP, "text-slate-400")} title={overflow.map(labelOf).join(", ")}>
-          +{overflow.length} more
+        <li className={cn(CHIP, "text-slate-400")}>
+          <HintTooltip content={overflow.map(labelOf).join(", ")}>
+            +{overflow.length} more
+          </HintTooltip>
         </li>
       )}
     </ul>

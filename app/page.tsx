@@ -4,6 +4,7 @@ import { listTrackSlugs, loadTrack, type TrackDetail } from "@/lib/content";
 import { ContinueLearning, type UnitRef } from "@/components/continue-learning";
 import { TrackProgress } from "@/components/track-progress";
 import { TagChips } from "@/components/tag-chips";
+import { InterestFilter } from "@/components/interest-filter";
 
 const MESSAGE_CLASS = "rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400 ring-1 ring-slate-800";
 
@@ -65,7 +66,10 @@ export default async function Home() {
       <ContinueLearning units={allUnits} />
 
       <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tracks</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tracks</h2>
+          <InterestFilter />
+        </div>
         {tracksContent}
       </section>
     </main>

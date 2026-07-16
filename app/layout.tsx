@@ -3,6 +3,7 @@ import "./globals.css";
 import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ProgressProvider } from "@/components/progress-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -15,7 +16,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={cn("dark font-sans", inter.variable)}>
       <body>
-        <ProgressProvider>{children}</ProgressProvider>
+        <ProgressProvider>
+          <TooltipProvider>
+            {children}
+          </TooltipProvider>
+        </ProgressProvider>
       </body>
     </html>
   );
