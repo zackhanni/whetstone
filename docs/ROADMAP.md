@@ -23,6 +23,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - 🔨 Drill polish — results history ✅ (best/recent attempts); per-unit time config ⬜
 - ✅ Local-first progress tracking — dashboard, per-track/unit bars, "continue where you left off"
 - ⬜ **Swipe feed** — a third study mode (alongside Browse + Drill) for micro-learning. Design note in "Planned features" below; build later.
+- ⬜ **Tags & interest filtering** — formalize the flat `skills` field into a validated, multi-parent tag taxonomy (`learning/taxonomy.ts`), show rolled-up tags on cards, and add an "interest filter" that soft-reorders the catalog. Downward-closure matching (select `react` → all React; select `useEffect` → just that). Full design + build order in `docs/tags-design.md`. Steps 1–3 (taxonomy + validator, `lib/tags.ts`, card chips) ship independently of the filter UI.
 
 ### Phase 2 — Multi-user
 - ⬜ Supabase auth
