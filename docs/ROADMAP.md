@@ -83,4 +83,4 @@ in a single-item, "reveal after answer" mode. Readings and challenges are exclud
 ## Conventions (quick reference)
 - Content in `content/`; schema `learning/schema.ts`; pedagogy `learning/PLAYBOOK.md`.
 - shadcn: never edit `components/ui/*` — wrap or re-theme (see `docs/shadcn-local-patches.md`).
-- Gates: `pnpm check` (lint + typecheck + validate) and `pnpm build`.
+- Gates: `pnpm check` (lint + typecheck + validate + test) and `pnpm build`.

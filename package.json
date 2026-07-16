@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "validate": "tsx scripts/validate.ts",
-    "check": "pnpm lint && pnpm typecheck && pnpm validate"
+    "test": "vitest run",
+    "check": "pnpm lint && pnpm typecheck && pnpm validate && pnpm test"
   },
   "dependencies": {
     "@codesandbox/sandpack-react": "^2.20.0",
@@ -39,6 +40,7 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.10"
   }
 }
