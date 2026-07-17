@@ -5,6 +5,7 @@ import { Dialog } from "radix-ui";
 import { cn } from "@/lib/utils";
 import { childrenOf, dimensions, labelOf } from "@/lib/tags";
 import { useInterestsStore } from "@/lib/stores/interests-store";
+import { useMounted } from "@/lib/use-mounted";
 
 const SHEET =
   "fixed inset-y-0 right-0 z-50 flex w-[min(22rem,92vw)] flex-col gap-4 overflow-y-auto bg-slate-950 p-5 ring-1 ring-slate-800 " +
@@ -67,11 +68,11 @@ function TagBranch({ slug, depth }: { slug: string; depth: number }) {
 /** The "Filter what I want to learn" trigger + slide-in sheet holding the tag tree. */
 export function InterestFilter() {
   const count = useInterestsStore((s) => s.selected.length);
-  const hasHydrated = useInterestsStore((s) => s.hasHydrated);
+  const mounted = useMounted();
   const clear = useInterestsStore((s) => s.clear);
-  // Only show the count once hydrated — the server renders 0, and reading persisted state during
-  // the first client render would mismatch.
-  const badge = hasHydrated && count > 0 ? ` · ${count}` : "";
+  // Only show the count after mount — the server renders 0, and reading persisted state during the
+  // first client render would mismatch.
+  const badge = mounted && count > 0 ? ` · ${count}` : "";
 
   return (
     <Dialog.Root>
@@ -97,11 +98,11 @@ export function InterestFilter() {
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>{hasHydrated && count > 0 ? `${count} selected` : "Nothing selected — showing everything"}</span>
+            <span>{mounted && count > 0 ? `${count} selected` : "Nothing selected — showing everything"}</span>
             <button
               type="button"
               onClick={clear}
-              disabled={!hasHydrated || count === 0}
+              disabled={!mounted || count === 0}
               className="rounded px-2 py-1 text-slate-400 enabled:hover:text-slate-200 disabled:opacity-40"
             >
               Clear all

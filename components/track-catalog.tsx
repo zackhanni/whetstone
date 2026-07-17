@@ -6,6 +6,7 @@ import { matches } from "@/lib/tags";
 import { TagChips } from "@/components/tag-chips";
 import { TrackProgress } from "@/components/track-progress";
 import { useInterestsStore } from "@/lib/stores/interests-store";
+import { useMounted } from "@/lib/use-mounted";
 
 export type CatalogTrack = {
   slug: string;
@@ -46,9 +47,9 @@ function TrackCard({ track, dimmed }: { track: CatalogTrack; dimmed?: boolean })
  */
 export function TrackCatalog({ tracks }: { tracks: CatalogTrack[] }) {
   const selected = useInterestsStore((s) => s.selected);
-  const hasHydrated = useInterestsStore((s) => s.hasHydrated);
+  const mounted = useMounted();
 
-  if (!hasHydrated || selected.length === 0) {
+  if (!mounted || selected.length === 0) {
     return (
       <div className="space-y-3">
         {tracks.map((t) => (

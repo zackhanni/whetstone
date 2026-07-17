@@ -7,12 +7,16 @@ import { persist } from "zustand/middleware";
  * user tapped in the filter; matching against content expands each downward (see lib/tags.ts).
  *
  * Local-first: persisted to localStorage, migrates to a user_preferences row with Supabase auth.
- * Like the progress store, it must not read persisted state during the first (server) render — the
- * `hasHydrated` gate exists so consumers can avoid a hydration mismatch.
+ *
+ * SSR note: with sync localStorage, `persist` rehydrates `selected` synchronously at import — so on
+ * the client the store already holds the saved tags before React's first render, while the server
+ * rendered from empty. Consumers therefore MUST gate reads behind `useMounted()` (read the plain,
+ * unfiltered view on the first render, the persisted view after mount) to avoid a hydration
+ * mismatch. We intentionally do NOT keep a `hasHydrated` flag flipped in `onRehydrateStorage`:
+ * localStorage rehydrates before mount, so a post-mount flag is both simpler and correct.
  */
 type InterestsState = {
   selected: string[];
-  hasHydrated: boolean;
   toggle: (slug: string) => void;
   clear: () => void;
 };
@@ -21,7 +25,6 @@ export const useInterestsStore = create<InterestsState>()(
   persist(
     (set, get) => ({
       selected: [],
-      hasHydrated: false,
       toggle: (slug) => {
         const cur = get().selected;
         set({ selected: cur.includes(slug) ? cur.filter((s) => s !== slug) : [...cur, slug] });
@@ -31,14 +34,6 @@ export const useInterestsStore = create<InterestsState>()(
     {
       name: "whetstone:interests",
       version: 1,
-      // Only `selected` is durable; `hasHydrated` is runtime-only.
-      partialize: (s) => ({ selected: s.selected }),
-      // Flip the gate unconditionally — it fires on error too, and leaving it false would strand
-      // the UI. Use setState (not `state.hasHydrated = …`, which wouldn't notify subscribers).
-      onRehydrateStorage: () => (_state, error) => {
-        if (error) console.error("interests rehydrate failed", error);
-        useInterestsStore.setState({ hasHydrated: true });
-      },
     },
   ),
 );
