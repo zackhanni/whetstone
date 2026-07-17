@@ -130,6 +130,33 @@ This is a second persisted store beyond progress — the documented **trigger fo
 Context → Zustand switch** (`docs/zustand-migration.md`). Prefer pulling that trigger here over
 adding a second Context.
 
+### SSR hydration gate (`useMounted`) — and whether Supabase removes it
+
+The home page is static (SSG); `localStorage` doesn't exist at build time, so the server renders
+the **unfiltered** catalog. But `persist` rehydrates `selected` from `localStorage` *before* the
+client's first render — so if a component read `selected` on that first render it would produce a
+**filtered** view that disagrees with the server's HTML → a hydration mismatch. `lib/use-mounted.ts`
+(via `useSyncExternalStore`, server snapshot `false` / client `true`) gates this: render the neutral
+view on the first render (matching the server), read the persisted selection only after mount. Cost
+is one frame of "unfiltered → filtered" snap on reload; the alternative is a hydration error.
+
+**Does Supabase change the need for this gate?** It depends on *where the interests are known at
+render time* — not on Supabase itself:
+
+- **Local-first + Supabase sync (likely path):** keep `localStorage` as the instant cache, sync to
+  Supabase after mount. The page stays static/cacheable, but a client-only source is still read at
+  first render → **the gate stays.**
+- **Per-user server render (cookie session → server-side fetch):** the server reads the auth cookie,
+  fetches the user's interests, and renders the filtered page. Client hydrates from the same data →
+  **no gate needed** — but the page stops being static SSG (renders per request). If we *also* keep
+  `localStorage` as a cache, a gate-shaped reconciliation returns anyway.
+
+The gate isn't `localStorage`-specific; it's "don't read client-only state on the render that must
+match the server." Cross-device **discrepancy** (picked tags on phone, open laptop) is a separate
+data-sync/conflict problem Supabase enables (shared row + timestamps / last-write-wins) — the gate
+governs render *timing*, not which value *wins*. The progress store will face the identical choice
+when it migrates.
+
 ## Authoring impact
 
 - **`/new-lesson`:** require tags from the taxonomy; adding a missing taxonomy node is its own

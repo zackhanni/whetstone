@@ -45,6 +45,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ⬜ **Infra** — Terraform
 
 ## Deferred / cross-cutting
+- ⬜ **Cards & variable lesson depth** — a lightweight `card` block (info + example, flash-card style) so a "lesson" can range from a reminder to a full mastery unit, and cards can *bloom* by appending blocks. Inline first; graduate to referenced/shared cards (challenge pattern) only when reuse is real. Proposal: `docs/cards-and-lesson-depth.md`.
 - ⬜ zod 3 → 4 migration (`schema.ts`, `validate.ts`)
 - ⬜ TypeScript 5 → 6
 - ⬜ **Context → Zustand** for client state — switch when a 2nd/3rd persisted store lands (settings, streaks, drill history). Plan + triggers: `docs/zustand-migration.md`.
