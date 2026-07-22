@@ -31,7 +31,9 @@ export function TagChips({
       ))}
       {overflow.length > 0 && (
         <li className={cn(CHIP, "text-slate-400")}>
-          <HintTooltip content={overflow.map(labelOf).join(", ")}>
+          {/* focusable={false}: this chip lives inside the card <Link>; a focusable trigger would
+              be interactive content nested in an anchor. Hover still shows the full list. */}
+          <HintTooltip content={overflow.map(labelOf).join(", ")} focusable={false}>
             +{overflow.length} more
           </HintTooltip>
         </li>

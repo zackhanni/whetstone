@@ -32,7 +32,7 @@ export default async function Home() {
     description: d.description,
     unitCount: d.units.length,
     unitIds: d.units.map((u) => `${d.slug}/${u.slug}`),
-    skills: d.units.flatMap((u) => u.skills),
+    skills: [...new Set(d.units.flatMap((u) => u.skills))], // deduped union (matches CatalogTrack.skills contract)
   }));
 
   // Distinguish "no tracks authored" from "tracks exist but none loaded" without layering

@@ -14,7 +14,7 @@ pnpm dev       # Next dev server — this project runs on :3002 (another app own
 pnpm build     # production build (SSG) — gate for any routing/content change
 pnpm check     # lint + typecheck + validate + test — the primary gate
 pnpm validate  # zod schema + reading-tier + challenge-contract + taxonomy checks (scripts/validate.ts)
-pnpm test      # Vitest — pure lib/* logic (lib/tags.test.ts); jsdom-free, runs in the gate
+pnpm test      # Vitest — pure lib/* and learning/* logic; jsdom-free, runs in the gate
 ```
 
 **`pnpm check` and `pnpm build` are gates — a change isn't done until both pass.** Challenge

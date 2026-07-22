@@ -84,14 +84,21 @@ already in the codebase.
 ## Depth is derived, not declared
 
 Don't add a "depth"/"complexity" field — **infer it from block composition** (single source of
-truth, can't drift):
+truth, can't drift). The rule is a **precedence ladder**, evaluated top-down so every permitted
+block combination lands in exactly one bucket:
 
-- only `card`/`reading` blocks, no assessment/challenge → **card / stub**
-- has a `challenge` → **full lesson**
+1. has a `challenge` → **full** (mastery — proves transfer)
+2. else has a `reading` **or** any assessment (`quiz` / `fill-blank` / `predict-output`) →
+   **lesson** (teaches/checks, but no transfer challenge yet — a prime *promotion* candidate)
+3. else (only `card` blocks) → **card / stub**
 
-The UI badges them ("Card" vs "Lesson"); the swipe feed surfaces cards; all derived. The *one* case
-for an explicit marker is an editorial **worklist** ("cards we intend to promote") — that's intent,
-not shape, so a tiny optional `status: "stub"` earns its place only for that.
+This deliberately puts `reading` in **lesson**, not **stub** — `reading` is the mastery-oriented,
+three-tier block, so a reading-only unit is a real lesson, just one still missing its challenge. A
+unit with a quiz but no challenge is likewise a **lesson**, not "unclassified."
+
+The UI badges them ("Card" / "Lesson" / "Full"); the swipe feed surfaces `card`s; all derived. The
+*one* case for an explicit marker is an editorial **worklist** ("cards we intend to promote") —
+that's intent, not shape, so a tiny optional `status: "stub"` earns its place only for that.
 
 ## Progress semantics
 
@@ -125,6 +132,11 @@ tag, so "small lessons bloom as we relate them to other topics" *is* the tag gra
   tiers — agree?
 - **Do card tags live on the card or the unit?** Leaning **on the card** (so a card carries its own
   tags into the swipe feed / a future shared registry); the unit's tags then include its cards'.
+  This does **not** conflict with `docs/tags-design.md`'s "unit-level is the source of truth" — it
+  *generalizes* the same principle: **the lowest-level content item owns its tags; parents derive by
+  union** (card → unit → track). tags-design.md's rule is that same rule when the unit is the lowest
+  level. When cards land, update tags-design.md to state the generalized version so there's one
+  contract, and matching/rollup/validation all read from the leaf owner up.
 - **Two-sided ("front/back") or single-face card?** Single-face info+example is simplest; a
   quiz-like front/back is arguably just a 1-item quiz. Probably keep cards single-face and let
   `quiz` cover front/back.

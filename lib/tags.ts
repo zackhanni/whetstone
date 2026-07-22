@@ -29,7 +29,9 @@ export function labelOf(slug: string): string {
 
 /** Direct children of a tag (nodes that list `slug` among their parents). */
 export function childrenOf(slug: string): string[] {
-  return CHILDREN.get(slug) ?? [];
+  // Return a copy — never hand out the internal adjacency array, or a caller's sort/push/splice
+  // would corrupt the shared graph process-wide.
+  return [...(CHILDREN.get(slug) ?? [])];
 }
 
 /** Top-level dimensions — tags with no parents (the roots of the DAG). */
