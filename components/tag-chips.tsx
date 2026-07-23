@@ -36,6 +36,10 @@ export function TagChips({
           <HintTooltip content={overflow.map(labelOf).join(", ")} focusable={false}>
             +{overflow.length} more
           </HintTooltip>
+          <span className="sr-only">
+            Additional skills: {overflow.map(labelOf).join(", ")}
+          </span>
+
         </li>
       )}
     </ul>
