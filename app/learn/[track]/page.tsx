@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadTrack, listTrackSlugs } from "@/lib/content";
 import { UnitProgress } from "@/components/unit-progress";
+import { TagChips } from "@/components/tag-chips";
 
 export const dynamicParams = false;
 
@@ -44,6 +45,7 @@ export default async function TrackPage({ params }: { params: Promise<{ track: s
                   {DIFFICULTY[u.difficulty] ?? u.difficulty} · ~{u.estimatedMinutes} min
                 </span>
               </div>
+              <TagChips skills={u.skills} className="mt-2" />
               <div className="mt-2">
                 <UnitProgress unitId={`${detail.slug}/${u.slug}`} />
               </div>

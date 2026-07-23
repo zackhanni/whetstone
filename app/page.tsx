@@ -1,8 +1,8 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { listTrackSlugs, loadTrack, type TrackDetail } from "@/lib/content";
 import { ContinueLearning, type UnitRef } from "@/components/continue-learning";
-import { TrackProgress } from "@/components/track-progress";
+import { InterestFilter } from "@/components/interest-filter";
+import { TrackCatalog, type CatalogTrack } from "@/components/track-catalog";
 
 const MESSAGE_CLASS = "rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400 ring-1 ring-slate-800";
 
@@ -24,6 +24,17 @@ export default async function Home() {
     })),
   );
 
+  // Serializable per-track data for the client catalog. Track tags = deduped union of its units'
+  // skills (unit-level is the source of truth).
+  const catalogTracks: CatalogTrack[] = details.map((d) => ({
+    slug: d.slug,
+    title: d.title,
+    description: d.description,
+    unitCount: d.units.length,
+    unitIds: d.units.map((u) => `${d.slug}/${u.slug}`),
+    skills: [...new Set(d.units.flatMap((u) => u.skills))], // deduped union (matches CatalogTrack.skills contract)
+  }));
+
   // Distinguish "no tracks authored" from "tracks exist but none loaded" without layering
   // ternaries (see AGENTS.md → Patterns to avoid).
   let tracksContent: ReactNode;
@@ -34,22 +45,7 @@ export default async function Home() {
       <p className={MESSAGE_CLASS}>Tracks are temporarily unavailable — please try again later.</p>
     );
   } else {
-    tracksContent = details.map((d) => (
-      <Link
-        key={d.slug}
-        href={`/learn/${d.slug}`}
-        className="block rounded-xl bg-slate-900/40 p-4 ring-1 ring-slate-800 transition hover:ring-slate-600"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-slate-100">{d.title}</h3>
-          <span className="shrink-0 text-xs text-slate-500">
-            {d.units.length} unit{d.units.length === 1 ? "" : "s"}
-          </span>
-        </div>
-        <p className="mt-1 text-sm text-slate-400">{d.description}</p>
-        <TrackProgress unitIds={d.units.map((u) => `${d.slug}/${u.slug}`)} />
-      </Link>
-    ));
+    tracksContent = <TrackCatalog tracks={catalogTracks} />;
   }
 
   return (
@@ -62,7 +58,10 @@ export default async function Home() {
       <ContinueLearning units={allUnits} />
 
       <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tracks</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tracks</h2>
+          <InterestFilter />
+        </div>
         {tracksContent}
       </section>
     </main>

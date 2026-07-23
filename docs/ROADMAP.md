@@ -23,6 +23,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - 🔨 Drill polish — results history ✅ (best/recent attempts); per-unit time config ⬜
 - ✅ Local-first progress tracking — dashboard, per-track/unit bars, "continue where you left off"
 - ⬜ **Swipe feed** — a third study mode (alongside Browse + Drill) for micro-learning. Design note in "Planned features" below; build later.
+- ⬜ **Tags & interest filtering** — formalize the flat `skills` field into a validated, multi-parent tag taxonomy (`learning/taxonomy.ts`), show rolled-up tags on cards, and add an "interest filter" that soft-reorders the catalog. Downward-closure matching (select `react` → all React; select `useEffect` → just that). Full design + build order in `docs/tags-design.md`. Steps 1–3 (taxonomy + validator, `lib/tags.ts`, card chips) ship independently of the filter UI.
 
 ### Phase 2 — Multi-user
 - ⬜ Supabase auth
@@ -44,6 +45,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ⬜ **Infra** — Terraform
 
 ## Deferred / cross-cutting
+- ⬜ **Cards & variable lesson depth** — a lightweight `card` block (info + example, flash-card style) so a "lesson" can range from a reminder to a full mastery unit, and cards can *bloom* by appending blocks. Inline first; graduate to referenced/shared cards (challenge pattern) only when reuse is real. Proposal: `docs/cards-and-lesson-depth.md`.
 - ⬜ zod 3 → 4 migration (`schema.ts`, `validate.ts`)
 - ⬜ TypeScript 5 → 6
 - ⬜ **Context → Zustand** for client state — switch when a 2nd/3rd persisted store lands (settings, streaks, drill history). Plan + triggers: `docs/zustand-migration.md`.
@@ -82,4 +84,4 @@ in a single-item, "reveal after answer" mode. Readings and challenges are exclud
 ## Conventions (quick reference)
 - Content in `content/`; schema `learning/schema.ts`; pedagogy `learning/PLAYBOOK.md`.
 - shadcn: never edit `components/ui/*` — wrap or re-theme (see `docs/shadcn-local-patches.md`).
-- Gates: `pnpm check` (lint + typecheck + validate) and `pnpm build`.
+- Gates: `pnpm check` (lint + typecheck + validate + test) and `pnpm build`.

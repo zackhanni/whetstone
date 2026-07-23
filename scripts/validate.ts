@@ -1,15 +1,31 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { Track, Unit, Challenge } from "../learning/schema";
+import { Taxonomy, TAXONOMY, TAXONOMY_SLUGS } from "../learning/taxonomy";
 import { parseFrontmatter } from "../lib/frontmatter";
 
 const ROOT = process.cwd();
 const TIERS = ["simple", "medium", "complex"] as const;
 let errors = 0;
+let warnings = 0;
 
 const fail = (m: string) => {
   console.error("  ✗", m);
   errors++;
+};
+
+const warn = (m: string) => {
+  console.warn("  ⚠", m);
+  warnings++;
+};
+
+// Every skill referenced by content (that resolves in the taxonomy), for the orphan-tag check.
+const referencedTags = new Set<string>();
+const checkSkills = (label: string, skills: string[]) => {
+  for (const s of skills) {
+    if (!TAXONOMY_SLUGS.has(s)) fail(`${label}: skill "${s}" is not in the taxonomy (learning/taxonomy.ts)`);
+    else referencedTags.add(s);
+  }
 };
 
 async function readJson(p: string) {
@@ -17,6 +33,13 @@ async function readJson(p: string) {
 }
 
 async function main() {
+  // Structural integrity of the tag registry itself: unique slugs, parents resolve, acyclic.
+  try {
+    Taxonomy.parse(TAXONOMY);
+  } catch (e) {
+    fail(`taxonomy (learning/taxonomy.ts): ${(e as Error).message}`);
+  }
+
   const tracksDir = path.join(ROOT, "content", "tracks");
   const slugs = await fs.readdir(tracksDir);
 
@@ -32,6 +55,7 @@ async function main() {
       continue;
     }
     console.log(`track: ${track.slug}`);
+    checkSkills(`track ${track.slug}`, track.skills);
 
     for (const us of track.units) {
       const uDir = path.join(tDir, "units", us);
@@ -42,6 +66,7 @@ async function main() {
         fail(`unit ${ts}/${us}: ${(e as Error).message}`);
         continue;
       }
+      checkSkills(`unit ${ts}/${us}`, unit.skills);
 
       for (const b of unit.blocks) {
         if (b.type === "reading") {
@@ -64,6 +89,7 @@ async function main() {
           const cDir = path.join(ROOT, "content", "challenges", b.challengeSlug);
           try {
             const meta = Challenge.parse(await readJson(path.join(cDir, "meta.json")));
+            checkSkills(`challenge ${b.challengeSlug}`, meta.skills);
             if (meta.slug !== b.challengeSlug) {
               fail(`challenge ${b.challengeSlug}: meta.slug "${meta.slug}" does not match folder`);
             }
@@ -88,7 +114,22 @@ async function main() {
     }
   }
 
-  console.log(errors ? `\n${errors} problem(s) found` : "\nAll content valid ✅");
+  // Orphan tags: defined in the taxonomy but neither referenced by content nor an ancestor of a
+  // referenced tag. A warning, not an error — a dead branch is worth surfacing, not worth failing.
+  const bySlug = new Map(TAXONOMY.map((n) => [n.slug, n] as const));
+  const alive = new Set<string>();
+  const markSelfAndAncestors = (slug: string) => {
+    if (alive.has(slug)) return;
+    alive.add(slug);
+    for (const p of bySlug.get(slug)?.parents ?? []) markSelfAndAncestors(p);
+  };
+  for (const s of referencedTags) markSelfAndAncestors(s);
+  for (const n of TAXONOMY) {
+    if (!alive.has(n.slug)) warn(`taxonomy: tag "${n.slug}" is unused (no content references it or any descendant)`);
+  }
+
+  const summary = errors ? `\n${errors} problem(s) found` : "\nAll content valid ✅";
+  console.log(warnings ? `${summary} — ${warnings} warning(s)` : summary);
   process.exit(errors ? 1 : 0);
 }
 
