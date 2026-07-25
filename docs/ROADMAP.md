@@ -5,6 +5,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 ## Phases
 
 ### Phase 0 — Foundation (nearly complete)
+
 - ✅ Content schema (`learning/schema.ts`) + authoring `PLAYBOOK.md`
 - ✅ First vertical slice: `react-hooks-and-rendering` → `use-effect` (all 5 block types)
 - ✅ Next.js app — **Browse** + **Drill** modes, file-based content loader, block renderers
@@ -16,6 +17,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ✅ Run `/new-lesson` end-to-end to author a 2nd unit (`use-state-and-functional-updates`) — loop proven; friction fed back into SKILL/PLAYBOOK
 
 ### Phase 1 — Solo, deployed
+
 - ✅ Finish the React Hooks track (useState, useEffect, useRef, memoization, controlled-vs-uncontrolled)
 - ✅ Track / unit index + navigation (home → track → unit)
 - ⬜ Import the `software-engineer-job-test-folder` archive as tagged challenges
@@ -26,6 +28,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ⬜ **Tags & interest filtering** — formalize the flat `skills` field into a validated, multi-parent tag taxonomy (`learning/taxonomy.ts`), show rolled-up tags on cards, and add an "interest filter" that soft-reorders the catalog. Downward-closure matching (select `react` → all React; select `useEffect` → just that). Full design + build order in `docs/tags-design.md`. Steps 1–3 (taxonomy + validator, `lib/tags.ts`, card chips) ship independently of the filter UI.
 
 ### Phase 2 — Multi-user
+
 - ⬜ Supabase auth
 - ⬜ Progress tracking (per user, per block)
 - ⬜ Ratings on examples/questions → rate-to-reorder
@@ -33,19 +36,114 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ⬜ Self-improvement loop wired to real feedback (`/improve-lesson`)
 
 ## Content tracks (the learning backlog)
-- ✅ **React Hooks & Rendering** — 5 units: useState, useEffect, useRef, memoization, controlled-vs-uncontrolled
-- ✅ **State & Data Flow** — 1 unit: choosing where state lives (local → lift → Context → client store → server state → URL)
-- ⬜ **Data Fetching** — TanStack Query (invalidations, query keys), TanStack Router
-- ⬜ **Next.js & the Network** — server components vs actions vs API, cache-control/response headers, gzip, caching
-- ⬜ **Backend / NestJS** — contracts, controllers, modules, providers; Redis; microservices
-- ⬜ **Databases** — relational fundamentals; relational vs document vs graph
-- ⬜ **Testing & Quality** — unit vs e2e, Playwright, Vitest
-- ⬜ **Reference cards** — HTTP 4xx/5xx codes (quiz-heavy)
-- ⬜ **Systems Design** (capstone)
-- ⬜ **Infra** — Terraform
+
+Each track lists its planned units. A unit ≈ one `unit.json` + reading tiers + assessments (+ a
+challenge where the skill is codeable). Units marked _card_ are candidates for the lightweight
+`card` block (see Deferred) rather than a full mastery unit.
+
+**How these get built:** author every new unit with the **`/new-lesson`** skill
+(`.claude/skills/new-lesson`) — it scaffolds against `learning/schema.ts`, follows
+`learning/PLAYBOOK.md`, and gates on `pnpm validate` + `pnpm build`. Edits to a unit that already
+shipped (feedback in `content/feedback/`, a wrong explanation, a better example) go through
+**`/improve-lesson`** (`.claude/skills/improve-lesson`) instead, which also fixes the schema/template
+when the problem is general and sweeps it across lessons. Both append a line to
+`docs/lesson-changelog.md`.
+
+### Shipped
+
+- ✅ **React Hooks & Rendering** — 7 units
+  - ✅ useState, useEffect, useRef, memoization, controlled-vs-uncontrolled
+  - ✅ **Debounced input & autosave with timers** (`debounced-input-and-autosave`) — `useRef` for the `setTimeout` handle, commit-on-blur, cancel-vs-flush on unmount, out-of-order saves, debounce vs throttle. Challenge: `debounce-autosave-title`. Sourced from the real `EditableTitle` snippet.
+  - ✅ **Untangling a component with too many effects** (`untangling-effects`) — name each effect, derive → delete → fix deps/cleanup → extract; dep arrays, StrictMode double-invoke, prop→state sync vs `key`. Challenge: `untangle-description-editor`.
+  - ⬜ _next:_ re-run the audit against the actual `EditableDescription.tsx` once it's pasted into `content/`, and fold any effect kind the lesson doesn't cover into the medium reading.
+- ✅ **State & Data Flow** — 3 units
+  - ✅ Choosing where state lives (local → lift → Context → client store → server state → URL)
+  - ✅ **Context vs client store vs server state** (`context-vs-store-vs-server-state`) — who _owns_ a value, the failure mode of each wrong choice, and how one screen combines URL + query cache + store. Decision unit: reading + quiz + fill-blank, no challenge.
+  - ✅ **Zustand basics** (`zustand-basics`) — `create`, atomic vs object selectors, `set` shallow-merge, `getState`/`setState` outside React, `persist` (`partialize`, `version`, hydration gate), testing a singleton. Challenge: `selector-store-subscription` (rebuild the hook on `useSyncExternalStore`).
+  - ⬜ _blocked:_ a challenge that imports **real** `zustand` — `components/challenge-runner.tsx` hard-codes the Sandpack dependency list, so challenges can't declare their own deps yet. Either add an optional `dependencies` field to the challenge schema + runner, or keep teaching the mechanism with the hand-rolled store.
+
+### Frontend
+
+- ⬜ **Data Fetching (TanStack)**
+  - ⬜ Query keys — shape, hierarchy, and why they are the cache identity
+  - ⬜ Invalidation vs refetch vs `setQueryData`
+  - ⬜ **Mutations** — `useMutation` inside a custom hook, `onSuccess`/`onError`/`onSettled`, invalidating after write
+  - ⬜ Optimistic updates + rollback (`onMutate` + context)
+  - ⬜ Loading/error/empty states, `isPending` vs `isFetching`
+  - ⬜ TanStack Router — typed routes, loaders, search-param state
+- ⬜ **Async JavaScript & Timing**
+  - ⬜ **Synchronous vs asynchronous** (blocking vs non-blocking), the event loop, macro vs micro tasks
+  - ⬜ **`setTimeout` / `setInterval`** — the handle, `clearTimeout`, why timers leak in components
+  - ⬜ Debounce vs throttle — build both, know which one autosave wants
+  - ⬜ Promises, `async/await`, `Promise.all` vs `allSettled`, error propagation
+  - ⬜ Cancellation — `AbortController`, stale-response ordering ("last write wins" bugs)
+- ⬜ **JavaScript & TypeScript Fundamentals**
+  - ⬜ **`Map` vs `Set` vs plain object vs array** — lookup cost, key types, iteration order, when each wins (`new Map<string, Container>()`, `new Set<string>()`); common manipulations (`get/set/has/delete`, spread to array, `Array.from`, dedupe)
+  - ⬜ **Shorthand syntax you'll read in review** — optional chaining incl. optional _call_ `fn?.(arg)`, `?.[]`, nullish coalescing `??` vs `||`, destructuring + defaults, and what each one expands to
+  - ⬜ Equality, truthiness, and `undefined` vs `null` in TS
+  - ⬜ Narrowing, unions vs enums, `as const`, discriminated unions
+  - ⬜ Immutable updates (spread, `structuredClone`, why mutation breaks React)
+- ⬜ **Dates & Time**
+  - ⬜ The `Date` API in practice — `new Date()`, `getFullYear`, `getMonth` (0-indexed trap), `toISOString`, epoch ms
+  - ⬜ **UTC vs local time** — when to store UTC, when to render local, server/client hydration mismatches
+  - ⬜ Parsing & formatting — ISO 8601, `Intl.DateTimeFormat`, locale/timezone options
+  - ⬜ Date-only vs instant (birthdays vs timestamps), DST and off-by-one-day bugs
+  - ⬜ _card:_ when to reach for a library (`date-fns` / Temporal) instead
+
+### Backend, network & data
+
+- ⬜ **HTTP & APIs in Practice**
+  - ⬜ **`curl` as a debugging tool** — anatomy of a request: `-X`, `-H`, `-d`, `-i`/`-v`, `--data-raw` vs form data, quoting JSON in the shell, saving/sending cookies and bearer tokens. Worked example: `POST /auth/signup` then `/auth/login`, reading the 201/200 + `accessToken` response.
+  - ⬜ Anatomy of request/response — methods, status codes, headers, body, idempotency
+  - ⬜ **REST vs RPC vs gRPC** — resource-shaped vs procedure-shaped APIs, when each fits, gRPC's contract/streaming/perf story, tRPC as the TS middle ground
+  - ⬜ Auth over HTTP — JWT access tokens, refresh, `Authorization: Bearer`, cookies vs headers
+  - ⬜ CORS, preflight, and why it only bites in the browser
+  - ⬜ Sync vs async APIs — polling, webhooks, queues, long-running jobs
+- ⬜ **Next.js & the Network** — server components vs actions vs route handlers, cache-control/response headers, gzip/brotli, revalidation & caching layers, streaming/Suspense
+- ⬜ **Backend / NestJS** — contracts (DTOs + validation), controllers, modules, providers/DI, guards & interceptors; Redis (cache, sessions, rate limiting); microservices & message patterns
+- ⬜ **Databases** — relational fundamentals (keys, joins, normalization, indexes, transactions); relational vs document vs graph; N+1 queries; migrations
+
+### Quality, security & tooling
+
+- ⬜ **Testing & Quality**
+  - ⬜ **What to test and when** — the testing pyramid/trophy, what a test is _for_, cost vs confidence
+  - ⬜ **Kinds of tests** — unit, integration, component, contract, e2e, smoke; what each catches
+  - ⬜ **Anatomy & syntax** — `describe` / `it` / `test`, `expect` matchers vs node `assert`, arrange-act-assert, setup/teardown hooks, `.only`/`.skip`
+  - ⬜ **Test doubles** — stub vs mock vs spy vs fake; mocking modules, timers (`vi.useFakeTimers`) and network
+  - ⬜ **Designing code for testability** — pure functions, dependency seams, extracting logic out of components into its own importable file; _open question from the brain dump:_ the "you can't use enums in tests" claim (likely about `const enum` / erased-syntax + isolated transpilation, or enum identity across module boundaries) — verify before authoring, then teach the real rule
+  - ⬜ Vitest specifics — config, jsdom vs node env, coverage
+  - ⬜ Playwright e2e — selectors/`data-test-id`, waiting vs sleeping, flake, fixtures
+- ⬜ **Web Security**
+  - ⬜ **XSS** — how injected `<script>` runs with the victim's session; escaping vs sanitizing; `dangerouslySetInnerHTML`
+  - ⬜ **CSP (Content-Security-Policy)** — the header as a browser-enforced allow-list; reading a real `script-src 'self' 'nonce-…' https://js.stripe.com …`; nonce vs hash vs `'unsafe-inline'` (and why `'unsafe-inline'` throws the protection away — the static-caching tradeoff); `report-only` rollout
+  - ⬜ **OWASP Top 10 tour** — one card per item (injection, broken access control, auth failures, SSRF, …) with a "what it looks like in a TS/React/Node app" example
+  - ⬜ CSRF, SameSite cookies, and token storage (cookie vs localStorage)
+  - ⬜ Secrets & config hygiene — env vars, what never reaches the client bundle
+  - ⬜ Other useful headers — HSTS, `X-Content-Type-Options`, `Referrer-Policy`, frame-ancestors
+- ⬜ **Developer Tooling — Terminal, Git & GitHub**
+  - ⬜ **Terminal survival kit** — paths, `cd`/`ls`/`cat`/`grep`, pipes & redirection, env vars, editing files without leaving the shell
+  - ⬜ **Cloning & remotes without a GUI** — HTTPS vs **SSH** keys (`ssh-keygen`, agent, `~/.ssh/config`), `gh` CLI (`gh repo clone`, `gh pr create/checkout`), auth tokens
+  - ⬜ **Everyday git** — status/add/commit/push, branches, `.gitignore`, reading `git log`/`git diff`
+  - ⬜ **Git when things go wrong** — amend, `reset` (soft/mixed/hard), `restore`, `stash`, `revert`, recovering with `reflog`
+  - ⬜ **Rebase vs merge**, resolving conflicts, keeping a branch current
+  - ⬜ PR workflow — small commits, review comments, CI checks
+- ⬜ **Reference cards** — HTTP 4xx/5xx codes (quiz-heavy); _card:_ common CLI flags; _card:_ regex basics
+
+### Capstone
+
+- ⬜ **Systems Design** — requirements → API shape → data model → caching → scaling; read/write paths; tradeoff interviews
+- ⬜ **Infra** — Terraform, environments, CI/CD pipelines, observability basics (logs, metrics, tracing)
+
+### Sourcing note
+
+Some brain-dump items still need real source material before authoring: `EditableDescription.tsx`
+should be pasted in (sanitized) so the effect-audit unit can be checked against the real thing, and
+the `curl` signup/login exchange is the worked example for the `curl` unit. The `EditableTitle`
+snippet has already been turned into `debounced-input-and-autosave`.
 
 ## Deferred / cross-cutting
-- ⬜ **Cards & variable lesson depth** — a lightweight `card` block (info + example, flash-card style) so a "lesson" can range from a reminder to a full mastery unit, and cards can *bloom* by appending blocks. Inline first; graduate to referenced/shared cards (challenge pattern) only when reuse is real. Proposal: `docs/cards-and-lesson-depth.md`.
+
+- ⬜ **Cards & variable lesson depth** — a lightweight `card` block (info + example, flash-card style) so a "lesson" can range from a reminder to a full mastery unit, and cards can _bloom_ by appending blocks. Inline first; graduate to referenced/shared cards (challenge pattern) only when reuse is real. Proposal: `docs/cards-and-lesson-depth.md`.
 - ⬜ zod 3 → 4 migration (`schema.ts`, `validate.ts`)
 - ⬜ TypeScript 5 → 6
 - ⬜ **Context → Zustand** for client state — switch when a 2nd/3rd persisted store lands (settings, streaks, drill history). Plan + triggers: `docs/zustand-migration.md`.
@@ -67,12 +165,13 @@ in a single-item, "reveal after answer" mode. Readings and challenges are exclud
 (too long for a card).
 
 **Design questions to resolve before building:**
+
 - **Sampling.** Start with uniform random across all assessment items; evolve toward weighted /
   spaced-repetition (favor unseen, previously-wrong, or low-rated items). Depends on the Phase-2
   ratings + richer progress data.
 - **Item index.** Needs a flat, cross-track index of every assessment item (a new content query
   over tracks → units → blocks), tagged by skill so the feed can be filtered by track/skill.
-- **Progress semantics.** Feed answers probably shouldn't count toward *unit completion* (it's
+- **Progress semantics.** Feed answers probably shouldn't count toward _unit completion_ (it's
   cross-unit) — track them as their own thing: a "practiced N today" count / streak. Pairs with a
   future streaks/XP store (and is a likely trigger for the Context → Zustand switch).
 - **Session shape.** Endless scroll vs a capped "10-card session" with a little summary at the end.
@@ -82,6 +181,7 @@ in a single-item, "reveal after answer" mode. Readings and challenges are exclud
   (same local-first → cloud path as progress).
 
 ## Conventions (quick reference)
+
 - Content in `content/`; schema `learning/schema.ts`; pedagogy `learning/PLAYBOOK.md`.
 - shadcn: never edit `components/ui/*` — wrap or re-theme (see `docs/shadcn-local-patches.md`).
 - Gates: `pnpm check` (lint + typecheck + validate + test) and `pnpm build`.

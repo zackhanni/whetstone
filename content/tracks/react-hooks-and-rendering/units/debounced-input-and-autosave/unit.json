@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "slug": "debounced-input-and-autosave",
+  "title": "Debounced input & autosave with timers",
+  "skills": ["react", "hooks", "useRef", "useEffect", "timers", "debounce", "cleanup"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "blocks": [
+    { "type": "reading", "id": "read-debounce", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-debounce",
+      "questions": [
+        {
+          "id": "where-does-the-handle-live",
+          "prompt": "You're debouncing an autosave inside a component. Where should the setTimeout handle be stored?",
+          "options": [
+            { "id": "ref", "text": "In a ref — it survives re-renders and changing it shouldn't re-render anything" },
+            { "id": "state", "text": "In state, so React knows a save is pending" },
+            { "id": "let-local", "text": "In a plain `let` at the top of the component" },
+            { "id": "module", "text": "In a module-level variable outside the component" }
+          ],
+          "answer": "ref",
+          "explanation": "The handle must persist between renders (so the next keystroke can cancel the previous timer) but is never displayed. That's exactly a ref. A plain `let` resets every render, so nothing gets cancelled and you save once per keystroke. State would re-render on every keystroke for a value nobody shows. A module variable persists but is shared by every instance of the component — two rename fields would cancel each other's saves."
+        },
+        {
+          "id": "why-event-value",
+          "prompt": "In `onChange={(e) => { setText(e.target.value); scheduleCommit(???) }}`, why must you pass `e.target.value` rather than `text`?",
+          "options": [
+            { "id": "stale", "text": "`text` in this handler is still the previous render's value — `setText` doesn't change the current variable" },
+            { "id": "types", "text": "`text` is typed as `unknown` inside event handlers" },
+            { "id": "perf", "text": "Reading state inside a handler forces an extra render" },
+            { "id": "same", "text": "It makes no difference — both are the same string" }
+          ],
+          "answer": "stale",
+          "explanation": "State updates don't mutate the `text` const; they schedule a render that creates a new one. Inside this handler `text` is the value from the render that created the handler — one keystroke behind. Read the fresh value off the event (or use the functional form) whenever you need the value you just typed."
+        },
+        {
+          "id": "unmount-cleanup",
+          "prompt": "What is the empty-dependency `useEffect(() => () => clearTimeout(timer.current), [])` actually protecting you from?",
+          "options": [
+            { "id": "fires-after-unmount", "text": "A pending save firing after the component is gone — committing edits for a screen the user already left" },
+            { "id": "memory", "text": "A memory leak in the timer queue that would grow forever" },
+            { "id": "double-render", "text": "React rendering the component twice in StrictMode" },
+            { "id": "stale-state", "text": "The input showing a stale value after remount" }
+          ],
+          "answer": "fires-after-unmount",
+          "explanation": "Timers outlive components. Without the cleanup, a timer scheduled a moment before unmount still fires and calls `onCommit` — a write the user didn't ask for, sometimes against a closed modal or a different record. (Modern React no longer warns about setState after unmount, so this bug is silent.) One timeout is not a meaningful memory leak; the unwanted side effect is the problem."
+        },
+        {
+          "id": "blur-behavior",
+          "prompt": "Why does `onBlur` call `clearTimeout` *before* committing?",
+          "options": [
+            { "id": "avoid-double", "text": "So the already-scheduled timer can't fire afterwards and send a second, redundant save" },
+            { "id": "required", "text": "Because clearTimeout is required before any commit, timer or not" },
+            { "id": "focus", "text": "Because clearing the timer is what returns focus to the input" },
+            { "id": "ordering", "text": "Because clearTimeout flushes the pending callback synchronously" }
+          ],
+          "answer": "avoid-double",
+          "explanation": "Blur is an explicit \"I'm done\" — commit now rather than making the user wait out the delay. But a timer from the last keystroke is usually still pending; if you don't cancel it, it fires a second later and writes again. `clearTimeout` cancels, it never flushes."
+        },
+        {
+          "id": "debounce-vs-throttle",
+          "prompt": "The requirement is \"update the progress bar as the user drags, but no more than 10 times a second.\" Debounce or throttle?",
+          "options": [
+            { "id": "throttle", "text": "Throttle — run at most once per interval *while* the activity continues" },
+            { "id": "debounce", "text": "Debounce — run once after the activity stops" },
+            { "id": "either", "text": "Either; they're two names for the same technique" },
+            { "id": "neither", "text": "Neither — this needs requestAnimationFrame exclusively" }
+          ],
+          "answer": "throttle",
+          "explanation": "Debounce waits for silence, so a debounced progress bar would sit frozen for the entire drag and jump at the end. Throttle emits during the activity at a capped rate — the right tool when intermediate values matter. Autosave and search-as-you-type are the debounce cases: only the final value matters."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-debounce",
+      "prompts": [
+        {
+          "id": "schedule-commit",
+          "prompt": "Complete the debounce: cancel any pending timer, then schedule a new commit 1s out. Store the handle so the next keystroke can cancel it.",
+          "code": "const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);\n\nconst scheduleCommit = (value: string): void => {\n  if (timer.current) ___(timer.current);\n  timer.___ = ___(() => onCommit(value), 1000);\n};",
+          "blanks": [
+            { "id": "d1", "accept": ["clearTimeout", "window.clearTimeout"] },
+            { "id": "d2", "accept": ["current"] },
+            { "id": "d3", "accept": ["setTimeout", "window.setTimeout"] }
+          ],
+          "explanation": "Every keystroke cancels the still-pending save (`clearTimeout`) and takes a new receipt (`setTimeout`), stored on `timer.current` so the next keystroke can find it. Only the keystroke not followed by another within 1s survives."
+        },
+        {
+          "id": "unmount-cleanup-code",
+          "prompt": "Kill any pending timer when the component unmounts — an effect that returns only a cleanup function and never re-runs.",
+          "code": "useEffect(() => ___ { if (timer.current) clearTimeout(timer.current); }, ___);",
+          "blanks": [
+            { "id": "e1", "accept": ["() =>", "()=>", "() => ", "return () =>"] },
+            { "id": "e2", "accept": ["[]"] }
+          ],
+          "explanation": "The effect body immediately *returns* another arrow function — that returned function is the cleanup. With `[]` deps the effect never re-runs, so the cleanup runs exactly once: at unmount."
+        },
+        {
+          "id": "blur-flush",
+          "prompt": "On blur: cancel the pending timer and commit immediately, but only if the text actually changed.",
+          "code": "onBlur={() => {\n  if (timer.current) clearTimeout(timer.current);\n  if (text ___ title) ___(text);\n}}",
+          "blanks": [
+            { "id": "f1", "accept": ["!==", "!="] },
+            { "id": "f2", "accept": ["onCommit"] }
+          ],
+          "explanation": "Blur means \"done\" — commit now instead of waiting out the delay, after cancelling the pending timer so it can't double-write. The `text !== title` guard keeps a focus/blur with no edits from writing anything."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-debounce",
+      "snippets": [
+        {
+          "id": "let-handle-resets",
+          "code": "function Title({ onCommit }) {\n  const [text, setText] = useState(\"\");\n  let timer; // NOT a ref\n\n  const schedule = (value) => {\n    clearTimeout(timer);\n    timer = setTimeout(() => onCommit(value), 1000);\n  };\n\n  return <input value={text} onChange={(e) => { setText(e.target.value); schedule(e.target.value); }} />;\n}\n\n// The user types \"hello\" (5 keystrokes) quickly, then waits.",
+          "question": "How many times is onCommit called?",
+          "answer": "5",
+          "acceptable": ["5", "five", "5 times", "once per keystroke"],
+          "explanation": "`let timer` is re-created on every render, so each keystroke's `clearTimeout(timer)` clears `undefined` — a no-op — and every scheduled save survives. Five timers fire ~1s later: five saves. The whole point of the ref is that `timer.current` is the *same box* across renders, so the next keystroke can actually find and cancel the previous timer."
+        },
+        {
+          "id": "stale-text-in-handler",
+          "code": "const schedule = (/* no argument */) => {\n  clearTimeout(timer.current);\n  timer.current = setTimeout(() => onCommit(text), 1000); // reads state\n};\n\n<input value={text} onChange={(e) => { setText(e.target.value); schedule(); }} />\n\n// The user types \"hello\" quickly and stops.",
+          "question": "What string does onCommit finally receive?",
+          "answer": "hell",
+          "acceptable": ["hell", "\"hell\"", "hell (one character behind)", "one character behind"],
+          "explanation": "The surviving timer is the one scheduled by the last keystroke — but that handler closed over the `text` from the render *before* it, which was \"hell\". The state update to \"hello\" hasn't rendered yet when `schedule()` runs. Passing `e.target.value` explicitly (or reading through a ref updated every render) is what makes the committed value the value on screen."
+        },
+        {
+          "id": "no-unmount-cleanup",
+          "code": "// No cleanup effect. The user types one character into the rename field,\n// then immediately closes the modal (the component unmounts) 200ms later.\ntimer.current = setTimeout(() => onCommit(value), 1000);",
+          "question": "Does onCommit run, and when?",
+          "answer": "yes, ~800ms after unmount",
+          "acceptable": [
+            "yes",
+            "yes, after unmount",
+            "yes ~800ms later",
+            "yes, 1s after the keystroke even though the component is gone"
+          ],
+          "explanation": "Unmounting a component does not cancel its timers — the callback is queued on the platform, not on React. It fires ~800ms after the modal closes and commits an edit the user abandoned. React no longer warns about this, so the only defense is the cleanup that calls `clearTimeout` on unmount."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-debounce-autosave",
+      "challengeSlug": "debounce-autosave-title",
+      "mode": "in-browser"
+    }
+  ]
+}

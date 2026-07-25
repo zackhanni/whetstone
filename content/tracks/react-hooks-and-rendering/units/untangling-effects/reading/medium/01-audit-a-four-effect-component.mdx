@@ -1,0 +1,61 @@
+---
+id: audit-a-four-effect-component
+title: Auditing a real four-effect component
+---
+
+Here's the shape of a description editor you'll meet in the wild. Four effects, three of
+them wrong.
+
+```tsx
+function DescriptionEditor({ description, onCommit }: Props) {
+  const [text, setText] = useState(description);
+  const [count, setCount] = useState(0);
+  const [width, setWidth] = useState(window.innerWidth);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setCount(text.length); }, []);                 // 1
+  useEffect(() => { setText(description); });                      // 2
+  useEffect(() => {                                                // 3
+    window.addEventListener("resize", () => setWidth(window.innerWidth));
+  });
+  useEffect(() => {                                                // 4
+    const id = setTimeout(() => { setSaving(true); onCommit(text); }, 1000);
+    return () => clearTimeout(id);
+  }, [text, onCommit]);
+}
+```
+
+**1 — derived state with the wrong deps.** `count` should never have been state.
+`const count = text.length` deletes the effect *and* the stale-`[]` bug at once. Reach for
+this fix first: it removes a whole class of dependency mistakes.
+
+**2 — prop→state sync with no dependency array.** No deps means "after every render," so
+this clobbers whatever the user typed on the very next render. If the field must reset
+when a *different* record loads, don't sync in an effect — remount it:
+`<DescriptionEditor key={record.id} … />`. If the parent needs the value, lift the state
+instead of mirroring it.
+
+**3 — a subscription with no cleanup and no deps.** Every render adds another listener,
+and nothing ever removes them: one resize event soon runs the handler dozens of times, and
+the listeners keep firing after unmount. A subscription effect is the real deal — but it
+must return a cleanup and declare `[]`:
+
+```tsx
+useEffect(() => {
+  const onResize = () => setWidth(window.innerWidth);
+  window.addEventListener("resize", onResize);
+  return () => window.removeEventListener("resize", onResize);
+}, []);
+```
+
+Note the named handler: `removeEventListener` only removes a listener it can identify by
+reference, so an inline arrow can never be removed.
+
+**4 — legitimately an effect, but it fights the component.** Because it re-runs on every
+`text` change, it *is* a debounce (nice), but `onCommit` in the dependency list means an
+inline parent callback re-creates the timer on every parent render. Either memoize
+`onCommit` in the parent (`useCallback`) or hold the callback in a ref and keep the deps
+to `[text]`.
+
+Result: four effects become one subscription effect plus one save effect — with `count`
+derived and the prop-sync deleted.

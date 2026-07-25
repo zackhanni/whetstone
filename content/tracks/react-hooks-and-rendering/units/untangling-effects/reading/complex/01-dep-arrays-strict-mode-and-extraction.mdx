@@ -1,0 +1,59 @@
+---
+id: dep-arrays-strict-mode-and-extraction
+title: Dependency arrays, StrictMode, and extracting the effect
+---
+
+## The three dependency arrays mean three different things
+
+```jsx
+useEffect(fn);          // after EVERY render — almost always a mistake
+useEffect(fn, []);      // once on mount (cleanup on unmount)
+useEffect(fn, [a, b]);  // when a or b changes (by Object.is)
+```
+
+`[a, b]` compares by identity, so an object/array/function literal created during render
+is a *new* dependency every time and the effect re-runs forever. That's the same
+referential-identity problem as `React.memo` — see the memoization unit. Fixes, in order
+of preference: depend on a primitive (`user.id`, not `user`), move the object creation
+inside the effect, or `useCallback`/`useMemo` the dependency at its source.
+
+Never "fix" a loop by deleting a dependency the effect actually reads. That doesn't remove
+the bug, it hides it behind a stale closure — the effect keeps using values from the
+render that created it. If a value should be read but not *reacted to*, keep it in a ref
+that you refresh on every render:
+
+```jsx
+const latest = useRef(onCommit);
+latest.current = onCommit;                 // fresh every render, no re-subscribe
+useEffect(() => { const id = setTimeout(() => latest.current(text), 1000); … }, [text]);
+```
+
+## StrictMode double-invokes effects on purpose
+
+In development, React 18+ mounts, unmounts, and remounts each component once. An effect
+without a correct cleanup shows up immediately as a doubled subscription, a doubled fetch,
+or a doubled interval. That noise is the point: **an effect you can safely run twice is an
+effect you wrote correctly.** Don't add a `didRun` ref to silence it — write the cleanup.
+
+## Extract the effect once it has a name
+
+When an effect plus its state has a name you can say out loud, it's a custom hook:
+
+```tsx
+function useWindowWidth(): number {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return width;
+}
+```
+
+The four-effect component becomes `const width = useWindowWidth()` — and the hook is
+testable on its own. That's the endgame of an effect audit: derive what can be derived,
+delete what shouldn't exist, and extract what remains until each component body reads like
+a description of the UI rather than a list of side effects.
+
+> Order of attack, every time: **derive → delete → dedupe deps → extract.**

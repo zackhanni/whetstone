@@ -1,0 +1,27 @@
+---
+id: triage-table
+title: Triage: twelve real values and where they go
+---
+
+| Value | Owner | Why |
+| --- | --- | --- |
+| Theme (light/dark) | Context (+ persistence) | Changes rarely, read everywhere |
+| Locale / translations | Context | Same — stable transport |
+| `queryClient`, API client | Context | A dependency, not state |
+| Logged-in user profile | Server state | The server owns it; it can go stale |
+| Access token | Store (or a cookie) | Client-held credential, read by the fetch layer |
+| Sidebar open / modal stack | Client store | App-invented UI state, many consumers |
+| Search filters, sort, page | **URL** | Must be shareable and survive reload |
+| Selected rows in a table | Local or store | Local if one screen; store if a toolbar elsewhere acts on it |
+| Multi-step wizard draft | Client store (persisted) | Spans routes, must survive a refresh |
+| Toast/notification queue | Client store | Written from anywhere, read once |
+| Table data from `/api/orders` | Server state | A cache: needs staleness + invalidation |
+| Cursor position, timer handle | Ref / local | Never rendered, or only by one component |
+
+Two patterns worth memorizing from that table:
+
+- **The URL is a state container** and it beats a store whenever the answer to "should
+  this survive a copy-pasted link?" is yes.
+- **Never copy server data into a client store.** The moment you `setOrders(data)` you own
+  two truths and have to keep them in sync forever. Keep the query as the source and derive
+  what you need from it.

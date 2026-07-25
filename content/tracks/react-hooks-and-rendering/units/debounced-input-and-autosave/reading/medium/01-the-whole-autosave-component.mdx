@@ -1,0 +1,50 @@
+---
+id: the-whole-autosave-component
+title: The whole autosave input, line by line
+---
+
+A rename field that saves a second after you stop typing, and immediately when you leave
+the field. Three moving parts: local state for what you see, a ref for the pending timer,
+and an effect whose only job is cleanup.
+
+```tsx
+const EditableTitle = ({ title, onCommit }: { title: string; onCommit: (t: string) => void }) => {
+  const [text, setText] = useState(title);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const scheduleCommit = (value: string): void => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => onCommit(value), 1000);
+  };
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  return (
+    <input
+      value={text}
+      onChange={(e) => { setText(e.target.value); scheduleCommit(e.target.value); }}
+      onBlur={() => {
+        if (timer.current) clearTimeout(timer.current);
+        if (text !== title) onCommit(text);
+      }}
+      aria-label="Collection title"
+      data-test-id="collection-title"
+    />
+  );
+};
+```
+
+Why each piece is the way it is:
+
+- **`setText` *and* `scheduleCommit` in `onChange`.** The input must stay responsive on
+  every keystroke (state), while the network write is deferred (timer). Two different
+  clocks for two different jobs.
+- **`scheduleCommit(e.target.value)`, not `scheduleCommit(text)`.** `text` is still the
+  *previous* render's value inside this handler. Read the fresh value off the event.
+- **`onBlur` cancels, then commits.** Leaving the field is an explicit "I'm done" — don't
+  make the user wait out the delay. Cancel first so the pending timer can't fire a second,
+  redundant save.
+- **`text !== title` guard.** Focus and blur without typing shouldn't write anything.
+- **The empty-dep effect returns only a cleanup.** On unmount, kill a pending timer:
+  otherwise it fires against an unmounted component and calls `onCommit` for a screen the
+  user already left.

@@ -1,0 +1,27 @@
+---
+id: derive-dont-sync
+title: Derived state: delete the effect, compute it
+---
+
+The most common junk effect copies one piece of state into another:
+
+```jsx
+// ❌ two renders, one source of truth split in half
+const [text, setText] = useState("");
+const [count, setCount] = useState(0);
+useEffect(() => { setCount(text.length); }, [text]);
+```
+
+Every keystroke now renders twice — once for `text`, once for the effect's `setCount` —
+and `count` is briefly wrong in between. Worse, the day someone adds a dependency
+mistake (`[]` instead of `[text]`), `count` silently freezes.
+
+```jsx
+// ✅ one render, impossible to desync
+const [text, setText] = useState("");
+const count = text.length;
+```
+
+**If you can compute it during render, it isn't state.** Wrap it in `useMemo` only when
+the computation is genuinely expensive — not to "avoid recalculating" a `.length` or a
+`.filter` over 50 rows.

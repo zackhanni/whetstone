@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "slug": "untangling-effects",
+  "title": "Untangling a component with too many effects",
+  "skills": ["react", "hooks", "useEffect", "cleanup", "derived-state", "rendering"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "blocks": [
+    { "type": "reading", "id": "read-untangle", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-untangle",
+      "questions": [
+        {
+          "id": "which-is-not-an-effect",
+          "prompt": "Which of these does NOT belong in a useEffect?",
+          "options": [
+            { "id": "derived", "text": "setCount(text.length) — keeping one piece of state in sync with another" },
+            { "id": "subscribe", "text": "window.addEventListener(\"resize\", onResize) with a cleanup" },
+            { "id": "focus", "text": "inputRef.current.focus() on mount" },
+            { "id": "socket", "text": "Opening a websocket for the current room id" }
+          ],
+          "answer": "derived",
+          "explanation": "An effect synchronizes your component with something *outside* React. `count` is computable from `text` during render (`const count = text.length`), so an effect just adds a second render and a chance to desync. The other three all reach outside React — the DOM, the window, the network — and are exactly what effects are for."
+        },
+        {
+          "id": "no-dep-array",
+          "prompt": "What does `useEffect(() => { setText(description); })` — no dependency array — do?",
+          "options": [
+            { "id": "every-render", "text": "Runs after every render, so it overwrites whatever the user typed on the next render" },
+            { "id": "on-mount", "text": "Runs once on mount, like passing []" },
+            { "id": "on-change", "text": "Runs only when `description` changes — React infers the deps" },
+            { "id": "never", "text": "Never runs; a missing array disables the effect" }
+          ],
+          "answer": "every-render",
+          "explanation": "No array means \"after every render.\" React never infers dependencies at runtime (the lint rule does that at build time). Here that makes the field unusable: type a character, the render that follows re-runs the effect and resets `text` back to the prop."
+        },
+        {
+          "id": "reset-on-prop-change",
+          "prompt": "A form's local draft state must reset when the parent selects a *different* record. What's the idiomatic fix?",
+          "options": [
+            { "id": "key", "text": "Give the component a key: <Editor key={record.id} … /> so React remounts it with fresh state" },
+            { "id": "sync-effect", "text": "An effect on [record.id] that calls setDraft(record.description)" },
+            { "id": "no-deps", "text": "An effect with no dependency array so it always matches the prop" },
+            { "id": "force-update", "text": "Call a forceUpdate() to flush the old state" }
+          ],
+          "answer": "key",
+          "explanation": "A changed `key` tells React \"this is a different component instance\" — all state is discarded and re-initialized from props, with no effect and no intermediate render showing the previous record's text. The `[record.id]` effect is the common runner-up: it works, but it renders once with stale data first and is easy to break later. The no-deps version clobbers typing on every render."
+        },
+        {
+          "id": "listener-cleanup",
+          "prompt": "`useEffect(() => { window.addEventListener(\"resize\", () => setWidth(window.innerWidth)); })` — what goes wrong?",
+          "options": [
+            { "id": "accumulate", "text": "It adds a new listener after every render and removes none, so one resize runs the handler many times (and keeps running after unmount)" },
+            { "id": "nothing", "text": "Nothing — the browser de-duplicates identical resize listeners" },
+            { "id": "throw", "text": "React throws because effects can't touch window" },
+            { "id": "once", "text": "It only ever registers once, because the effect body is identical each time" }
+          ],
+          "answer": "accumulate",
+          "explanation": "Two bugs compound: no dependency array (runs every render) and no cleanup (nothing is ever removed). Listeners pile up, each resize fires all of them, and the pile survives unmount. The fix is a named handler, `return () => window.removeEventListener(\"resize\", onResize)`, and `[]` deps — the browser only de-duplicates listeners that are the *same function reference*, which an inline arrow never is."
+        },
+        {
+          "id": "strict-mode",
+          "prompt": "In development your effect runs twice on mount. What's the right response?",
+          "options": [
+            { "id": "write-cleanup", "text": "Treat it as a bug report: write the cleanup so running the effect twice is harmless" },
+            { "id": "did-run-ref", "text": "Add a `didRun` ref so the body only executes the first time" },
+            { "id": "remove-strict", "text": "Remove <StrictMode> from the app root" },
+            { "id": "ignore", "text": "Ignore it — it only happens in development, so it can't matter" }
+          ],
+          "answer": "write-cleanup",
+          "explanation": "StrictMode's double mount/unmount/remount is a deliberate stress test for missing cleanup. An effect that's safe to run twice is safe when React remounts for real (fast refresh, offscreen/suspended trees, future features). A `didRun` ref or deleting StrictMode hides the signal and leaves the doubled subscription in production."
+        },
+        {
+          "id": "stale-closure-deps",
+          "prompt": "An effect re-runs on every render because `onCommit` (an inline arrow from the parent) is in its dependency array. What's the WRONG fix?",
+          "options": [
+            { "id": "delete-dep", "text": "Delete onCommit from the dependency array and move on" },
+            { "id": "usecallback", "text": "Wrap onCommit in useCallback in the parent so its identity is stable" },
+            { "id": "ref", "text": "Keep the callback in a ref refreshed on every render and read latest.current inside the effect" },
+            { "id": "primitive", "text": "Restructure so the effect depends on primitives it actually reacts to" }
+          ],
+          "answer": "delete-dep",
+          "explanation": "Removing a dependency the effect reads doesn't stop it being read — it just freezes it at the value from the render that created the effect (a stale closure), so you get a silent wrong-value bug instead of a loud loop. Stabilize the identity (`useCallback`), or keep the value in a ref when you want to *read* it without *reacting* to it."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-untangle",
+      "prompts": [
+        {
+          "id": "derive-instead",
+          "prompt": "Delete the derived-state effect: compute the character count during render.",
+          "code": "const [text, setText] = useState(\"\");\nconst count = ___.___;",
+          "blanks": [
+            { "id": "g1", "accept": ["text"] },
+            { "id": "g2", "accept": ["length"] }
+          ],
+          "explanation": "`count` was never independent state — it's a pure function of `text`. Computing it during render removes an effect, a second render pass, and any chance of the two drifting apart."
+        },
+        {
+          "id": "listener-with-cleanup",
+          "prompt": "Subscribe to window resize correctly: a named handler, a cleanup, and deps that make it run once.",
+          "code": "useEffect(() => {\n  const onResize = () => setWidth(window.innerWidth);\n  window.addEventListener(\"resize\", onResize);\n  return () => window.___(\"resize\", ___);\n}, ___);",
+          "blanks": [
+            { "id": "h1", "accept": ["removeEventListener"] },
+            { "id": "h2", "accept": ["onResize"] },
+            { "id": "h3", "accept": ["[]"] }
+          ],
+          "explanation": "`removeEventListener` matches by function reference, so the cleanup must pass the same `onResize` that was added — an inline arrow could never be removed. `[]` subscribes once on mount and unsubscribes on unmount."
+        },
+        {
+          "id": "key-remount",
+          "prompt": "Reset the editor's local draft when a different record is selected — without a sync effect.",
+          "code": "<DescriptionEditor ___={record.id} description={record.description} />",
+          "blanks": [{ "id": "i1", "accept": ["key"] }],
+          "explanation": "Changing the `key` makes React treat it as a new instance: old state is thrown away and `useState(description)` re-initializes from the new prop. No effect, no intermediate render with the previous record's text."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-untangle",
+      "snippets": [
+        {
+          "id": "empty-deps-stale-count",
+          "code": "function Editor() {\n  const [text, setText] = useState(\"\");\n  const [count, setCount] = useState(0);\n\n  useEffect(() => { setCount(text.length); }, []); // note the deps\n\n  return (\n    <>\n      <input value={text} onChange={(e) => setText(e.target.value)} />\n      <span>{count}</span>\n    </>\n  );\n}\n\n// The user types \"hello\".",
+          "question": "What number does the <span> show?",
+          "answer": "0",
+          "acceptable": ["0", "zero", "still 0", "0 — it never updates"],
+          "explanation": "`[]` means the effect runs once, on mount, when `text` was still \"\". Nothing ever recomputes `count`, so it stays 0 while the input says \"hello\". Adding `[text]` fixes the symptom; deleting the effect and writing `const count = text.length` makes the bug impossible."
+        },
+        {
+          "id": "prop-sync-clobbers",
+          "code": "function Editor({ description }) {\n  const [text, setText] = useState(description);\n  useEffect(() => { setText(description); }); // no dep array\n  return <input value={text} onChange={(e) => setText(e.target.value)} />;\n}\n\n// description is \"Draft\". The user types \"X\" at the end.",
+          "question": "What does the input show right after the keystroke?",
+          "answer": "Draft",
+          "acceptable": ["Draft", "\"Draft\"", "the original description", "it reverts to Draft"],
+          "explanation": "The keystroke sets \"DraftX\" and renders — then the dependency-less effect runs and sets it straight back to \"Draft\", which renders again. The user can never type. This is why prop→state mirroring is a smell: the two copies fight, and the effect always wins."
+        },
+        {
+          "id": "listener-accumulates",
+          "code": "function Widget() {\n  const [resizes, setResizes] = useState(0);\n  useEffect(() => {\n    window.addEventListener(\"resize\", () => setResizes((r) => r + 1));\n  }); // no deps, no cleanup\n  return <span>{resizes}</span>;\n}\n\n// The window is resized twice (one event each).",
+          "question": "Roughly what number does the <span> show, and why isn't it 2?",
+          "answer": "more than 2 — the listeners accumulate",
+          "acceptable": [
+            "more than 2",
+            "greater than 2",
+            "3",
+            "4",
+            "it grows exponentially",
+            "more than 2 because each render adds another listener"
+          ],
+          "explanation": "Each render registers another listener and none are removed, so the first resize runs every listener registered so far — and every one of those state updates causes a render that registers yet another listener. The count runs away from you. A cleanup plus `[]` keeps it at exactly one listener, and the answer at 2."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-untangle-effects",
+      "challengeSlug": "untangle-description-editor",
+      "mode": "in-browser"
+    }
+  ]
+}

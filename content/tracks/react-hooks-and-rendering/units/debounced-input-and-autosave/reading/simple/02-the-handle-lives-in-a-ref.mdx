@@ -1,0 +1,26 @@
+---
+id: the-handle-lives-in-a-ref
+title: In a component, the handle belongs in a ref
+---
+
+A plain `let handle` inside a component is reset to `undefined` on every render, so the
+next keystroke has nothing to cancel and you get one save per character. State is wrong
+too: the handle is never displayed, so storing it in state would trigger a pointless
+re-render on every keystroke.
+
+That leaves a **ref** — a value that survives re-renders and changes silently.
+
+```jsx
+const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+const scheduleCommit = (value: string) => {
+  if (timer.current) clearTimeout(timer.current);
+  timer.current = setTimeout(() => onCommit(value), 1000);
+};
+```
+
+`ReturnType<typeof setTimeout>` is the portable way to type the handle: in the DOM it's a
+`number`, in Node it's a `Timeout` object. Let TypeScript read it off `setTimeout` instead
+of guessing.
+
+The rule of thumb: **displayed value → state; timer handle → ref.**

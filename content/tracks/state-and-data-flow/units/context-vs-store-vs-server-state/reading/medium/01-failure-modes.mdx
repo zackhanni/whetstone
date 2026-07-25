@@ -1,0 +1,59 @@
+---
+id: failure-modes
+title: What each wrong choice actually costs you
+---
+
+Every misplacement has a recognizable symptom. Learn the symptoms and you can diagnose a
+codebase in an afternoon.
+
+## Context holding hot state
+
+**Symptom:** the whole page re-renders on every keystroke/tick; `React.memo` on the
+consumers changes nothing.
+
+Context re-renders **all** consumers when the provider's value changes identity — there is
+no per-field subscription, and memoizing the consumer can't help, because context updates
+bypass the memo bail-out. Ways out, cheapest first: `useMemo` the value; split one context
+into `StateContext` + `DispatchContext` (dispatch is stable, so action-only consumers stop
+re-rendering); or move the value into a store with selectors.
+
+## Server data copied into a client store
+
+**Symptom:** "why is this list stale?" bugs, a `useEffect` that fetches and `setState`s,
+and manual refresh buttons.
+
+```tsx
+// ❌ two sources of truth
+const { data } = useQuery({ queryKey: ["orders"], queryFn: getOrders });
+useEffect(() => { if (data) setOrders(data); }, [data]);   // now YOU own freshness
+```
+
+Keep the query as the source; put only the *client's* decisions (selected ids, filters) in
+the store, and join them at render time. If you need an instant UI response to a write,
+that's an optimistic update in the mutation — not a second copy in a store.
+
+## Client state that should have been in the URL
+
+**Symptom:** "send me a link to that filtered view" is impossible, and back/forward do the
+wrong thing.
+
+Filters, tabs, pagination, and the selected entity are navigation state. In the URL they
+are shareable, bookmarkable, restorable, and get browser history for free.
+
+## A store used for a single screen
+
+**Symptom:** state that outlives the screen. You open the wizard again and it's still
+half-filled; tests need a store reset between cases.
+
+A module-level store is a singleton. That's a feature for app-wide state and a bug for
+screen-local state — prefer local state (or a store created *per screen* and thrown away
+with it).
+
+## SSR / hydration
+
+**Symptom:** "Text content did not match" warnings, or a flash of the default theme.
+
+Anything read from `localStorage` (a persisted store, a theme) doesn't exist on the server.
+Render the server's default, then apply the persisted value after mount — a hydration gate.
+Server state has the parallel version of this: prefetch on the server and hydrate the cache,
+rather than fetching again on the client.

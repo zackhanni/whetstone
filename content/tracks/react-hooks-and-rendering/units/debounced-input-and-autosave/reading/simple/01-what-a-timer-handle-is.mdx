@@ -1,0 +1,28 @@
+---
+id: what-a-timer-handle-is
+title: setTimeout hands you a receipt you have to keep
+---
+
+`setTimeout(fn, 1000)` schedules `fn` to run once, later, and immediately returns a
+**handle** — a receipt. The only way to cancel that pending call is to hand the receipt
+back: `clearTimeout(handle)`.
+
+```js
+const handle = setTimeout(() => save("hello"), 1000);
+clearTimeout(handle); // never runs
+```
+
+That's the whole idea behind a debounce: every keystroke *tears up the old receipt* and
+takes a new one. Only the keystroke that isn't followed by another one within the delay
+survives to actually run.
+
+```js
+let handle;
+const scheduleSave = (value) => {
+  clearTimeout(handle);           // cancel the previous, still-pending save
+  handle = setTimeout(() => save(value), 1000);
+};
+```
+
+Type `h`, `he`, `hel`, `hell`, `hello` quickly and `save` is called **once**, with
+`"hello"` — not five times.

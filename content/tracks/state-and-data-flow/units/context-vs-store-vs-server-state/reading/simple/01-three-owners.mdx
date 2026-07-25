@@ -1,0 +1,28 @@
+---
+id: three-owners
+title: Ask "who owns this data?" before "where do I put it?"
+---
+
+Once state has outgrown a single component you're not picking a library, you're picking an
+**owner**. There are only three plausible owners, and they answer different questions.
+
+| Owner | Owns | The question it answers |
+| --- | --- | --- |
+| **Context** | *Transport* for values that rarely change | "How does this reach deep components without prop-drilling?" |
+| **Client store** (Zustand/Redux) | Client-only state many components read and write | "Who is the single source of truth for this app-wide value?" |
+| **Server state** (TanStack Query) | A *cache* of data the server owns | "Is my copy fresh, and how do I refetch it?" |
+
+The mistake is treating them as ranked (Context → store → Query as increasing power).
+They're not interchangeable:
+
+- Context is a **delivery mechanism**, not a store — it has no selectors, so every consumer
+  re-renders when the value's identity changes. Perfect for a theme, a locale, a
+  `queryClient`, a stable dependency. Bad for anything that ticks.
+- A client store is for state your **app** invents: sidebar open, selected rows,
+  multi-step wizard draft, undo stack.
+- Server state is for data your **server** invents. It's a cache, and caches need
+  staleness, deduping, retries and invalidation — all things you'd otherwise hand-roll.
+
+**Rule of thumb:** if a refresh of the page should be able to re-derive the value from the
+API, it's server state. If it must be re-derived from the URL, it's URL state. Whatever's
+left is client state — and only *that* is a Context/store decision.
