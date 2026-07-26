@@ -4,17 +4,33 @@ title: The whole autosave input, line by line
 ---
 
 A rename field that saves a second after you stop typing, and immediately when you leave
-the field. Three moving parts: local state for what you see, a ref for the pending timer,
-and an effect whose only job is cleanup.
+the field. Four moving parts: local state for what you see, a ref for the pending timer, a
+ref for what you last saved, and an effect whose only job is cleanup.
 
 ```tsx
 const EditableTitle = ({ title, onCommit }: { title: string; onCommit: (t: string) => void }) => {
   const [text, setText] = useState(title);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastCommitted = useRef(title);
+
+  // One door for every save, so "did we already save this?" is asked exactly once.
+  const commit = (value: string): void => {
+    if (value === lastCommitted.current) return;
+    lastCommitted.current = value;
+    onCommit(value);
+  };
+
+  const cancelPending = (): void => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = undefined;
+  };
 
   const scheduleCommit = (value: string): void => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => onCommit(value), 1000);
+    cancelPending();
+    timer.current = setTimeout(() => {
+      timer.current = undefined; // it fired — there is nothing left to cancel
+      commit(value);
+    }, 1000);
   };
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
@@ -23,10 +39,7 @@ const EditableTitle = ({ title, onCommit }: { title: string; onCommit: (t: strin
     <input
       value={text}
       onChange={(e) => { setText(e.target.value); scheduleCommit(e.target.value); }}
-      onBlur={() => {
-        if (timer.current) clearTimeout(timer.current);
-        if (text !== title) onCommit(text);
-      }}
+      onBlur={() => { cancelPending(); commit(text); }}
       aria-label="Collection title"
       data-test-id="collection-title"
     />
@@ -44,7 +57,15 @@ Why each piece is the way it is:
 - **`onBlur` cancels, then commits.** Leaving the field is an explicit "I'm done" — don't
   make the user wait out the delay. Cancel first so the pending timer can't fire a second,
   redundant save.
-- **`text !== title` guard.** Focus and blur without typing shouldn't write anything.
+- **The guard compares against `lastCommitted`, not `title`.** This is the subtle one. A
+  tempting `if (text !== title) onCommit(text)` on blur is wrong twice over: after the
+  debounce has already saved, `title` may not have caught up (the parent persists
+  asynchronously, or doesn't feed the value back at all) so you save the same text **twice**;
+  and if the user edits, saves, then types the *original* title back, `text === title` and the
+  real change is **never** saved. A ref holding what you actually committed answers the only
+  question that matters: "is this different from what the server has?"
+- **Clearing `timer.current` when the timer fires** keeps "is a save pending?" honest. A
+  handle left behind is a stale receipt, and `clearTimeout` on it silently does nothing.
 - **The empty-dep effect returns only a cleanup.** On unmount, kill a pending timer:
   otherwise it fires against an unmounted component and calls `onCommit` for a screen the
   user already left.

@@ -42,4 +42,23 @@ describe("DescriptionEditor", () => {
     resize();
     expect(resizes()).toBe("2");
   });
+
+  // No spy library in this sandbox, so count the calls by hand.
+  it("removes the resize listener when it unmounts", () => {
+    const original = window.removeEventListener;
+    let removedResize = 0;
+    window.removeEventListener = function patched(type: string, ...rest: unknown[]) {
+      if (type === "resize") removedResize += 1;
+      return (original as (...a: unknown[]) => void).call(window, type, ...rest);
+    } as typeof window.removeEventListener;
+
+    try {
+      const view = render(<DescriptionEditor description="Draft" />);
+      view.unmount();
+    } finally {
+      window.removeEventListener = original;
+    }
+
+    expect(removedResize > 0).toBe(true);
+  });
 });

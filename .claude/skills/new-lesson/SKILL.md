@@ -35,21 +35,26 @@ then replace the substance. Don't re-derive the conventions from the schema.
 3. **Surprise.** Add a `predict-output` block (a list of snippets) only where runtime
    behavior defies intuition (stale closures, batching, ordering). Skip it if the topic has
    no such trap — a judgment/decision unit that ends at `fill-blank` is a complete unit.
-4. **Transfer.** Author the `challenge` under `content/challenges/<slug>/` following the
-   **In-browser challenge contract** in `learning/PLAYBOOK.md` (read it — the Sandpack
+4. **Transfer — _only if the skill is codeable._** A judgment/decision unit has no honest
+   challenge; stop at step 3 rather than inventing one, and skip the challenge half of the
+   gate below. Otherwise author the `challenge` under `content/challenges/<slug>/` following
+   the **In-browser challenge contract** in `learning/PLAYBOOK.md` (read it — the Sandpack
    conventions are specific). In short: `meta.json` (`runner: "in-browser"`,
    `entry: "<Component>.tsx"`), `README.md`, the editable buggy `<Component>.tsx`, `App.tsx`
-   (preview root), `<Component>.test.tsx` (**jest-style** — no `vitest` import, RTL, plain
-   matchers, DOM via `data-testid`), and `solution.tsx` (same export, fixed; that exact
-   filename even when the entry is `.ts`). Three traps worth pre-empting: **no third-party
-   deps** are available in the sandbox (hand-roll a support module instead), **timers are
-   real** (keep delays small, share them via a `config.ts` the test imports), and
-   **module-level singletons need a `reset()`** for the tests. Give each planted bug its own
-   failing test. For big multi-file projects use `runner: "external"` + `externalUrl` instead.
+   (preview root), `<Component>.test.tsx` (**jest-style** — no `vitest` import, plain matchers,
+   DOM via `data-testid`), and `solution.tsx` (same export, fixed; that exact filename even
+   when the entry is `.ts`). Four traps worth pre-empting: the sandbox provides **only React
+   and Testing Library** — no other dependency resolves, so hand-roll a support module; there
+   is **no spy/mock/fake-timer library** (`vi.*`, `jest.fn`, `jest.spyOn` are undefined — patch
+   the global by hand and restore it, or expose a counter from a support module); **timers are
+   real** (keep delays small, share them via a `config.ts` the test imports); and
+   **module-level singletons need a `reset()`**. Give each planted bug its own failing test,
+   and make sure every acceptance criterion in `meta.json` is actually asserted by one. For
+   big multi-file projects use `runner: "external"` + `externalUrl` instead.
 5. **Gate.** Run **`pnpm check`** (lint + typecheck + validate + unit tests — not just
    `pnpm validate`, since a taxonomy edit can break `lib/tags.test.ts`) and **`pnpm build`**.
-   Then verify the challenge **in the browser**: open the unit, hit _Run tests_ — the starter
-   must FAIL and _Show solution_ must PASS. Reuse the running dev server (check `lsof -ti
+   Then, **if the unit has a challenge**, verify it **in the browser**: open the unit, hit
+   _Run tests_ — the starter must FAIL and _Show solution_ must PASS. Reuse the running dev server (check `lsof -ti
 tcp:3002` / `:3000` first; never blanket-kill ports). The behavioural half of Rule 4 has no
    headless run — if you can't verify it yourself, say so explicitly in your summary and list
    the URLs.

@@ -13,9 +13,18 @@ consumers changes nothing.
 
 Context re-renders **all** consumers when the provider's value changes identity — there is
 no per-field subscription, and memoizing the consumer can't help, because context updates
-bypass the memo bail-out. Ways out, cheapest first: `useMemo` the value; split one context
-into `StateContext` + `DispatchContext` (dispatch is stable, so action-only consumers stop
-re-rendering); or move the value into a store with selectors.
+bypass the memo bail-out.
+
+Be precise about which problem you have, because the fixes aren't interchangeable:
+
+- **The value's *identity* churns but its contents don't** (a fresh `{ user, logout }` object
+  every provider render). `useMemo` on the value is the fix — that's the
+  `context-value-rerender` challenge from the previous unit.
+- **The value itself genuinely changes often** (a draft string, a timer, a cursor position).
+  `useMemo` cannot help you here: the value really is new, so every consumer really does
+  re-render. Split one context into `StateContext` + `DispatchContext` so action-only
+  consumers stop re-rendering, split the hot field into its own narrow context, or move it
+  into a store with selectors — the only option that gives you per-field subscriptions.
 
 ## Server data copied into a client store
 

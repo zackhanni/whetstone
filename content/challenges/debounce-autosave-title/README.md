@@ -15,6 +15,8 @@ Edit **`EditableTitle.tsx`** so the tests pass.
 - [ ] Exactly one `onCommit`, with the **final** value, once typing stops for `SAVE_DELAY_MS`
 - [ ] Blur commits immediately and only once (the pending timer is cancelled first)
 - [ ] Blur with no edit commits nothing
+- [ ] A blur **after** the debounce already saved does not save the same value again
+- [ ] Editing again after a save does commit the new value
 - [ ] Unmounting cancels a pending commit
 
 ### Hints

@@ -13,8 +13,10 @@ export function EditableTitle({ title, onCommit }: Props) {
   //      it must not re-render).
   //   2. On change: update the text immediately, cancel any pending timer, and schedule
   //      onCommit(value) SAVE_DELAY_MS from now.
-  //   3. On blur: cancel the pending timer and commit right away — but only if the text
-  //      actually changed.
+  //   3. On blur: cancel the pending timer and commit right away — but never save a value
+  //      you've already saved. Compare against the last COMMITTED value (another ref), not
+  //      against the `title` prop: this parent doesn't round-trip `title`, so the prop is a
+  //      lie the moment the first save happens.
   //   4. On unmount: clear any pending timer so it can't fire for a gone component.
 
   return (

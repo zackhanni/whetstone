@@ -10,7 +10,7 @@ re-render on every keystroke.
 
 That leaves a **ref** — a value that survives re-renders and changes silently.
 
-```jsx
+```tsx
 const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
 const scheduleCommit = (value: string) => {

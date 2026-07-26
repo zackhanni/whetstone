@@ -50,6 +50,16 @@ Check these before inventing new ones — each has bitten at least once:
   stores leaking across test cases.
 - **Taxonomy drift:** a lesson's `skills` tag that isn't in `learning/taxonomy.ts`, or a
   taxonomy edit that silently breaks `lib/tags.test.ts` fixtures.
+- **An acceptance criterion no test asserts.** `meta.json`/README promise something (cleanup on
+  unmount is the classic) that the grader never checks, so a leaky solution passes. Fix the
+  grader, not the promise.
+- **A teaching snippet that's subtly wrong.** The reference solution is content too: it gets
+  read more carefully than the prose, and the same shortcut then propagates into the readings
+  and the fill-blanks. When you fix one, grep for the pattern across the unit and fix all of
+  them in the same pass.
+- **A quiz whose _correct_ option states a wrong reason.** Right answer, wrong mechanism, is
+  worse than a wrong answer. Demote the plausible-but-false reason to a distractor and explain
+  why it's false.
 
 ## Guardrails
 

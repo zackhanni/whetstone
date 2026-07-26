@@ -60,9 +60,10 @@ async function checkInBrowserChallenge(
   if (tests.length === 0) fail(`${label}: no *.test.tsx grader`);
 
   // Rule 4 can't be graded headlessly, but "the author forgot to change anything" can.
-  if (names.includes("solution.tsx") && names.includes(entry)) {
+  // `entry` may be a nested path, so resolve it rather than looking it up in `names`.
+  if (names.includes("solution.tsx")) {
     const [starter, solution] = await Promise.all([
-      read(entry),
+      fs.readFile(path.resolve(cDir, entry), "utf8"),
       read("solution.tsx"),
     ]);
     if (starter.trim() === solution.trim())
@@ -72,10 +73,25 @@ async function checkInBrowserChallenge(
   // Sandpack's runner is jest-style, not Vitest, and ships no jest-dom / module mocking.
   for (const t of tests) {
     const src = await read(t);
-    if (/from\s+["']vitest["']/.test(src))
+    // Covers both `from "vitest"` and the side-effect form `import "vitest"`.
+    if (
+      /\bfrom\s+["']vitest["']|\bimport\s+["']vitest["']|require\(\s*["']vitest["']/.test(
+        src,
+      )
+    )
       fail(
         `${label}/${t}: imports "vitest" — Sandpack tests are jest-style globals`,
       );
+    // No spy/mock library is loaded in the sandbox: `vi` and `jest` are undefined at runtime.
+    if (
+      /\bvi\.\w|\bjest\.(spyOn|fn|useFakeTimers|advanceTimersByTime)\b/.test(
+        src,
+      )
+    ) {
+      fail(
+        `${label}/${t}: uses a spy/fake-timer helper (vi.* / jest.*) — unavailable in the sandbox; patch the global by hand or add a settable seam`,
+      );
+    }
     if (/toBeInTheDocument|toHaveTextContent|toBeVisible/.test(src)) {
       fail(
         `${label}/${t}: uses a jest-dom matcher — only plain matchers are available`,

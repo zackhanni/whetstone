@@ -53,6 +53,28 @@ describe("EditableTitle", () => {
     expect(calls.length).toBe(1);
   });
 
+  it("does not commit a second time when blur follows a completed autosave", async () => {
+    const { calls, input, type } = setup();
+    type("Saved by the timer");
+    await settle();
+    expect(calls.length).toBe(1);
+    // The parent never round-trips `title`, so a blur that compares against the prop
+    // would save the same text again here.
+    fireEvent.blur(input);
+    await settle();
+    expect(calls.length).toBe(1);
+  });
+
+  it("commits again once the text changes after a save", async () => {
+    const { calls, input, type } = setup();
+    type("First");
+    await settle();
+    type("Second");
+    fireEvent.blur(input);
+    expect(calls.length).toBe(2);
+    expect(calls[1]).toBe("Second");
+  });
+
   it("commits nothing when the field is blurred without an edit", async () => {
     const { calls, input } = setup();
     fireEvent.blur(input);

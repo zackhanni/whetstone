@@ -40,7 +40,7 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "whetstone-settings",              // the storage key
-      partialize: (s) => ({ theme: s.theme }), // persist data, not actions
+      partialize: (s) => ({ theme: s.theme }), // persist only the durable state
       version: 1,
       migrate: (persisted, from) => (from === 0 ? upgrade(persisted) : persisted),
     },
@@ -53,8 +53,11 @@ a middleware wraps the initializer.
 
 Four details that bite:
 
-- **`partialize`** — without it you serialize your action functions too (they survive as
-  junk keys and can shadow the real ones after rehydration).
+- **`partialize`** — chooses *which* state is durable. You don't need it to strip actions
+  (JSON serialization drops function values, and rehydration shallow-merges over the
+  initializer, so your actions come back intact regardless). You need it to keep ephemeral,
+  derived, or sensitive fields out of `localStorage`: a smaller payload, nothing private on
+  disk, and less shape for a future `migrate` to worry about.
 - **`version` + `migrate`** — the shape you persist today will change; a version number is
   how you avoid crashing on someone's year-old localStorage.
 - **Rehydration is async-ish.** The store starts at its initial state and is replaced once

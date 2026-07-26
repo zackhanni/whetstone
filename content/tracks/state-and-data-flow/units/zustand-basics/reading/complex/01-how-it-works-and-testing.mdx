@@ -44,6 +44,15 @@ a selector returning a fresh object re-renders every time, and why an atomic sel
 doesn't. It also handles tearing during concurrent rendering, which a hand-rolled
 `useState` + `useEffect` subscription does not.
 
+> **This is a teaching shorthand, not Zustand's source.** Real Zustand reaches for
+> `useSyncExternalStoreWithSelector` (from `use-sync-external-store/shim`), which adds a
+> caching layer plus an `equalityFn`. That matters: with the bare version above, an
+> object-returning selector doesn't merely re-render often — React notices `getSnapshot`
+> returning a new value every call and warns _"The result of getSnapshot should be cached"_.
+> Zustand also keeps a distinct initial state for the server snapshot instead of calling
+> `getState()` twice. Read the shorthand for the mechanism; read the real thing before you
+> ship your own.
+
 Everything else Zustand ships — `persist`, `devtools`, `immer`, `subscribeWithSelector` —
 is middleware wrapping that `set`.
 

@@ -91,11 +91,16 @@ test runner). The folder holds:
 - `<Component>.tsx` — the **editable** file (the buggy starter). It's the _only_ editable file:
   everything else loads read-only, and `App.tsx` is hidden from the file list.
 - `App.tsx` — the preview root; default-exports a component that renders `<Component/>`.
-- `<Component>.test.tsx` — the grader. **Jest-style, not Vitest:** no `import … from "vitest"`;
-  use `@testing-library/react` + global `describe`/`it`; assert with plain matchers
-  (`…textContent).toBe(…)`, `toBeTruthy()`, `toBeNull()`) — **no** `jest-dom` matchers like
-  `toBeInTheDocument`. No module mocking (`jest.mock` is unavailable); to control an async
-  dependency, add a settable seam in a helper module (see `use-effect-fix-fetch/api.ts`).
+- `<Component>.test.tsx` (or `.test.ts` for a non-JSX grader — both are accepted) — the
+  grader. **Jest-style, not Vitest:** no `import … from "vitest"` and no bare
+  `import "vitest"`; use `@testing-library/react` + global `describe`/`it`; assert with plain
+  matchers (`…textContent).toBe(…)`, `toBeTruthy()`, `toBeNull()`) — **no** `jest-dom` matchers
+  like `toBeInTheDocument`. There is **no spy or mock library**: `vi.*`, `jest.fn`,
+  `jest.spyOn`, `jest.mock` and fake timers are all undefined at runtime. To observe a call,
+  swap the global by hand in the test and restore it in a `finally`; to control an async
+  dependency, add a settable seam in a helper module (see `use-effect-fix-fetch/api.ts`); to
+  observe subscriptions, expose a count from the support module (see
+  `selector-store-subscription/counter-store.ts`).
 - `solution.tsx` — the reference fix; **must export the same component name** as the entry
   (the runner swaps its contents into the editor for "Show solution"). The filename is
   hard-coded in `lib/content.ts` — it stays `solution.tsx` even when the entry is a `.ts` file.
@@ -104,8 +109,10 @@ test runner). The folder holds:
 The **starter must fail** the tests and the **solution must pass** them. Any other files in
 the folder load into the sandbox as read-only support files.
 
-**No third-party imports.** `components/challenge-runner.tsx` hard-codes the Sandpack
-dependency list (React + Testing Library). A challenge cannot `import "zustand"` /
+**No _additional_ sandbox dependencies.** `components/challenge-runner.tsx` hard-codes the
+Sandpack dependency list, so exactly two families of import resolve: **React**, and
+**`@testing-library/react` / `@testing-library/dom`** — which is why the grader may import React Testing Library
+and nothing else. A challenge cannot `import "zustand"` /
 `"@tanstack/react-query"` today — teach the _mechanism_ with a small hand-rolled support module
 (e.g. `counter-store.ts` in `selector-store-subscription`) or a settable seam
 (`use-effect-fix-fetch/api.ts`). Lifting that limit means adding an optional `dependencies`
@@ -137,9 +144,11 @@ Rule 1 is checked by `zod` (`learning/schema.ts`). **Rule 2** (each reading tier
 example) is checked by **`scripts/validate.ts`** (`pnpm validate`), which also re-runs schema
 validation, the taxonomy registry + every `skills` tag, and the challenge contract across every
 track/unit: entry resolves inside the folder, and for `in-browser` challenges that `App.tsx`,
-`solution.tsx`, `README.md` and a `*.test.tsx` all exist, that the solution isn't byte-identical
-to the starter, and that the grader doesn't import `vitest`, use a jest-dom matcher, or call
-`jest.mock` (all three fail only at runtime inside the iframe otherwise).
+`solution.tsx`, `README.md` and a `*.test.tsx`/`*.test.ts` grader all exist, that the solution
+isn't byte-identical to the starter, and that the grader doesn't import `vitest` (in either
+form), use a jest-dom matcher, or reach for an absent spy/mock/fake-timer helper (`vi.*`,
+`jest.fn`, `jest.spyOn`, `jest.mock`) — every one of those fails only at runtime inside the
+iframe otherwise.
 
 **Rule 3** (difficulty escalates down a unit) and the _behavioural_ half of **Rule 4** (starter
 fails / solution passes) are still not auto-checked — rule 3 is an authoring guideline; rule 4 is

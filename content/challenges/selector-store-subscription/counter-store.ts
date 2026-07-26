@@ -36,6 +36,8 @@ export const store = {
       listeners.delete(listener);
     };
   },
+  // Exposed so the tests can prove the component unsubscribed when it unmounted.
+  listenerCount: (): number => listeners.size,
   // A module-level store is a singleton, so tests reset it between cases.
   reset: (): void => {
     state = initialState();

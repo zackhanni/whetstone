@@ -11,15 +11,26 @@ fires before unmount in almost every real flow). If the field can be unmounted w
 focused — a modal closed with Esc, a route change — you may want to **flush** instead:
 
 ```tsx
-const latest = useRef({ text, title, onCommit });
-latest.current = { text, title, onCommit }; // keep the closure fresh, every render
+const latest = useRef({ text, commit });
+latest.current = { text, commit }; // keep the closure fresh, every render
 
 useEffect(() => () => {
-  if (timer.current) clearTimeout(timer.current);
-  const { text, title, onCommit } = latest.current;
-  if (text !== title) onCommit(text); // flush the last edit on the way out
+  if (!timer.current) return; // nothing was pending — the timer already saved it
+  clearTimeout(timer.current);
+  timer.current = undefined;
+  const { text, commit } = latest.current;
+  commit(text); // flush the un-saved edit on the way out
 }, []);
 ```
+
+Two details carry the weight here:
+
+- **Flush only when a save was genuinely pending.** `timer.current` is that flag — which
+  only works if you set it to `undefined` when the timer fires *and* when you cancel.
+  Otherwise unmount flushes a value the debounce already wrote.
+- **Route the flush through the same `commit`** (the `lastCommitted` dedupe from the medium
+  example). Belt and braces: even if the "pending?" check is wrong, the value can't be sent
+  twice.
 
 The extra ref exists because an empty-dep cleanup closes over the **first** render's
 values forever. Reading through `latest.current` is the standard escape hatch — the same

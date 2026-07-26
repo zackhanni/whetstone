@@ -4,13 +4,15 @@ title: Ask "who owns this data?" before "where do I put it?"
 ---
 
 Once state has outgrown a single component you're not picking a library, you're picking an
-**owner**. There are only three plausible owners, and they answer different questions.
+**owner**. Three of the four candidates live inside React; the fourth is the one people
+forget, and it's often the right answer.
 
 | Owner | Owns | The question it answers |
 | --- | --- | --- |
 | **Context** | *Transport* for values that rarely change | "How does this reach deep components without prop-drilling?" |
 | **Client store** (Zustand/Redux) | Client-only state many components read and write | "Who is the single source of truth for this app-wide value?" |
 | **Server state** (TanStack Query) | A *cache* of data the server owns | "Is my copy fresh, and how do I refetch it?" |
+| **The URL** | Navigation state: what you're looking at | "Can I paste this as a link, and does Back work?" |
 
 The mistake is treating them as ranked (Context → store → Query as increasing power).
 They're not interchangeable:
@@ -22,6 +24,8 @@ They're not interchangeable:
   multi-step wizard draft, undo stack.
 - Server state is for data your **server** invents. It's a cache, and caches need
   staleness, deduping, retries and invalidation — all things you'd otherwise hand-roll.
+- The URL owns **where the user is**: filters, tab, page, selected id. It's the only owner a
+  colleague can receive over Slack.
 
 **Rule of thumb:** if a refresh of the page should be able to re-derive the value from the
 API, it's server state. If it must be re-derived from the URL, it's URL state. Whatever's

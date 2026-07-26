@@ -5,13 +5,14 @@ import { store } from "./counter-store";
 
 const setup = () => {
   store.reset(); // the store is a module-level singleton — reset between cases
-  render(
+  const view = render(
     <>
       <CountLabel />
       <OtherLabel />
     </>,
   );
   return {
+    unmount: view.unmount,
     count: () => screen.getByTestId("count").textContent,
     other: () => screen.getByTestId("other").textContent,
     countRenders: () => screen.getByTestId("count-renders").textContent,
@@ -41,6 +42,13 @@ describe("useStore", () => {
     view.inc();
     expect(view.count()).toBe("2");
     expect(view.otherRenders()).toBe("1");
+  });
+
+  it("drops its subscription when the component unmounts", () => {
+    const view = setup();
+    expect(store.listenerCount() > 0).toBe(true);
+    view.unmount();
+    expect(store.listenerCount()).toBe(0);
   });
 
   it("still updates the other component when its own slice changes", () => {
