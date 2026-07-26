@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 1,
+  "slug": "zustand-basics",
+  "title": "Zustand basics: create, selectors, set, persist",
+  "skills": [
+    "react",
+    "state-management",
+    "zustand",
+    "persistence",
+    "useSyncExternalStore",
+    "rendering"
+  ],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-zustand",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-zustand",
+      "questions": [
+        {
+          "id": "what-create-returns",
+          "prompt": "What does `const useCounter = create<CounterState>((set) => ({ … }))` give you?",
+          "options": [
+            {
+              "id": "hook-and-store",
+              "text": "A hook you call with a selector — and the store itself, via useCounter.getState() / setState() / subscribe()"
+            },
+            {
+              "id": "provider",
+              "text": "A provider component you must wrap the app in before any component can read the store"
+            },
+            {
+              "id": "context",
+              "text": "A React Context object, which you read with useContext"
+            },
+            {
+              "id": "class",
+              "text": "A store class you instantiate once per component"
+            }
+          ],
+          "answer": "hook-and-store",
+          "explanation": "`create` returns a hook that is *also* the store: `useCounter(selector)` inside React, `useCounter.getState()` outside it. No provider is needed — the store is a module-level singleton, which is exactly why it's app-lifetime state (and why tests must reset it)."
+        },
+        {
+          "id": "selector-identity",
+          "prompt": "`const { count, name } = useStore((s) => ({ count: s.count, name: s.name }))`. Why does this component re-render on unrelated store changes?",
+          "options": [
+            {
+              "id": "new-object",
+              "text": "The selector returns a brand-new object each call, so the Object.is comparison always fails"
+            },
+            {
+              "id": "no-memo",
+              "text": "Because the component isn't wrapped in React.memo"
+            },
+            {
+              "id": "destructuring",
+              "text": "Destructuring a hook result always disables the subscription optimization"
+            },
+            {
+              "id": "two-fields",
+              "text": "Selecting two fields is unsupported; a selector may only return one value"
+            }
+          ],
+          "answer": "new-object",
+          "explanation": "Zustand compares the previous and next *selected value* with `Object.is`. Two structurally identical objects are never `Object.is`-equal, so \"has it changed?\" is always yes. Fix it with two atomic selectors, or one selector wrapped in `useShallow` when you really need an object."
+        },
+        {
+          "id": "set-merge-depth",
+          "prompt": "State is `{ filters: { status: \"open\", page: 2 } }` and you call `set({ filters: { status: \"closed\" } })`. What is `filters` afterwards?",
+          "options": [
+            {
+              "id": "replaced",
+              "text": "{ status: \"closed\" } — page is gone, because the merge is only one level deep"
+            },
+            {
+              "id": "deep-merged",
+              "text": "{ status: \"closed\", page: 2 } — set deep-merges nested objects"
+            },
+            {
+              "id": "error",
+              "text": "Zustand throws, because partial updates must include every nested key"
+            },
+            {
+              "id": "unchanged",
+              "text": "Unchanged — you must use the functional form to update anything"
+            }
+          ],
+          "answer": "replaced",
+          "explanation": "`set` shallow-merges at the top level only, so a nested object is replaced wholesale and `page` is lost. Spread it yourself: `set((s) => ({ filters: { ...s.filters, status: \"closed\" } }))`."
+        },
+        {
+          "id": "functional-set",
+          "prompt": "When must you use `set((s) => …)` rather than `set({ … })`?",
+          "options": [
+            {
+              "id": "depends-on-prev",
+              "text": "Whenever the next value depends on the current one — it reads the state at apply time, not at call time"
+            },
+            {
+              "id": "always",
+              "text": "Always; the object form is deprecated"
+            },
+            {
+              "id": "async",
+              "text": "Only inside async functions"
+            },
+            {
+              "id": "nested",
+              "text": "Only when the state has nested objects"
+            }
+          ],
+          "answer": "depends-on-prev",
+          "explanation": "Same reasoning as functional updates in `useState`: `set({ count: count + 1 })` uses a value captured earlier, so two rapid increments can collapse into one. `set((s) => ({ count: s.count + 1 }))` reads the freshest state when the update is applied."
+        },
+        {
+          "id": "partialize",
+          "prompt": "Why does a persisted store usually need `partialize`?",
+          "options": [
+            {
+              "id": "data-only",
+              "text": "To choose which state is durable — keeping ephemeral, derived, or sensitive fields out of storage (and out of future migrations)"
+            },
+            {
+              "id": "strip-actions",
+              "text": "To stop the store's action functions from being persisted as junk keys that shadow the real ones"
+            },
+            {
+              "id": "required",
+              "text": "It's required; persist throws without it"
+            },
+            {
+              "id": "encrypt",
+              "text": "To encrypt the persisted payload"
+            }
+          ],
+          "answer": "data-only",
+          "explanation": "`persist` serializes the whole state by default, so without `partialize` you also write fields you never wanted on disk: a half-finished draft, something derived you should recompute, a user's email. Note what `partialize` is *not* for — stripping actions. JSON serialization drops function values, and rehydration shallow-merges the persisted object over the initializer, so your actions survive either way. `partialize: (s) => ({ theme: s.theme })` also shrinks the shape a future `migrate` has to handle."
+        },
+        {
+          "id": "ssr-hydration",
+          "prompt": "A persisted theme store in a server-rendered app renders the wrong theme for a frame and logs a hydration warning. Why?",
+          "options": [
+            {
+              "id": "gate",
+              "text": "The server rendered the default (no localStorage there), so the client's first render must match it — apply the persisted value only after mount"
+            },
+            {
+              "id": "bug",
+              "text": "A Zustand bug; persist doesn't support SSR"
+            },
+            {
+              "id": "async-storage",
+              "text": "localStorage reads are async, so the value always arrives after paint"
+            },
+            {
+              "id": "use-context",
+              "text": "Because the store isn't in a Context provider"
+            }
+          ],
+          "answer": "gate",
+          "explanation": "Hydration requires the client's first render to produce the server's markup. The server has no localStorage, so it emits the default; rendering the persisted value immediately mismatches. Gate on `hasHydrated()` (or a mounted flag) and render the persisted value on the second pass. This is the same hydration gate any localStorage-backed state needs."
+        },
+        {
+          "id": "test-reset",
+          "prompt": "Two tests interfere: the second one starts with the count the first left behind. What's the fix?",
+          "options": [
+            {
+              "id": "reset",
+              "text": "Snapshot the initial state at import and `useCounter.setState(initial, true)` in beforeEach"
+            },
+            {
+              "id": "new-store",
+              "text": "Nothing to fix — each test file gets a fresh store automatically"
+            },
+            {
+              "id": "mock",
+              "text": "Mock the zustand module in every test"
+            },
+            {
+              "id": "provider",
+              "text": "Wrap each test in a store provider"
+            }
+          ],
+          "answer": "reset",
+          "explanation": "A module-level store is created once per module registry and shared by every test in the file — that's the flip side of \"no provider needed.\" Reset it explicitly between tests; the `true` second argument replaces the state instead of merging, so nothing from the previous test survives."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-zustand",
+      "prompts": [
+        {
+          "id": "create-store",
+          "prompt": "Create a counter store whose increment reads the previous value.",
+          "code": "export const useCounter = ___<CounterState>((set) => ({\n  count: 0,\n  inc: () => ___((s) => ({ count: s.count + 1 })),\n}));",
+          "blanks": [
+            {
+              "id": "z1",
+              "accept": [
+                "create"
+              ]
+            },
+            {
+              "id": "z2",
+              "accept": [
+                "set"
+              ]
+            }
+          ],
+          "explanation": "`create` builds the hook/store from an initializer that receives `set`. The functional form of `set` reads the current state when the update is applied, so rapid increments don't collapse."
+        },
+        {
+          "id": "atomic-selector",
+          "prompt": "Subscribe to just the count, so unrelated store changes don't re-render this component.",
+          "code": "const count = useCounter((s) => s.___);",
+          "blanks": [
+            {
+              "id": "z3",
+              "accept": [
+                "count"
+              ]
+            }
+          ],
+          "explanation": "An atomic selector returns a primitive, so `Object.is` can tell whether it actually changed. Calling `useCounter()` with no selector subscribes to the whole state and re-renders on every change."
+        },
+        {
+          "id": "outside-react",
+          "prompt": "Read and write the store from plain, non-React code (a test, an event handler in a module).",
+          "code": "useCounter.___().inc();\nuseCounter.___({ count: 0 });",
+          "blanks": [
+            {
+              "id": "z4",
+              "accept": [
+                "getState"
+              ]
+            },
+            {
+              "id": "z5",
+              "accept": [
+                "setState"
+              ]
+            }
+          ],
+          "explanation": "The hook is also the store object: `getState()` reads the current state (actions included) and `setState()` writes it — no component, no renderer. This is what makes a Zustand store straightforward to unit test."
+        },
+        {
+          "id": "persist-config",
+          "prompt": "Persist only the theme under a named storage key.",
+          "code": "create<Settings>()(\n  ___(\n    (set) => ({ theme: \"system\", setTheme: (t) => set({ theme: t }) }),\n    { name: \"whetstone-settings\", ___: (s) => ({ theme: s.theme }) },\n  ),\n);",
+          "blanks": [
+            {
+              "id": "z6",
+              "accept": [
+                "persist"
+              ]
+            },
+            {
+              "id": "z7",
+              "accept": [
+                "partialize"
+              ]
+            }
+          ],
+          "explanation": "`persist` wraps the initializer; `name` is the storage key and `partialize` narrows what gets written so the store's functions aren't serialized. Note the curried `create<Settings>()( … )` — that extra call is what keeps TypeScript inference working through middleware."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-zustand",
+      "snippets": [
+        {
+          "id": "object-selector-rerender",
+          "code": "const useStore = create((set) => ({ count: 0, name: \"Ana\", setName: (name) => set({ name }) }));\n\nfunction CountLabel() {\n  const { count } = useStore((s) => ({ count: s.count }));\n  console.log(\"CountLabel render\");\n  return <span>{count}</span>;\n}\n\n// Somewhere else: setName(\"Bob\") — count never changes.",
+          "question": "Does CountLabel re-render?",
+          "answer": "yes",
+          "acceptable": [
+            "yes",
+            "yes it re-renders",
+            "re-renders",
+            "yes, every store change"
+          ],
+          "explanation": "The selector returns a *new* `{ count }` object on every call, so Zustand's `Object.is` check always reports a change — you get the Context behavior you were trying to avoid. `useStore((s) => s.count)` returns a number and re-renders only when the number changes."
+        },
+        {
+          "id": "nested-set-clobbers",
+          "code": "const useStore = create((set) => ({\n  filters: { status: \"open\", page: 2 },\n  setStatus: (status) => set({ filters: { status } }),\n}));\n\nuseStore.getState().setStatus(\"closed\");\nconsole.log(useStore.getState().filters);",
+          "question": "What is logged?",
+          "answer": "{ status: 'closed' }",
+          "acceptable": [
+            "{ status: 'closed' }",
+            "{status: \"closed\"}",
+            "{ status: \"closed\" } — page is gone",
+            "page is gone"
+          ],
+          "explanation": "`set` merges only the top level: the whole `filters` object is replaced, so `page` disappears. Spread the nested object yourself — `set((s) => ({ filters: { ...s.filters, status } }))`."
+        },
+        {
+          "id": "stale-set-object",
+          "code": "const inc = () => {\n  const { count } = useCounter.getState();\n  useCounter.setState({ count: count + 1 });\n};\n\n// count is 0. Two clicks fire inc() back to back, both reading before either writes.",
+          "question": "What is count afterwards, and what would the functional form give?",
+          "answer": "1 (functional form gives 2)",
+          "acceptable": [
+            "1",
+            "1, functional gives 2",
+            "1 instead of 2"
+          ],
+          "explanation": "Both calls captured `count === 0`, so the second write clobbers the first with the same value — the classic lost update. `setState((s) => ({ count: s.count + 1 }))` reads the state at apply time and lands on 2. Same rule as functional updates in `useState`."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-selector-store",
+      "challengeSlug": "selector-store-subscription",
+      "mode": "in-browser"
+    }
+  ]
+}

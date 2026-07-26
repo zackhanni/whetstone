@@ -1,0 +1,68 @@
+---
+id: selectors-and-persist
+title: Selector identity, and persisting a store
+---
+
+## The selector re-render rule
+
+Zustand compares the **selected value** with `Object.is` after every store change. A
+selector that builds a new object or array every call therefore never compares equal — the
+component re-renders on *every* store update, which is exactly the problem you left Context
+to escape.
+
+```tsx
+// ❌ a new object each call → re-renders on any change
+const { count, name } = useStore((s) => ({ count: s.count, name: s.name }));
+
+// ✅ two atomic selectors, each a primitive
+const count = useStore((s) => s.count);
+const name = useStore((s) => s.name);
+
+// ✅ or one selector with a shallow comparison
+import { useShallow } from "zustand/react/shallow";
+const { count, name } = useStore(useShallow((s) => ({ count: s.count, name: s.name })));
+```
+
+Prefer several atomic selectors; reach for `useShallow` when you genuinely need a derived
+object/array (e.g. a filtered list).
+
+## persist: localStorage in one line
+
+```ts
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+export const useSettings = create<Settings>()(
+  persist(
+    (set) => ({
+      theme: "system",
+      setTheme: (theme) => set({ theme }),
+    }),
+    {
+      name: "whetstone-settings",              // the storage key
+      partialize: (s) => ({ theme: s.theme }), // persist only the durable state
+      version: 1,
+      migrate: (persisted, from) => (from === 0 ? upgrade(persisted) : persisted),
+    },
+  ),
+);
+```
+
+Note `create<Settings>()( … )` — the extra `()` is the curried form TypeScript needs when
+a middleware wraps the initializer.
+
+Four details that bite:
+
+- **`partialize`** — chooses *which* state is durable. You don't need it to strip actions
+  (JSON serialization drops function values, and rehydration shallow-merges over the
+  initializer, so your actions come back intact regardless). You need it to keep ephemeral,
+  derived, or sensitive fields out of `localStorage`: a smaller payload, nothing private on
+  disk, and less shape for a future `migrate` to worry about.
+- **`version` + `migrate`** — the shape you persist today will change; a version number is
+  how you avoid crashing on someone's year-old localStorage.
+- **Rehydration is async-ish.** The store starts at its initial state and is replaced once
+  storage is read; `useSettings.persist.hasHydrated()` and `onFinishHydration` let you wait
+  for it.
+- **SSR:** the server has no `localStorage`, so the first client render must match the
+  server's default. Gate on a `hydrated` flag before rendering persisted values, or you get
+  a hydration mismatch (see `docs/zustand-migration.md` for how this project plans to do it).

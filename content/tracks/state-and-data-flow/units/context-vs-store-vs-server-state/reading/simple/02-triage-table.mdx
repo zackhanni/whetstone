@@ -1,0 +1,32 @@
+---
+id: triage-table
+title: Triage: twelve real values and where they go
+---
+
+| Value | Owner | Why |
+| --- | --- | --- |
+| Theme (light/dark) | Context (+ persistence) | Changes rarely, read everywhere |
+| Locale / translations | Context | Same — stable transport |
+| `queryClient`, API client | Context | A dependency, not state |
+| Logged-in user profile | Server state | The server owns it; it can go stale |
+| Session / access token | **`HttpOnly` cookie** the server sets | Not readable by JS at all — see the note below |
+| Sidebar open / modal stack | Client store | App-invented UI state, many consumers |
+| Search filters, sort, page | **URL** | Must be shareable and survive reload |
+| Selected rows in a table | Local or store | Local if one screen; store if a toolbar elsewhere acts on it |
+| Multi-step wizard draft | Client store (persisted) | Spans routes, must survive a refresh |
+| Toast/notification queue | Client store | Written from anywhere, read once |
+| Table data from `/api/orders` | Server state | A cache: needs staleness + invalidation |
+| Cursor position, timer handle | Ref / local | Never rendered, or only by one component |
+
+Three patterns worth memorizing from that table:
+
+- **The URL is a state container** and it beats a store whenever the answer to "should
+  this survive a copy-pasted link?" is yes.
+- **Credentials are not app state.** A token in a store is readable by any injected script,
+  and a *persisted* store puts it in `localStorage` where it survives the tab. Prefer a
+  `Secure`, `HttpOnly`, `SameSite` cookie (or a BFF that holds the token server-side) and add
+  CSRF protection. If JavaScript genuinely must hold one, keep it in **memory only**, never
+  persisted, and treat any XSS as a full credential compromise.
+- **Never copy server data into a client store.** The moment you `setOrders(data)` you own
+  two truths and have to keep them in sync forever. Keep the query as the source and derive
+  what you need from it.

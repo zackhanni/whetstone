@@ -1,0 +1,38 @@
+---
+id: create-and-select
+title: create() makes a hook; the selector decides who re-renders
+---
+
+A Zustand store is one call. `create` returns a **hook** that any component can import —
+no provider, no wrapper.
+
+```ts
+import { create } from "zustand";
+
+type CounterState = {
+  count: number;
+  inc: () => void;
+  reset: () => void;
+};
+
+export const useCounter = create<CounterState>((set) => ({
+  count: 0,
+  inc: () => set((s) => ({ count: s.count + 1 })),
+  reset: () => set({ count: 0 }),
+}));
+```
+
+Note that **actions live in the store**, next to the data they change. Components call
+`inc()`; they never reach in and assign `count`.
+
+Reading it, always with a selector:
+
+```tsx
+const count = useCounter((s) => s.count);   // ✅ re-renders only when count changes
+const { count } = useCounter();             // ⚠️ re-renders on ANY store change
+const inc = useCounter((s) => s.inc);       // ✅ a function identity that never changes
+```
+
+That selector is the whole difference from Context: the component subscribes to the
+**slice it selected**, compared with `Object.is`. Change some unrelated field and this
+component doesn't re-render at all.

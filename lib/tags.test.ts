@@ -39,8 +39,12 @@ describe("downward closure", () => {
   });
 
   it("leaves have no descendants; subtree is self", () => {
-    expect([...descendantsOf("useEffect")]).toEqual([]);
-    expect([...subtreeOf("useEffect")]).toEqual(["useEffect"]);
+    expect([...descendantsOf("useMemo")]).toEqual([]);
+    expect([...subtreeOf("useMemo")]).toEqual(["useMemo"]);
+  });
+
+  it("a tag with children reports them (useEffect → cleanup)", () => {
+    expect([...descendantsOf("useEffect")]).toEqual(["cleanup"]);
   });
 
   it("dedupes diamonds from multiple parents", () => {
@@ -89,7 +93,16 @@ describe("matches — the filtering rule", () => {
 });
 
 describe("rollupForCard", () => {
-  const trackUnion = ["frontend", "react", "hooks", "useState", "useEffect", "useRef", "rendering", "refs"];
+  const trackUnion = [
+    "frontend",
+    "react",
+    "hooks",
+    "useState",
+    "useEffect",
+    "useRef",
+    "rendering",
+    "refs",
+  ];
 
   it("drops root dimensions and orders broadest-first", () => {
     const { shown } = rollupForCard(trackUnion, 4);

@@ -1,0 +1,31 @@
+---
+id: set-merges
+title: set() merges the top level — and nothing deeper
+---
+
+`set` takes either a partial object or a function of the current state, and **shallow
+merges** the result into the store.
+
+```ts
+set({ count: 5 });                    // other top-level keys are kept
+set((s) => ({ count: s.count + 1 })); // use this whenever the next value depends on the old
+```
+
+The merge is one level deep. Nested objects are replaced wholesale, so you spread them
+yourself:
+
+```ts
+// ❌ wipes every other key inside `filters`
+set({ filters: { status: "open" } });
+
+// ✅ keep the rest of filters
+set((s) => ({ filters: { ...s.filters, status: "open" } }));
+```
+
+Two more things worth knowing early:
+
+- `set(partial, true)` **replaces** the whole state instead of merging — which also throws
+  away your actions unless you re-supply them. It's rarely what you want.
+- Outside React (an event handler in a plain module, a test) use
+  `useCounter.getState().inc()` and `useCounter.setState(...)`. The hook and the store are
+  the same object.

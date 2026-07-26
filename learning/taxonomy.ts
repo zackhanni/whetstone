@@ -28,7 +28,11 @@ export const Taxonomy = z.array(TagNode).superRefine((nodes, ctx) => {
   const bySlug = new Map<string, TagNode>();
   nodes.forEach((n, i) => {
     if (bySlug.has(n.slug)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [i, "slug"], message: `duplicate tag slug "${n.slug}"` });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [i, "slug"],
+        message: `duplicate tag slug "${n.slug}"`,
+      });
     }
     bySlug.set(n.slug, n);
   });
@@ -48,7 +52,9 @@ export const Taxonomy = z.array(TagNode).superRefine((nodes, ctx) => {
 
   // No cycles: DFS over parent edges with white/gray/black coloring. A gray node reached again is
   // a back-edge → cycle. Unknown parents are skipped (already reported above).
-  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const WHITE = 0,
+    GRAY = 1,
+    BLACK = 2;
   const color = new Map<string, number>();
   const hasCycleFrom = (slug: string): boolean => {
     color.set(slug, GRAY);
@@ -63,7 +69,11 @@ export const Taxonomy = z.array(TagNode).superRefine((nodes, ctx) => {
   };
   for (const n of nodes) {
     if ((color.get(n.slug) ?? WHITE) === WHITE && hasCycleFrom(n.slug)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message: `tag hierarchy has a cycle involving "${n.slug}"` });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [],
+        message: `tag hierarchy has a cycle involving "${n.slug}"`,
+      });
       break;
     }
   }
@@ -81,7 +91,12 @@ export const TAXONOMY: TagNode[] = [
 
   // frontend → areas
   { slug: "react", label: "React", parents: ["frontend"] },
-  { slug: "state-management", label: "State Management", parents: ["frontend"] },
+  { slug: "async", label: "Async & Timing", parents: ["frontend"] },
+  {
+    slug: "state-management",
+    label: "State Management",
+    parents: ["frontend"],
+  },
   { slug: "architecture", label: "Architecture", parents: ["frontend"] },
 
   // react → topics
@@ -96,12 +111,26 @@ export const TAXONOMY: TagNode[] = [
   // hooks (multi-parent where a hook is also "about" another topic)
   { slug: "useState", label: "useState", parents: ["hooks", "state"] },
   { slug: "useEffect", label: "useEffect", parents: ["hooks"] },
+  { slug: "cleanup", label: "Effect Cleanup", parents: ["useEffect"] },
+  {
+    slug: "useSyncExternalStore",
+    label: "useSyncExternalStore",
+    parents: ["hooks", "state-management"],
+  },
   { slug: "useRef", label: "useRef", parents: ["hooks", "refs"] },
   { slug: "useMemo", label: "useMemo", parents: ["hooks", "rendering"] },
-  { slug: "useCallback", label: "useCallback", parents: ["hooks", "rendering"] },
+  {
+    slug: "useCallback",
+    label: "useCallback",
+    parents: ["hooks", "rendering"],
+  },
 
   // rendering
-  { slug: "referential-identity", label: "Referential Identity", parents: ["rendering"] },
+  {
+    slug: "referential-identity",
+    label: "Referential Identity",
+    parents: ["rendering"],
+  },
   { slug: "memo", label: "React.memo", parents: ["rendering"] },
   { slug: "performance", label: "Performance", parents: ["rendering"] },
 
@@ -109,18 +138,51 @@ export const TAXONOMY: TagNode[] = [
   { slug: "dom", label: "DOM", parents: ["refs"] },
 
   // forms
-  { slug: "controlled-components", label: "Controlled Components", parents: ["forms"] },
+  {
+    slug: "controlled-components",
+    label: "Controlled Components",
+    parents: ["forms"],
+  },
 
   // state
-  { slug: "functional-updates", label: "Functional Updates", parents: ["state"] },
+  {
+    slug: "functional-updates",
+    label: "Functional Updates",
+    parents: ["state"],
+  },
+  { slug: "derived-state", label: "Derived State", parents: ["state"] },
+
+  // async
+  { slug: "timers", label: "Timers", parents: ["async"] },
+  {
+    slug: "debounce",
+    label: "Debounce & Throttle",
+    parents: ["async", "forms"],
+  },
 
   // data-fetching
-  { slug: "tanstack-query", label: "TanStack Query", parents: ["data-fetching"] },
-  { slug: "AbortController", label: "AbortController", parents: ["data-fetching"] },
+  {
+    slug: "tanstack-query",
+    label: "TanStack Query",
+    parents: ["data-fetching"],
+  },
+  {
+    slug: "AbortController",
+    label: "AbortController",
+    parents: ["data-fetching"],
+  },
 
   // state-management
   { slug: "zustand", label: "Zustand", parents: ["state-management"] },
+  { slug: "persistence", label: "Persistence", parents: ["state-management"] },
+  {
+    slug: "server-state",
+    label: "Server State",
+    parents: ["state-management", "data-fetching"],
+  },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
-export const TAXONOMY_SLUGS: ReadonlySet<string> = new Set(TAXONOMY.map((n) => n.slug));
+export const TAXONOMY_SLUGS: ReadonlySet<string> = new Set(
+  TAXONOMY.map((n) => n.slug),
+);

@@ -1,0 +1,82 @@
+---
+id: how-it-works-and-testing
+title: What create() is actually doing — and testing a singleton
+---
+
+## Zustand in ~20 lines
+
+There's no magic under `create`: a variable, a `Set` of listeners, and React's
+`useSyncExternalStore`.
+
+```ts
+type Listener = () => void;
+
+function createStore<T>(init: (set: (partial: Partial<T>) => void) => T) {
+  let state: T;
+  const listeners = new Set<Listener>();
+
+  const set = (partial: Partial<T>) => {
+    state = { ...state, ...partial };   // the shallow merge
+    listeners.forEach((l) => l());      // tell every subscriber
+  };
+
+  state = init(set);
+
+  return {
+    getState: () => state,
+    subscribe: (l: Listener) => { listeners.add(l); return () => listeners.delete(l); },
+  };
+}
+
+// The React binding: subscribe to the store, but only re-render when the SELECTED slice changes.
+function useStore<T, U>(store: Store<T>, selector: (s: T) => U): U {
+  return useSyncExternalStore(
+    store.subscribe,
+    () => selector(store.getState()),   // client snapshot
+    () => selector(store.getState()),   // server snapshot (SSR)
+  );
+}
+```
+
+`useSyncExternalStore` is the React 18 API for subscribing to state that lives outside
+React. It re-renders only when the snapshot changes by `Object.is` — which is precisely why
+a selector returning a fresh object re-renders every time, and why an atomic selector
+doesn't. It also handles tearing during concurrent rendering, which a hand-rolled
+`useState` + `useEffect` subscription does not.
+
+> **This is a teaching shorthand, not Zustand's source.** Real Zustand reaches for
+> `useSyncExternalStoreWithSelector` (from `use-sync-external-store/shim`), which adds a
+> caching layer plus an `equalityFn`. That matters: with the bare version above, an
+> object-returning selector doesn't merely re-render often — React notices `getSnapshot`
+> returning a new value every call and warns _"The result of getSnapshot should be cached"_.
+> Zustand also keeps a distinct initial state for the server snapshot instead of calling
+> `getState()` twice. Read the shorthand for the mechanism; read the real thing before you
+> ship your own.
+
+Everything else Zustand ships — `persist`, `devtools`, `immer`, `subscribeWithSelector` —
+is middleware wrapping that `set`.
+
+## Testing a module-level store
+
+The store is a singleton created at import time, so state **leaks between tests**. Reset it
+explicitly:
+
+```ts
+const initial = useCounter.getState();
+
+beforeEach(() => {
+  useCounter.setState(initial, true); // `true` = replace, not merge
+});
+```
+
+Test the store itself without React (`useCounter.getState().inc()` then assert on
+`getState().count`) — plain functions, no renderer. Save component tests for the wiring.
+
+## When Zustand is the wrong answer
+
+- The value is server data → a query cache owns it.
+- The value belongs in the URL → the URL owns it.
+- Only one screen uses it → local state, or a store created per screen and provided through
+  Context so it dies with the screen (module-level stores are app-lifetime by definition).
+- You need time-travel debugging and strict action logs across a large team → Redux
+  Toolkit's ceremony starts paying for itself.

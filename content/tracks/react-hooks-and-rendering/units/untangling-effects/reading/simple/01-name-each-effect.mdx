@@ -1,0 +1,20 @@
+---
+id: name-each-effect
+title: Read a crowded component by naming each effect
+---
+
+When you open a component with four `useEffect`s, don't start editing. Give each one a
+one-sentence name — "what outside thing does this synchronize with?" Almost every effect
+you'll meet is one of five kinds:
+
+| Kind | Example | Verdict |
+| --- | --- | --- |
+| **Subscribe to something external** | `addEventListener`, a socket, a store | ✅ a real effect — needs cleanup |
+| **Imperative DOM call** | `.focus()`, measuring, scroll position | ✅ a real effect |
+| **Fetch / write to a server** | load on mount, autosave | ⚠️ effect, but a data library usually owns it |
+| **Compute state from other state/props** | `setCount(text.length)` | ❌ not an effect — derive during render |
+| **Copy a prop into state** | `setText(props.title)` | ❌ not an effect — usually a `key` or lifting fixes it |
+
+If you can't finish the sentence "this effect synchronizes with **…**", the effect is
+probably the bug. The two ❌ rows are the ones that produce a component full of effects
+fighting each other.

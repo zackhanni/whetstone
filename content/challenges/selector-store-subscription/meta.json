@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "slug": "selector-store-subscription",
+  "title": "Make the store hook subscribe per selector",
+  "prompt": "useStore copies the whole store into local state, so every component re-renders on any change. Rebuild it on useSyncExternalStore so a component re-renders only when its selected slice changes — the mechanism behind zustand's selectors.",
+  "skills": ["react", "state-management", "zustand", "useSyncExternalStore", "rendering"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "stack": ["react", "ts"],
+  "entry": "useStore.ts",
+  "acceptanceCriteria": [
+    "useStore(selector) returns the selected slice of the current store state",
+    "Changing a slice re-renders the components that select it",
+    "Changing a slice does NOT re-render a component that selects a different slice",
+    "The subscription is removed when a component unmounts"
+  ]
+}

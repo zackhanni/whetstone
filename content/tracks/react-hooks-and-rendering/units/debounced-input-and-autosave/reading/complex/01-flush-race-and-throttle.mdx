@@ -1,0 +1,62 @@
+---
+id: flush-race-and-throttle
+title: Unmount flush, out-of-order saves, and debounce vs throttle
+---
+
+## Cancel on unmount, or flush on unmount?
+
+The version above **cancels** the pending save when the component unmounts — the last
+edits are dropped. That's the safe default for a field that also commits on blur (blur
+fires before unmount in almost every real flow). If the field can be unmounted while
+focused — a modal closed with Esc, a route change — you may want to **flush** instead:
+
+```tsx
+const latest = useRef({ text, commit });
+latest.current = { text, commit }; // keep the closure fresh, every render
+
+useEffect(() => () => {
+  if (!timer.current) return; // nothing was pending — the timer already saved it
+  clearTimeout(timer.current);
+  timer.current = undefined;
+  const { text, commit } = latest.current;
+  commit(text); // flush the un-saved edit on the way out
+}, []);
+```
+
+Two details carry the weight here:
+
+- **Flush only when a save was genuinely pending.** `timer.current` is that flag — which
+  only works if you set it to `undefined` when the timer fires *and* when you cancel.
+  Otherwise unmount flushes a value the debounce already wrote.
+- **Route the flush through the same `commit`** (the `lastCommitted` dedupe from the medium
+  example). Belt and braces: even if the "pending?" check is wrong, the value can't be sent
+  twice.
+
+The extra ref exists because an empty-dep cleanup closes over the **first** render's
+values forever. Reading through `latest.current` is the standard escape hatch — the same
+"latest value" ref pattern you saw in the `useRef` unit.
+
+> Flushing during unmount only works if `onCommit` doesn't need the component: a fetch or
+> a store write is fine, a `setState` on the dying component is not.
+
+## Debounced saves arrive out of order
+
+Debouncing reduces the number of requests; it does not order them. Two saves 1.2s apart
+can still land server-side in the wrong order if the first one is slow — and the older
+text wins. Fixes, cheapest first:
+
+- Send a monotonically increasing revision/`updatedAt` with each write and let the server
+  reject stale ones.
+- Keep an `AbortController` per in-flight save and abort the previous one.
+- Serialize: queue the next save until the current promise settles.
+
+## Debounce vs throttle
+
+- **Debounce** — run *once, after* the activity stops. Autosave, search-as-you-type,
+  resize-settled. Risk: with continuous input it may never fire.
+- **Throttle** — run *at most once per interval, during* the activity. Scroll position,
+  drag handlers, progress pings. Risk: it fires while the value is still changing.
+
+A "save at least every 5s while typing" requirement is debounce **with a max wait** — the
+point where hand-rolling stops paying for itself and a tested utility (or a mutation
+library that already coalesces writes) is the better answer.

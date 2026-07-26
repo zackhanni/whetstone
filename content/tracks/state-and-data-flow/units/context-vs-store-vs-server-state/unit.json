@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "slug": "context-vs-store-vs-server-state",
+  "title": "Context vs client store vs server state",
+  "skills": ["react", "state-management", "context", "zustand", "server-state", "tanstack-query", "architecture"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "blocks": [
+    { "type": "reading", "id": "read-owners", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-owners",
+      "questions": [
+        {
+          "id": "filters-owner",
+          "prompt": "A table's status filter and page number must be shareable as a link and survive a refresh. Who owns them?",
+          "options": [
+            { "id": "url", "text": "The URL — read them from the query string and put them in the query key" },
+            { "id": "store", "text": "A Zustand store, persisted to localStorage" },
+            { "id": "context", "text": "A FiltersContext near the top of the app" },
+            { "id": "server", "text": "Server state, via a useQuery for the current filter" }
+          ],
+          "answer": "url",
+          "explanation": "\"Shareable link\" and \"survives refresh\" is the URL's job description — it also gives you back/forward for free. A persisted store survives refresh but can't be pasted to a colleague, Context is only transport, and a filter isn't data the server owns (though the filter should feed the query key)."
+        },
+        {
+          "id": "copy-into-store",
+          "prompt": "What's wrong with `useEffect(() => { if (data) setOrders(data) }, [data])` after a useQuery?",
+          "options": [
+            { "id": "two-truths", "text": "It creates a second source of truth — you now own keeping the copy fresh, and it will go stale" },
+            { "id": "loop", "text": "Nothing is wrong; it's the standard way to expose query data to other components" },
+            { "id": "types", "text": "It breaks TypeScript inference on `data`" },
+            { "id": "slow", "text": "It's slower, but otherwise equivalent" }
+          ],
+          "answer": "two-truths",
+          "explanation": "The query cache already holds the data and knows when it's stale. Mirroring it into a store means every refetch, invalidation and optimistic update has to be replayed into the copy — and the day someone forgets, the UI silently shows old orders. Read from the query and derive; store only the client's own decisions (ids, filters)."
+        },
+        {
+          "id": "store-ids-not-rows",
+          "prompt": "A selection store keeps track of chosen table rows. Store what?",
+          "options": [
+            { "id": "ids", "text": "A Set of row ids — join against the query data at render time" },
+            { "id": "rows", "text": "The full row objects, so components don't need the query" },
+            { "id": "indices", "text": "The row indices in the current page's array" },
+            { "id": "both", "text": "Both ids and rows, for convenience" }
+          ],
+          "answer": "ids",
+          "explanation": "Ids are stable; rows are a snapshot that goes stale on the next refetch, and indices break the moment the list is sorted, filtered, or paged. Keep the id set in the store and derive the selected entities from the query data when you render."
+        },
+        {
+          "id": "context-is-transport",
+          "prompt": "Which value is Context genuinely the RIGHT tool for?",
+          "options": [
+            { "id": "queryclient", "text": "The QueryClient / API client instance — a dependency that never changes" },
+            { "id": "playback", "text": "The current audio playback position, updating ~10x/second" },
+            { "id": "orders", "text": "The orders list fetched from the API" },
+            { "id": "selected", "text": "Which rows are selected in a large table" }
+          ],
+          "answer": "queryclient",
+          "explanation": "Context excels at handing a stable value down the tree: clients, config, theme, locale. It has no selectors, so every consumer re-renders on an identity change — which rules out the 10x/second value and makes it a poor fit for hot selection state. Fetched data belongs in the query cache, no matter how it's transported."
+        },
+        {
+          "id": "wizard-scope",
+          "prompt": "A three-step wizard's draft must survive navigating between its steps (separate routes) but should start empty each time the user opens the wizard. What's the trap with a module-level store?",
+          "options": [
+            { "id": "singleton", "text": "It's a singleton: the draft outlives the wizard, so reopening shows the old half-filled form unless you reset it" },
+            { "id": "no-routes", "text": "Stores can't be read from more than one route" },
+            { "id": "no-ts", "text": "Module-level stores lose type inference across routes" },
+            { "id": "ssr-only", "text": "Module-level stores only work with SSR disabled" }
+          ],
+          "answer": "singleton",
+          "explanation": "A module-level store is created once per page load and shared by everything — great for app-wide state, a leak for screen-scoped state (it also leaks between test cases). Either reset it explicitly when the wizard mounts/unmounts, or create the store per-wizard and provide it through Context so it dies with the screen."
+        },
+        {
+          "id": "hydration",
+          "prompt": "A theme is persisted to localStorage and the app is server-rendered. Why does reading it during the first client render cause a hydration mismatch?",
+          "options": [
+            { "id": "no-storage-on-server", "text": "localStorage doesn't exist on the server, so the server's HTML used the default — the first client render must match it, then apply the stored value" },
+            { "id": "react-bug", "text": "It's a React bug fixed by disabling StrictMode" },
+            { "id": "context-only", "text": "Only Context values cause mismatches; a store would be fine" },
+            { "id": "async", "text": "localStorage is asynchronous, so the value arrives too late" }
+          ],
+          "answer": "no-storage-on-server",
+          "explanation": "Hydration requires the client's first render to produce the same markup the server sent. The server had no localStorage, so it rendered the default; reading the stored theme immediately produces different output. Render the default, then apply the persisted value after mount (a hydration gate) — localStorage itself is synchronous, and the problem is identical for a store or a Context."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-owners",
+      "prompts": [
+        {
+          "id": "query-key-inputs",
+          "prompt": "Every input the request depends on goes in the query key, so each filter/page combination is its own cache entry.",
+          "code": "useQuery({\n  queryKey: [\"orders\", { ___, ___ }],\n  queryFn: () => getOrders({ status, page }),\n});",
+          "blanks": [
+            { "id": "a1", "accept": ["status"] },
+            { "id": "a2", "accept": ["page"] }
+          ],
+          "explanation": "The key IS the cache identity. With status and page inside it, switching filters is a cache lookup (or a fresh fetch) rather than a manual refetch, and `invalidateQueries({ queryKey: [\"orders\"] })` still invalidates every variant at once."
+        },
+        {
+          "id": "derive-selection",
+          "prompt": "The store holds selected ids; derive the selected rows from the server data at render time.",
+          "code": "const selectedIds = useSelectionStore((s) => s.selectedIds); // Set<string>\nconst selected = data.items.___((o) => selectedIds.___(o.id));",
+          "blanks": [
+            { "id": "b1", "accept": ["filter"] },
+            { "id": "b2", "accept": ["has"] }
+          ],
+          "explanation": "`Set.has` is an O(1) membership test, and filtering at render time means the selection is always joined against the *current* server data — no stale copies to reconcile."
+        },
+        {
+          "id": "split-context",
+          "prompt": "Split one context in two so that components which only dispatch actions stop re-rendering when the state changes.",
+          "code": "<StateContext.Provider value={state}>\n  <___.Provider value={dispatch}>{children}</___.Provider>\n</StateContext.Provider>",
+          "blanks": [
+            { "id": "c1", "accept": ["DispatchContext"] },
+            { "id": "c2", "accept": ["DispatchContext"] }
+          ],
+          "explanation": "`dispatch` from useReducer is referentially stable, so a dispatch-only context never changes identity and its consumers never re-render. Splitting state from dispatch is the cheapest fix for \"everything re-renders\" before reaching for a store with selectors."
+        }
+      ]
+    }
+  ]
+}
