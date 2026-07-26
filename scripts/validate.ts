@@ -60,6 +60,18 @@ function importedModules(src: string): string[] {
   return specifiers;
 }
 
+/** Every file under `dir`, as paths relative to it. Challenge folders may nest. */
+async function walk(dir: string, prefix = ""): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const out: string[] = [];
+  for (const e of entries) {
+    const rel = prefix ? `${prefix}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...(await walk(path.join(dir, e.name), rel)));
+    else out.push(rel);
+  }
+  return out;
+}
+
 /** "@scope/pkg/sub" -> "@scope/pkg"; "react-dom/client" -> "react-dom". */
 function packageName(specifier: string): string {
   const parts = specifier.split("/");
@@ -109,7 +121,8 @@ async function checkInBrowserChallenge(
   entry: string,
 ) {
   const label = `challenge ${slug}`;
-  const names = await fs.readdir(cDir);
+  // Sandpack loads the whole folder, nested files included, so scan the whole tree.
+  const names = await walk(cDir);
   const read = (n: string) => fs.readFile(path.join(cDir, n), "utf8");
 
   for (const required of ["App.tsx", "solution.tsx", "README.md"]) {
@@ -159,12 +172,13 @@ async function checkInBrowserChallenge(
   );
   for (const t of tests) {
     const src = await read(t);
-    // No spy/mock/fake-timer library is loaded: `vi` and `jest` are undefined at runtime.
-    if (
-      /\bvi\.\w|\bjest\.(spyOn|fn|mocked|useFakeTimers|useRealTimers|advanceTimersByTime|runAllTimers|runOnlyPendingTimers|clearAllTimers|setSystemTime)\b/.test(
-        src,
-      )
-    ) {
+    // No spy/mock/fake-timer library is loaded: `vi` and `jest` are undefined at runtime, so
+    // *any* member access on either throws — don't enumerate, reject the whole namespace.
+    if (/\bjest\.mock\s*\(/.test(src)) {
+      fail(
+        `${label}/${t}: uses jest.mock — unavailable; add a settable seam module instead`,
+      );
+    } else if (/\bvi\.\w|\bjest\.\w/.test(src)) {
       fail(
         `${label}/${t}: uses a spy/fake-timer helper (vi.* / jest.*) — unavailable in the sandbox; patch the global by hand or add a settable seam`,
       );
@@ -175,10 +189,6 @@ async function checkInBrowserChallenge(
         `${label}/${t}: uses the jest-dom matcher ${matcher[0].slice(1, -1).trim()} — only plain matchers are available`,
       );
     }
-    if (/\bjest\.mock\s*\(/.test(src))
-      fail(
-        `${label}/${t}: uses jest.mock — unavailable; add a settable seam module instead`,
-      );
   }
 }
 
