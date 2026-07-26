@@ -53,8 +53,10 @@ then replace the substance. Don't re-derive the conventions from the schema.
    big multi-file projects use `runner: "external"` + `externalUrl` instead.
 5. **Gate.** Run **`pnpm check`** (lint + typecheck + validate + unit tests — not just
    `pnpm validate`, since a taxonomy edit can break `lib/tags.test.ts`) and **`pnpm build`**.
-   Then, **if the unit has a challenge**, verify it **in the browser**: open the unit, hit
-   _Run tests_ — the starter must FAIL and _Show solution_ must PASS. Reuse the running dev server (check `lsof -ti
+   Then verify the challenge, if there is one. **`runner: "in-browser"`:** open the unit and hit
+   _Run tests_ — the starter must FAIL and _Show solution_ must PASS. **`runner: "external"`:**
+   there's no _Run tests_ button, so instead confirm the `externalUrl` loads and that its
+   README/acceptance criteria match the unit's. Reuse the running dev server (check `lsof -ti
 tcp:3002` / `:3000` first; never blanket-kill ports). The behavioural half of Rule 4 has no
    headless run — if you can't verify it yourself, say so explicitly in your summary and list
    the URLs.
@@ -72,8 +74,10 @@ tcp:3002` / `:3000` first; never blanket-kill ports). The behavioural half of Ru
 
 ## Notes
 
-- This skill produces _content_ only — no app/UI code. The runner, validator, and test
-  harness are part of the app (Phase 0 scaffold).
+- This skill produces _content_ — not app/UI code. The runner and the app's test harness are
+  Phase 0 scaffold; leave them alone. The one deliberate exception is step 7: a **reusable**
+  fix may land in `scripts/validate.ts` or `learning/PLAYBOOK.md`, because encoding a lesson
+  learned is cheaper than re-learning it.
 - Don't add speculative fields (pick-N, difficulty-mix, ratings) — they're non-breaking
   later additions. If the schema genuinely can't express what a lesson needs, propose a
   schema change as its own commit + sweep, per the PLAYBOOK.

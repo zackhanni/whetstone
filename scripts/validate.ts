@@ -36,6 +36,69 @@ async function readJson(p: string) {
 }
 
 /**
+ * Everything the Sandpack sandbox can resolve: the react template's own packages plus the
+ * two dependencies `components/challenge-runner.tsx` adds. Anything else 404s in the iframe.
+ */
+const SANDBOX_PACKAGES = new Set([
+  "react",
+  "react-dom",
+  "@testing-library/react",
+  "@testing-library/dom",
+]);
+
+/** Module specifiers imported by a file, in any of the four syntaxes we author with. */
+function importedModules(src: string): string[] {
+  const specifiers: string[] = [];
+  const patterns = [
+    /\bfrom\s*["']([^"']+)["']/g, // import x from "y" / export * from "y"
+    /\bimport\s*["']([^"']+)["']/g, // import "y"
+    /\bimport\s*\(\s*["']([^"']+)["']/g, // await import("y")
+    /\brequire\s*\(\s*["']([^"']+)["']/g, // require("y")
+  ];
+  for (const re of patterns)
+    for (const m of src.matchAll(re)) specifiers.push(m[1]);
+  return specifiers;
+}
+
+/** "@scope/pkg/sub" -> "@scope/pkg"; "react-dom/client" -> "react-dom". */
+function packageName(specifier: string): string {
+  const parts = specifier.split("/");
+  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0];
+}
+
+/**
+ * jest-dom's matchers. Sandpack loads no `expect` extensions, so each one is a runtime
+ * TypeError in the iframe — assert on plain values (`…textContent`, `…value`, `…disabled`).
+ */
+const JEST_DOM_MATCHERS = [
+  "toBeInTheDocument",
+  "toBeVisible",
+  "toBeEmptyDOMElement",
+  "toBeDisabled",
+  "toBeEnabled",
+  "toBeInvalid",
+  "toBeValid",
+  "toBeRequired",
+  "toBeChecked",
+  "toBePartiallyChecked",
+  "toHaveAttribute",
+  "toHaveClass",
+  "toHaveFocus",
+  "toHaveFormValues",
+  "toHaveStyle",
+  "toHaveTextContent",
+  "toHaveValue",
+  "toHaveDisplayValue",
+  "toHaveDescription",
+  "toHaveAccessibleDescription",
+  "toHaveAccessibleErrorMessage",
+  "toHaveAccessibleName",
+  "toHaveErrorMessage",
+  "toContainElement",
+  "toContainHTML",
+];
+
+/**
  * The in-browser (Sandpack) challenge contract — see learning/PLAYBOOK.md. These used to be
  * browser-only discoveries: a missing App.tsx or a `vitest` import fails at *runtime*, inside
  * an iframe, long after authoring. Cheap to check here, so check here.
@@ -70,21 +133,35 @@ async function checkInBrowserChallenge(
       fail(`${label}: solution.tsx is identical to the starter`);
   }
 
-  // Sandpack's runner is jest-style, not Vitest, and ships no jest-dom / module mocking.
+  // Every file in the folder is loaded into the sandbox, so every file's imports must resolve.
+  const sandboxFiles = names.filter((n) => /\.(ts|tsx)$/.test(n));
+  for (const f of sandboxFiles) {
+    const src = await read(f);
+    for (const specifier of importedModules(src)) {
+      if (specifier.startsWith(".") || specifier.startsWith("/")) continue;
+      const pkg = packageName(specifier);
+      if (SANDBOX_PACKAGES.has(pkg)) continue;
+      if (pkg === "vitest") {
+        fail(
+          `${label}/${f}: imports "${specifier}" — Sandpack tests are jest-style globals, not Vitest`,
+        );
+        continue;
+      }
+      fail(
+        `${label}/${f}: imports "${specifier}" — the sandbox only resolves ${[...SANDBOX_PACKAGES].join(", ")}; hand-roll a support module instead`,
+      );
+    }
+  }
+
+  // Sandpack's runner is jest-style, not Vitest, and ships no jest-dom / spies / module mocking.
+  const jestDom = new RegExp(
+    `\\.(?:not\\.)?(?:${JEST_DOM_MATCHERS.join("|")})\\s*\\(`,
+  );
   for (const t of tests) {
     const src = await read(t);
-    // Covers both `from "vitest"` and the side-effect form `import "vitest"`.
+    // No spy/mock/fake-timer library is loaded: `vi` and `jest` are undefined at runtime.
     if (
-      /\bfrom\s+["']vitest["']|\bimport\s+["']vitest["']|require\(\s*["']vitest["']/.test(
-        src,
-      )
-    )
-      fail(
-        `${label}/${t}: imports "vitest" — Sandpack tests are jest-style globals`,
-      );
-    // No spy/mock library is loaded in the sandbox: `vi` and `jest` are undefined at runtime.
-    if (
-      /\bvi\.\w|\bjest\.(spyOn|fn|useFakeTimers|advanceTimersByTime)\b/.test(
+      /\bvi\.\w|\bjest\.(spyOn|fn|mocked|useFakeTimers|useRealTimers|advanceTimersByTime|runAllTimers|runOnlyPendingTimers|clearAllTimers|setSystemTime)\b/.test(
         src,
       )
     ) {
@@ -92,9 +169,10 @@ async function checkInBrowserChallenge(
         `${label}/${t}: uses a spy/fake-timer helper (vi.* / jest.*) — unavailable in the sandbox; patch the global by hand or add a settable seam`,
       );
     }
-    if (/toBeInTheDocument|toHaveTextContent|toBeVisible/.test(src)) {
+    const matcher = jestDom.exec(src);
+    if (matcher) {
       fail(
-        `${label}/${t}: uses a jest-dom matcher — only plain matchers are available`,
+        `${label}/${t}: uses the jest-dom matcher ${matcher[0].slice(1, -1).trim()} — only plain matchers are available`,
       );
     }
     if (/\bjest\.mock\s*\(/.test(src))

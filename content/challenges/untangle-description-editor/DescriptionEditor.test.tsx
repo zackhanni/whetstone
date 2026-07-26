@@ -43,22 +43,31 @@ describe("DescriptionEditor", () => {
     expect(resizes()).toBe("2");
   });
 
-  // No spy library in this sandbox, so count the calls by hand.
-  it("removes the resize listener when it unmounts", () => {
-    const original = window.removeEventListener;
-    let removedResize = 0;
-    window.removeEventListener = function patched(type: string, ...rest: unknown[]) {
-      if (type === "resize") removedResize += 1;
-      return (original as (...a: unknown[]) => void).call(window, type, ...rest);
+  // No spy library in this sandbox, so track the listeners by hand. Counting calls isn't
+  // enough: cleanup has to remove *the same function* it added, so we match on identity.
+  it("removes every resize listener it added when it unmounts", () => {
+    const add = window.addEventListener;
+    const remove = window.removeEventListener;
+    const live = new Set<unknown>();
+
+    window.addEventListener = function patched(type: string, listener: unknown, ...rest: unknown[]) {
+      if (type === "resize") live.add(listener);
+      return (add as (...a: unknown[]) => void).call(window, type, listener, ...rest);
+    } as typeof window.addEventListener;
+
+    window.removeEventListener = function patched(type: string, listener: unknown, ...rest: unknown[]) {
+      if (type === "resize") live.delete(listener);
+      return (remove as (...a: unknown[]) => void).call(window, type, listener, ...rest);
     } as typeof window.removeEventListener;
 
     try {
       const view = render(<DescriptionEditor description="Draft" />);
+      expect(live.size).toBe(1);
       view.unmount();
+      expect(live.size).toBe(0);
     } finally {
-      window.removeEventListener = original;
+      window.addEventListener = add;
+      window.removeEventListener = remove;
     }
-
-    expect(removedResize > 0).toBe(true);
   });
 });

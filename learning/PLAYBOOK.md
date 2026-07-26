@@ -145,10 +145,14 @@ example) is checked by **`scripts/validate.ts`** (`pnpm validate`), which also r
 validation, the taxonomy registry + every `skills` tag, and the challenge contract across every
 track/unit: entry resolves inside the folder, and for `in-browser` challenges that `App.tsx`,
 `solution.tsx`, `README.md` and a `*.test.tsx`/`*.test.ts` grader all exist, that the solution
-isn't byte-identical to the starter, and that the grader doesn't import `vitest` (in either
-form), use a jest-dom matcher, or reach for an absent spy/mock/fake-timer helper (`vi.*`,
-`jest.fn`, `jest.spyOn`, `jest.mock`) — every one of those fails only at runtime inside the
-iframe otherwise.
+isn't byte-identical to the starter, that **every bare import in every sandbox file resolves**
+to a runner-provided package (`react`, `react-dom`, `@testing-library/react`,
+`@testing-library/dom` — so `vitest`, `lodash`, `zustand` are all rejected, in `from` /
+`import "x"` / `import("x")` / `require("x")` form), and that the grader uses no jest-dom
+matcher and no absent spy/mock/fake-timer helper (`vi.*`, `jest.fn`, `jest.spyOn`,
+`jest.mock`, `jest.useFakeTimers`, `jest.runAllTimers`, …). Every one of those fails only at
+runtime inside the iframe otherwise. Widening the runner's dependency list means widening
+`SANDBOX_PACKAGES` in the validator to match.
 
 **Rule 3** (difficulty escalates down a unit) and the _behavioural_ half of **Rule 4** (starter
 fails / solution passes) are still not auto-checked — rule 3 is an authoring guideline; rule 4 is

@@ -12,9 +12,14 @@ invoked with no feedback at all ("take what you just learned and make the system
 
 ## Steps
 
-1. **Gather.** Read `content/feedback/` (or the named unit). Group items by what they're
-   really about: content accuracy, difficulty, or _interface/structure_ (how the lesson is
-   presented). The fix lives in a different place depending on which.
+1. **Gather.** With feedback: read `content/feedback/` (or the named unit). With `--system` (or
+   "make the system better" with nothing to read): the inputs are the run you just finished and
+   the repo itself — every rule you had to learn from a runtime failure rather than a check,
+   `pnpm check`/`pnpm build` output and anything it _didn't_ catch, the last few entries in
+   `docs/lesson-changelog.md` and open ⬜ items in `docs/ROADMAP.md`, and unreviewed PR
+   comments. Either way, group items by what they're really about: content accuracy,
+   difficulty, or _interface/structure_ (how the lesson is presented). The fix lives in a
+   different place depending on which.
 2. **Triage — and pick the highest-leverage layer.** For each item ask "where does this stop
    happening forever?" and fix it at the _highest_ layer that applies:
    1. **A check** in `scripts/validate.ts` (or a unit test) — the machine now enforces it.
@@ -28,8 +33,9 @@ invoked with no feedback at all ("take what you just learned and make the system
    - _Local fix:_ edit the unit/challenge directly.
    - _General fix:_ change the validator / `learning/schema.ts` / `PLAYBOOK.md`. A **schema**
      change (not a validator or prose change) **bumps `schemaVersion`** and sweeps every
-     affected lesson as ONE dedicated, isolated commit.
-   - Keep content edits and system edits in separate commits either way.
+     affected lesson as ONE self-contained change set — nothing unrelated in it.
+   - Keep content edits and system edits in separate change sets either way, so the developer
+     can stage them as separate commits (you don't commit — see step 5).
 4. **Gate.** `pnpm check` + `pnpm build`. If a challenge changed, re-verify it **in the
    browser** (starter FAILS, _Show solution_ PASSES) — there's no headless run; reuse the
    dev server already on :3002/:3000 instead of starting another.
