@@ -1,0 +1,45 @@
+---
+id: injector-not-magic
+title: A module is a registry; the injector is a lookup
+---
+
+Nest looks magical until you name the two moving parts:
+
+- A **provider** is anything the injector can hand out — usually a class marked
+  `@Injectable()`.
+- A **module** is the *registry* that says which providers exist, which of them leave the
+  module, and which other modules it can borrow from.
+
+At boot Nest walks the module graph once, reads each class's constructor parameter types,
+and builds one instance of each provider. That's it — `constructor(private users: UsersService)`
+means "look up the provider registered under the token `UsersService` and pass it in".
+
+```ts
+@Injectable()
+export class UsersService {
+  findAll() { return [{ id: "1" }]; }
+}
+
+@Controller("users")
+export class UsersController {
+  // Not `new UsersService()` — the injector supplies the instance it already built.
+  constructor(private readonly users: UsersService) {}
+
+  @Get()
+  findAll() { return this.users.findAll(); }
+}
+
+@Module({
+  controllers: [UsersController],
+  providers: [UsersService],   // registered here -> resolvable inside this module
+})
+export class UsersModule {}
+```
+
+Two consequences worth internalizing on day one:
+
+- **You never call `new` on a service.** The class's dependencies are declared, not
+  constructed, so a test can pass a fake in the same position.
+- **Providers are singletons by default** — one instance per application, shared by every
+  consumer. A field you set on a service is shared state for the whole process, not per
+  request.

@@ -1,0 +1,96 @@
+---
+id: nested-partial-custom
+title: Nested objects, PATCH, and rules a decorator can't express
+---
+
+## Nested objects need two decorators
+
+`class-validator` doesn't recurse by default, and `class-transformer` can't know which class a
+nested plain object should become:
+
+```ts
+export class AddressDto {
+  @IsString() street: string;
+  @Matches(/^\d{5}$/) zip: string;
+}
+
+export class CreateCustomerDto {
+  @IsString() name: string;
+
+  @ValidateNested()          // recurse into it
+  @Type(() => AddressDto)    // …as an AddressDto (needs transform: true)
+  address: AddressDto;
+
+  @ValidateNested({ each: true })
+  @Type(() => AddressDto)
+  @ArrayMaxSize(5)
+  otherAddresses: AddressDto[];
+}
+```
+
+Forget `@Type` and the nested value stays a plain object, so its decorators are never found —
+silently unvalidated. Forget `@ValidateNested` and the whole subtree is skipped. This pair is
+the single most common validation hole in a Nest codebase.
+
+## PATCH: derive, don't duplicate
+
+```ts
+export class UpdateOrderDto extends PartialType(CreateOrderDto) {}
+```
+
+`PartialType` (from `@nestjs/mapped-types` / `@nestjs/swagger`) copies every property and its
+decorators, adding `@IsOptional()`. `PickType`, `OmitType` and `IntersectionType` cover the
+rest. Hand-copying a DTO for the update route means the day someone adds `@MaxLength` to
+create, PATCH quietly accepts a 10 000-character note.
+
+Note what `@IsOptional()` means: *absent is fine*. It is not "nullable" — `null` still fails
+unless you allow it explicitly. And with `whitelist: true`, "absent" and "present but
+stripped" look identical to your handler, which matters when your update is a partial write.
+`exposeUnsetFields: false` (a `class-transformer` option) is how you stop `undefined` keys
+from turning into `null` columns.
+
+## Rules a decorator can't express
+
+Two shapes for anything cross-field or database-dependent:
+
+```ts
+// 1. A custom decorator, for a pure cross-field rule
+@ValidatorConstraint({ name: "EndsAfterStart" })
+class EndsAfterStartConstraint implements ValidatorConstraintInterface {
+  validate(endsAt: string, args: ValidationArguments) {
+    return new Date(endsAt) > new Date((args.object as BookingDto).startsAt);
+  }
+  defaultMessage() { return "endsAt must be after startsAt"; }
+}
+```
+
+```ts
+// 2. …but uniqueness/existence checks belong in the service, not the pipe
+const existing = await this.users.findByEmail(dto.email);
+if (existing) throw new ConflictException("email already registered");   // 409, not 400
+```
+
+A validator that queries the database is possible (`class-validator`'s async constraints with
+a DI-enabled container) and usually a mistake: it hides I/O in the request pipeline, races
+with the write it's protecting (only a unique index actually prevents duplicates), and models
+a *conflict* as a *malformed request*. Keep the pipe about shape and syntax; keep invariants
+that need state in the service layer, with the status code the situation deserves.
+
+## Validate configuration the same way
+
+The `.env` file is untrusted input too, and a missing variable should stop the process at boot
+rather than 500 an hour later:
+
+```ts
+ConfigModule.forRoot({
+  validate: (raw) => {
+    const config = plainToInstance(EnvDto, raw, { enableImplicitConversion: true });
+    const errors = validateSync(config, { skipMissingProperties: false });
+    if (errors.length) throw new Error(errors.toString());
+    return config;
+  },
+});
+```
+
+Same DTO idea, applied to a different boundary: fail fast, in one place, with a message that
+names the field.

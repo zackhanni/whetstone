@@ -1,0 +1,48 @@
+---
+id: dto-is-the-contract
+title: The DTO is the boundary, not a type
+---
+
+A request body arrives as `unknown` — attacker-controlled JSON. A DTO is the one place you
+turn it into something the rest of the app is allowed to trust.
+
+```ts
+export class CreateOrderDto {
+  @IsUUID()
+  customerId: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  quantity: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(280)
+  note?: string;
+}
+
+@Post()
+create(@Body() dto: CreateOrderDto) {
+  // Past this line, `dto` is validated data — not input.
+  return this.orders.create(dto);
+}
+```
+
+The critical thing to understand: **`@Body() dto: CreateOrderDto` alone validates nothing.**
+TypeScript types vanish at compile time. What enforces the contract is a runtime **pipe**
+reading the decorators:
+
+```ts
+// main.ts
+app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+```
+
+Without that line the class is documentation. With it, a bad body never reaches your handler
+— the pipe throws a `400 Bad Request` listing every failure.
+
+So a DTO does three jobs at once:
+
+- **Shape** — which fields exist, which are optional.
+- **Constraints** — the rules a value must satisfy (`@IsInt`, `@Min`, `@IsEmail`).
+- **Trust boundary** — one line in the code where "input" becomes "data".

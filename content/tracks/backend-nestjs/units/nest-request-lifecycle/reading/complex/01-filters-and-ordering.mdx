@@ -1,0 +1,111 @@
+---
+id: filters-and-ordering
+title: Errors, filters, and who wraps whom
+---
+
+## The default error contract
+
+Nest's built-in exception filter already turns `HttpException` and its subclasses into
+responses:
+
+```ts
+throw new NotFoundException("order not found");
+// 404 { statusCode: 404, message: "order not found", error: "Not Found" }
+```
+
+Anything *not* an `HttpException` becomes a generic **500** with the details hidden — which is
+correct (never leak a stack trace or a driver error to a client) and is also why "my API
+returns 500 for a duplicate email" happens: the driver error was never translated.
+
+Translate at the boundary of the thing that produced it:
+
+```ts
+try {
+  return await this.repo.insert(dto);
+} catch (e) {
+  if (isUniqueViolation(e)) throw new ConflictException("email already registered");
+  throw e;                                  // unknown -> let it become a 500, and get logged
+}
+```
+
+Rethrowing what you don't recognise is the whole discipline: map the **expected** condition,
+never swallow the rest.
+
+## A custom filter, and how selection works
+
+```ts
+@Catch(DomainError)
+export class DomainErrorFilter implements ExceptionFilter {
+  catch(error: DomainError, host: ArgumentsHost) {
+    const res = host.switchToHttp().getResponse();
+    res.status(error.status).json({ code: error.code, message: error.message });
+  }
+}
+```
+
+- `@Catch(SomeError)` narrows what it handles; bare `@Catch()` catches everything.
+- Nest picks **one** filter — the most specific match, with handler-level beating
+  controller-level beating global. Filters don't chain, so a catch-all global filter must
+  re-implement the default response shape or delegate to `BaseExceptionFilter`.
+- A global filter registered with `useGlobalFilters(new X())` can't inject; use
+  `{ provide: APP_FILTER, useClass: X }` when it needs a logger or config.
+
+Filters own **presentation** of the error. They're not a substitute for handling errors where
+the context is: a filter can't retry, and it can't know which of your three DB calls failed.
+
+## Who wraps whom
+
+Guards and interceptors compose outside-in, in registration order:
+
+```
+global interceptor
+  controller interceptor
+    handler interceptor
+      pipes -> HANDLER
+```
+
+Consequences worth predicting:
+
+- A **cache interceptor** registered globally short-circuits the inner ones: if it returns
+  `of(cached)` without calling `next.handle()`, no inner interceptor's pre-handler code runs,
+  no pipe validates, and no guard *below it* is consulted (guards, however, all run before any
+  interceptor).
+- A **global timing interceptor** measures every inner interceptor too — including the caching
+  and serialization work — so its number is "time in Nest", not "time in my handler".
+- `ClassSerializerInterceptor` runs on the way *out*, so `@Exclude()` is applied after your
+  handler returns. Return the entity instance, not `JSON.parse(JSON.stringify(entity))`, or the
+  metadata is gone and nothing is excluded.
+
+## Order in one line
+
+```
+middleware → guards → interceptors(pre) → pipes → handler → interceptors(post) → filters
+```
+
+Two more implications:
+
+- **Pipes run after guards**, so validation cost is only paid by authorized requests — and a
+  guard can never see a validated DTO.
+- **Interceptors run before pipes**, so an interceptor's pre-handler code runs even for a
+  request that's about to be rejected with a 400. A rate-limit counter in an interceptor
+  therefore counts malformed requests too; if that's wrong for you, use a guard instead
+  (`ThrottlerGuard` is a guard for exactly this reason).
+
+## Testing the lifecycle
+
+Guards and interceptors are classes with one method, so unit-test them by handing over a fake
+`ExecutionContext`:
+
+```ts
+const context = {
+  getHandler: () => handler,
+  getClass: () => Controller,
+  switchToHttp: () => ({ getRequest: () => ({ user: { roles: ["admin"] } }) }),
+} as unknown as ExecutionContext;
+
+expect(guard.canActivate(context)).toBe(true);
+```
+
+For the wiring itself (is it actually applied to that route? in the right order?), an e2e test
+with `Test.createTestingModule({ imports: [AppModule] })` + `supertest` is the only honest
+check — the order is a property of the app, not of the class.

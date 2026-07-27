@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "slug": "nest-dtos-and-validation",
+  "title": "DTOs & validation: the contract at the edge",
+  "skills": ["backend", "nestjs", "dto", "validation", "pipes", "architecture"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "blocks": [
+    { "type": "reading", "id": "read-dto", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-dto",
+      "questions": [
+        {
+          "id": "types-dont-validate",
+          "prompt": "A handler is `create(@Body() dto: CreateOrderDto)` and the DTO's fields carry `@IsUUID()` / `@IsInt()`. A request with `quantity: \"lots\"` reaches the handler unvalidated. What's missing?",
+          "options": [
+            { "id": "pipe", "text": "A ValidationPipe — nothing reads the decorators at runtime unless a pipe is registered" },
+            { "id": "types", "text": "The DTO needs to be an interface instead of a class" },
+            { "id": "guard", "text": "A guard on the controller" },
+            { "id": "strict", "text": "`strict: true` in tsconfig" }
+          ],
+          "answer": "pipe",
+          "explanation": "TypeScript types are erased; the decorators only add metadata. `app.useGlobalPipes(new ValidationPipe(...))` (or `@UsePipes`) is the runtime component that reads that metadata, transforms the payload, and throws 400. It must be a class, not an interface, precisely because the metadata needs somewhere to live."
+        },
+        {
+          "id": "whitelist-why",
+          "prompt": "Why is `whitelist: true` a security control rather than a tidiness setting?",
+          "options": [
+            { "id": "mass-assignment", "text": "Undeclared properties otherwise survive into the handler, and anything doing a bulk update writes them — mass assignment of fields like `role`" },
+            { "id": "size", "text": "It rejects oversized payloads" },
+            { "id": "xss", "text": "It escapes HTML in string fields" },
+            { "id": "types", "text": "It makes the DTO's TypeScript type exact" }
+          ],
+          "answer": "mass-assignment",
+          "explanation": "`whitelist: true` deletes every property with no validation decorator, so `repo.update(id, dto)` can only write fields you declared. Without it the DTO documents a contract the pipe doesn't enforce. `forbidNonWhitelisted: true` is the stricter form: reject rather than strip."
+        },
+        {
+          "id": "query-strings",
+          "prompt": "`@Query(\"page\") page: number` receives `?page=2`. What is `page` at runtime?",
+          "options": [
+            { "id": "string", "text": "The string \"2\" — the query string is text; the annotation doesn't convert it" },
+            { "id": "number", "text": "The number 2; Nest reads the type annotation and converts" },
+            { "id": "nan", "text": "NaN, unless ParseIntPipe is applied" },
+            { "id": "undefined", "text": "undefined, because query params need a DTO" }
+          ],
+          "answer": "string",
+          "explanation": "Params, query and headers are always strings on the wire, and the type annotation is erased — so you get a string typed as a number, which quietly breaks arithmetic and comparisons. Fix it with `ParseIntPipe`, or a query DTO with `@Type(() => Number)` and `transform: true`."
+        },
+        {
+          "id": "nested-pair",
+          "prompt": "`CreateCustomerDto` has an `address` object whose DTO carries decorators, but bad addresses are accepted. Which pair of decorators is required on the parent's field?",
+          "options": [
+            { "id": "validate-type", "text": "`@ValidateNested()` **and** `@Type(() => AddressDto)`" },
+            { "id": "isobject", "text": "`@IsObject()` alone" },
+            { "id": "validate-only", "text": "`@ValidateNested()` alone" },
+            { "id": "isdefined", "text": "`@IsDefined()` plus `@IsNotEmptyObject()`" }
+          ],
+          "answer": "validate-type",
+          "explanation": "`@ValidateNested()` tells class-validator to recurse; `@Type()` tells class-transformer to instantiate the nested class so its decorator metadata is actually found (and needs `transform: true`). Miss either one and the whole subtree is silently unvalidated — the most common validation hole in a Nest codebase."
+        },
+        {
+          "id": "unique-email",
+          "prompt": "Signup must reject an email that's already registered. Where does that check belong, and what status?",
+          "options": [
+            { "id": "service-409", "text": "In the service, as a 409 Conflict — backed by a unique index in the database" },
+            { "id": "pipe-400", "text": "In a custom async validator on the DTO, as part of the 400" },
+            { "id": "guard-403", "text": "In a guard, as a 403" },
+            { "id": "db-500", "text": "Nowhere — let the database's unique constraint surface as a 500" }
+          ],
+          "answer": "service-409",
+          "explanation": "The pipe's job is shape and syntax; \"already taken\" is a state-dependent invariant, so it belongs in the service with the status code that describes it. An async DB validator also races the write — only the unique index actually prevents the duplicate, so you need it regardless, and you catch its violation to return 409."
+        },
+        {
+          "id": "patch-dto",
+          "prompt": "Why derive the PATCH DTO with `class UpdateOrderDto extends PartialType(CreateOrderDto) {}` instead of writing it out?",
+          "options": [
+            { "id": "inherits", "text": "It inherits every field and its constraints, adding `@IsOptional()` — so a rule added to create can't be forgotten on update" },
+            { "id": "faster", "text": "It's faster at runtime because metadata is shared" },
+            { "id": "required", "text": "It makes all fields required, which PATCH needs" },
+            { "id": "only-way", "text": "It's the only way to allow partial bodies" }
+          ],
+          "answer": "inherits",
+          "explanation": "Duplicated DTOs drift: someone tightens `@MaxLength` on create and PATCH silently keeps accepting the old input. `PartialType` (with `PickType`/`OmitType`/`IntersectionType`) keeps one source of truth. Note `@IsOptional()` means \"may be absent\" — not \"may be null\"."
+        },
+        {
+          "id": "response-dto",
+          "prompt": "Your user entity has `passwordHash`. What's the most robust way to keep it out of responses?",
+          "options": [
+            { "id": "mapper", "text": "Return an explicit response object built field by field (a mapper) — impossible to break by forgetting a decorator" },
+            { "id": "exclude", "text": "`@Exclude()` on the field plus ClassSerializerInterceptor — good, but silently leaks if the decorator is missed on a new field" },
+            { "id": "delete", "text": "`delete user.passwordHash` in the controller" },
+            { "id": "select", "text": "Nothing — the request DTO already excludes it" }
+          ],
+          "answer": "mapper",
+          "explanation": "Both of the first two are real patterns; the mapper fails closed (a new field is invisible until you add it), while `@Exclude()` fails open (a new sensitive field leaks until someone decorates it). `delete` in the controller relies on every code path remembering, and the request DTO has nothing to do with the response shape."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-dto",
+      "prompts": [
+        {
+          "id": "global-pipe",
+          "prompt": "Make validation the application-wide default: strip undeclared properties and return DTO instances with coerced types.",
+          "code": "app.useGlobalPipes(\n  new ValidationPipe({ ___: true, ___: true }),\n);",
+          "blanks": [
+            { "id": "a1", "accept": ["whitelist"] },
+            { "id": "a2", "accept": ["transform"] }
+          ],
+          "explanation": "Registered globally, so the next controller someone adds is validated by default rather than by accident. `whitelist` strips undecorated properties (mass-assignment defence); `transform` gives the handler a real DTO instance and enables declared-type coercion."
+        },
+        {
+          "id": "optional-field",
+          "prompt": "Allow `note` to be absent, but cap its length when present.",
+          "code": "@___()\n@IsString()\n@___(280)\nnote?: string;",
+          "blanks": [
+            { "id": "b1", "accept": ["IsOptional"] },
+            { "id": "b2", "accept": ["MaxLength"] }
+          ],
+          "explanation": "`@IsOptional()` skips the remaining validators when the value is `undefined` — it does not permit `null`, and it isn't a substitute for a default. Without it, `@IsString()` fails on an absent field."
+        },
+        {
+          "id": "nested",
+          "prompt": "Validate a nested address object with its own DTO.",
+          "code": "@___()\n@___(() => AddressDto)\naddress: AddressDto;",
+          "blanks": [
+            { "id": "c1", "accept": ["ValidateNested"] },
+            { "id": "c2", "accept": ["Type"] }
+          ],
+          "explanation": "`@ValidateNested()` recurses into the object; `@Type(() => AddressDto)` converts the plain JSON into an `AddressDto` instance so its decorators are found. For an array, add `{ each: true }` to `@ValidateNested`."
+        },
+        {
+          "id": "query-number",
+          "prompt": "Coerce a query-string page number into an actual number inside a query DTO.",
+          "code": "export class ListOrdersQueryDto {\n  @IsOptional()\n  @___(() => Number)\n  @IsInt()\n  @Min(1)\n  page?: number;\n}",
+          "blanks": [{ "id": "d1", "accept": ["Type"] }],
+          "explanation": "Query values are always strings, so `@IsInt()` alone would reject `?page=2`. `@Type(() => Number)` converts before validation — explicit, and preferable to `enableImplicitConversion` when you want to know exactly which fields get coerced."
+        },
+        {
+          "id": "patch-partial",
+          "prompt": "Derive the update DTO from the create DTO so every field becomes optional but keeps its constraints.",
+          "code": "export class UpdateOrderDto extends ___(CreateOrderDto) {}",
+          "blanks": [{ "id": "e1", "accept": ["PartialType"] }],
+          "explanation": "One source of truth for the contract. `PickType`, `OmitType` and `IntersectionType` cover the other shapes; hand-copying is how PATCH ends up accepting input that POST rejects."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-validation-pipe",
+      "challengeSlug": "nest-validation-pipe",
+      "mode": "in-browser"
+    }
+  ]
+}

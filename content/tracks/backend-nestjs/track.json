@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "slug": "backend-nestjs",
+  "title": "Backend with NestJS",
+  "description": "The three things a Nest codebase asks you to reason about: the module graph and the injector that wires providers together, the DTO contract that decides what a handler is even allowed to receive, and the request lifecycle — pipes, guards, interceptors and exception filters — that runs around every handler.",
+  "skills": [
+    "backend",
+    "nestjs",
+    "modules",
+    "dependency-injection",
+    "dto",
+    "validation",
+    "request-lifecycle",
+    "architecture"
+  ],
+  "units": [
+    "nest-modules-and-providers",
+    "nest-dtos-and-validation",
+    "nest-request-lifecycle"
+  ]
+}

@@ -1,0 +1,34 @@
+---
+id: where-validation-runs
+title: Where validation runs — pipes, and the three inputs they guard
+---
+
+A **pipe** is a function that runs on an argument *before* the handler, and can do two things:
+**transform** the value, or **reject** it. `ValidationPipe` does both.
+
+Every argument decorator is a pipe target, not just the body:
+
+```ts
+@Get(":id")
+findOne(
+  @Param("id", ParseUUIDPipe) id: string,          // 400 if not a UUID
+  @Query() query: ListOrdersQueryDto,              // page/limit as validated numbers
+) {}
+```
+
+Params and query strings are **always strings** on the wire. `@Query("page") page: number`
+gives you the string `"2"` typed as `number` — a lie your code will happily do arithmetic on.
+Either use a DTO with `@Type(() => Number)`, or a built-in pipe (`ParseIntPipe`).
+
+Pipes can be applied at four levels, narrowest wins where they overlap:
+
+| Level | How | Use for |
+| --- | --- | --- |
+| Parameter | `@Param("id", ParseUUIDPipe)` | one argument |
+| Handler | `@UsePipes(new ValidationPipe({ groups: … }))` | one route's special case |
+| Controller | `@UsePipes(…)` on the class | a controller-wide rule |
+| Global | `app.useGlobalPipes(…)` in `main.ts` | **the default — set it once** |
+
+The mistake worth avoiding is *not* registering it globally: a per-controller `@UsePipes` means
+the next controller someone adds is unvalidated by default. Make validation the default and
+opt out deliberately.

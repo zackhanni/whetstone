@@ -1,0 +1,33 @@
+---
+id: which-one-do-i-write
+title: I need to do X for every request — which component?
+---
+
+| I want to… | Component | Why that one |
+| --- | --- | --- |
+| Reject unauthenticated / unauthorized requests | **Guard** | Returns a boolean; runs before anything expensive |
+| Reject or coerce a malformed payload | **Pipe** | Operates on one argument, throws 400 |
+| Log how long the handler took | **Interceptor** | Sees both sides of the call |
+| Wrap every response in `{ data, meta }` | **Interceptor** | Can map the return value |
+| Turn a domain error into a 409 | **Exception filter** (or throw `ConflictException`) | Owns error → response |
+| Attach a request id / raw body parsing | **Middleware** | Framework-level, before Nest's own layers |
+| Read a route's `@Roles("admin")` metadata | **Guard + `Reflector`** | Metadata is per handler/class |
+
+The two decisions people get wrong:
+
+**"Auth is an interceptor."** It isn't — a guard exists precisely so a rejection is a `return
+false` (→ 403) rather than manual response writing, and so it happens before pipes,
+interceptors' work, and the handler.
+
+**"Response shaping is a middleware."** Middleware runs before Nest knows which handler will
+run and never sees the return value; it only has `(req, res, next)`. Anything about the
+*response* your controller produced is an interceptor.
+
+## 401 vs 403
+
+- **401 Unauthorized** — I don't know who you are (missing/expired/invalid token).
+- **403 Forbidden** — I know who you are and you're still not allowed.
+
+An `AuthGuard` that returns `false` produces 403 by default. When the real problem is a
+missing credential, throw `UnauthorizedException` from the guard so the client knows to
+re-authenticate instead of giving up.

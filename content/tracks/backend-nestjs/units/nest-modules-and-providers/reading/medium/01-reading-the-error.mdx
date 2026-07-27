@@ -1,0 +1,69 @@
+---
+id: reading-the-error
+title: Reading "Nest can't resolve dependencies of the X"
+---
+
+This is the error you will meet most often, and it tells you exactly where to look:
+
+```
+Nest can't resolve dependencies of the OrdersService (?, ConfigService).
+Please make sure that the argument PricingService at index [0] is available
+in the OrdersModule context.
+```
+
+Read it as three facts:
+
+1. **Who needs something** — `OrdersService`.
+2. **Which argument** — the `?` marks the unresolved constructor parameter; index `[0]`.
+3. **Which registry was searched** — the `OrdersModule` context. Not "the app": Nest
+   modules are **encapsulated**, so only this module's own `providers` plus the `exports`
+   of its `imports` are in scope.
+
+So there are exactly four causes:
+
+- The provider isn't in *any* module's `providers`.
+- Its owning module doesn't `exports` it.
+- `OrdersModule` doesn't `imports` the owning module.
+- The type is erased at runtime — an `interface`, or a circular import — so there is no
+  token to look up (see the Complex tier).
+
+## Encapsulation, in one picture
+
+```ts
+@Module({ providers: [PricingService] })            // not exported
+export class PricingModule {}
+
+@Module({ imports: [PricingModule], providers: [OrdersService] })
+export class OrdersModule {}                        // 💥 PricingService is private
+```
+
+Importing a module gets you its **exports**, nothing more. `exports: [PricingService]` is
+the one-line fix, and refusing to add it is a legitimate design decision: an unexported
+provider is an implementation detail of that module.
+
+## Global modules, and why to be sparing
+
+`@Global()` on a module makes its exports injectable everywhere without an `imports` entry.
+It's right for exactly one class of thing — cross-cutting infrastructure registered once at
+the root (config, logger, database connection). Reach for it more often and the module graph
+stops documenting anything: every service looks like it depends on nothing, and boot-order
+bugs get much harder to see.
+
+## Why this shape is worth the ceremony
+
+Because the same seam that Nest uses to inject the real provider is the one your test uses
+to inject a fake:
+
+```ts
+const moduleRef = await Test.createTestingModule({
+  providers: [
+    OrdersService,
+    { provide: PricingService, useValue: { quote: () => 100 } },
+  ],
+}).compile();
+
+const orders = moduleRef.get(OrdersService);
+```
+
+No module mocking, no import interception — you overrode a token. That is the entire payoff
+of DI, and it's why "just import the singleton directly" costs you later.

@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "slug": "nest-request-lifecycle",
+  "title": "The request lifecycle: guards, interceptors & filters",
+  "skills": [
+    "backend",
+    "nestjs",
+    "request-lifecycle",
+    "guards",
+    "interceptors",
+    "exception-filters",
+    "auth",
+    "architecture"
+  ],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "blocks": [
+    { "type": "reading", "id": "read-lifecycle", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-lifecycle",
+      "questions": [
+        {
+          "id": "guard-sees-raw",
+          "prompt": "A guard needs to authorize based on `dto.organizationId` from the request body. Why is that awkward?",
+          "options": [
+            { "id": "before-pipes", "text": "Guards run before pipes, so the body is still raw untransformed input — there is no validated DTO yet" },
+            { "id": "no-body", "text": "Guards have no access to the request at all" },
+            { "id": "async", "text": "Guards can't be async, so they can't read a stream" },
+            { "id": "immutable", "text": "The body is frozen until the handler runs" }
+          ],
+          "answer": "before-pipes",
+          "explanation": "The order is guards → interceptors → pipes → handler. A guard can read `switchToHttp().getRequest().body`, but it's un-whitelisted, uncoerced input, so any check on it duplicates validation. Payload-dependent authorization usually belongs in the service, where the DTO and the entity are both available."
+        },
+        {
+          "id": "which-component-envelope",
+          "prompt": "Every response must be wrapped as `{ data, requestId }`. Which component, and why not the others?",
+          "options": [
+            { "id": "interceptor", "text": "An interceptor — it's the only component that can transform the handler's return value" },
+            { "id": "middleware", "text": "Middleware, since it runs for every request" },
+            { "id": "filter", "text": "An exception filter, since it writes the response" },
+            { "id": "pipe", "text": "A pipe, applied to the return value" }
+          ],
+          "answer": "interceptor",
+          "explanation": "`next.handle().pipe(map((data) => ({ data, requestId })))` is the canonical shape. Middleware only has `(req, res, next)` and never sees what the controller returned; a filter only runs on the error path; pipes operate on incoming arguments, not outgoing values."
+        },
+        {
+          "id": "app-guard-token",
+          "prompt": "Your global guard needs to inject `ConfigService`. Which registration works?",
+          "options": [
+            { "id": "app-guard", "text": "`{ provide: APP_GUARD, useClass: RolesGuard }` in a module's providers" },
+            { "id": "useglobalguards", "text": "`app.useGlobalGuards(new RolesGuard(config))` in main.ts" },
+            { "id": "global-module", "text": "Marking the guard `@Global()`" },
+            { "id": "usepipes", "text": "`@UsePipes(RolesGuard)` on every controller" }
+          ],
+          "answer": "app-guard",
+          "explanation": "`useGlobalGuards` takes an instance you constructed by hand, so it's outside the injector — nothing gets injected. Registering under the `APP_GUARD` token puts the guard in a module, so Nest builds it with its dependencies. `APP_INTERCEPTOR`, `APP_FILTER` and `APP_PIPE` exist for the same reason."
+        },
+        {
+          "id": "return-false-status",
+          "prompt": "An auth guard returns `false` when the `Authorization` header is missing. What does the client get, and what should it get?",
+          "options": [
+            { "id": "403-401", "text": "403 Forbidden — but a missing credential is 401 Unauthorized, so throw `UnauthorizedException` instead" },
+            { "id": "401-403", "text": "401 — and that's correct for a missing header" },
+            { "id": "500", "text": "500, because the guard didn't throw" },
+            { "id": "404", "text": "404, since the route is treated as non-existent" }
+          ],
+          "answer": "403-401",
+          "explanation": "`return false` produces `ForbiddenException` → 403, which tells the client \"you're not allowed\" when the truth is \"I don't know who you are\". 401 tells it to authenticate and retry; 403 tells it not to bother. Throwing the exception you mean is how you control that."
+        },
+        {
+          "id": "tap-error",
+          "prompt": "A timing interceptor logs with `next.handle().pipe(tap(() => log(Date.now() - start)))`. Which requests never get logged?",
+          "options": [
+            { "id": "errors", "text": "Every request where the handler threw — the single-callback `tap` only observes the success notification" },
+            { "id": "slow", "text": "Requests slower than the default timeout" },
+            { "id": "cached", "text": "Only requests served from cache" },
+            { "id": "none", "text": "None; tap sees every outcome" }
+          ],
+          "answer": "errors",
+          "explanation": "`tap(fn)` is shorthand for the `next` handler only, so failures skip it — and failures are exactly the requests whose duration you wanted. Use the observer form `tap({ next, error })` or `finalize(...)`, which fires on success, error and unsubscribe."
+        },
+        {
+          "id": "filters-dont-chain",
+          "prompt": "You have a global `@Catch()` filter and a controller-level `@Catch(DomainError)` filter. A `DomainError` is thrown in that controller. What runs?",
+          "options": [
+            { "id": "one", "text": "Only the controller-level filter — Nest selects the single most specific/narrowest-scoped match; filters don't chain" },
+            { "id": "both", "text": "Both, controller-level first, then the global one" },
+            { "id": "global", "text": "Only the global one, since it was registered first" },
+            { "id": "error", "text": "Nest throws an ambiguous-filter error at boot" }
+          ],
+          "answer": "one",
+          "explanation": "Filter resolution picks one handler: handler-level, then controller-level, then global, preferring a matching `@Catch(Type)`. That's why a global catch-all has to produce a complete response itself (or extend `BaseExceptionFilter`) — nothing downstream will fill in the gaps."
+        },
+        {
+          "id": "unknown-error-500",
+          "prompt": "A unique-constraint violation from the DB driver reaches the client as a 500. Where's the fix?",
+          "options": [
+            { "id": "translate", "text": "Catch the driver error where it happens, translate the known case to `ConflictException`, and rethrow anything unrecognized" },
+            { "id": "catch-all", "text": "Add a global `@Catch()` filter that maps any error to 409" },
+            { "id": "validator", "text": "Add an async DB uniqueness validator to the DTO so it becomes a 400" },
+            { "id": "swallow", "text": "Wrap the repository call in try/catch and return `null`" }
+          ],
+          "answer": "translate",
+          "explanation": "Nest 500s anything that isn't an `HttpException` — correctly, since unknown errors must not leak. The fix is to map the *expected* condition at the layer that understands it and rethrow the rest. Mapping every error to 409 lies to clients; swallowing it hides the failure; a DTO validator races the write (only the unique index actually prevents the duplicate)."
+        },
+        {
+          "id": "throttle-guard",
+          "prompt": "Why is Nest's rate limiter a *guard* rather than an interceptor?",
+          "options": [
+            { "id": "before", "text": "Guards run before interceptors and pipes, so a throttled request is rejected before any per-request work — and a boolean/throw is exactly the decision it needs to make" },
+            { "id": "observable", "text": "Interceptors can't be async" },
+            { "id": "response", "text": "Only guards can set response headers" },
+            { "id": "di", "text": "Only guards can inject a store" }
+          ],
+          "answer": "before",
+          "explanation": "Rate limiting is an admit/reject decision, which is a guard's entire contract, and doing it first means a flood costs you almost nothing. In an interceptor the counter would also increment for requests that pipes are about to reject with a 400, and the interceptor's pre-handler work would already have run."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-lifecycle",
+      "prompts": [
+        {
+          "id": "guard-shape",
+          "prompt": "The two members of a guard: the interface it implements, and the transport-agnostic way to reach the HTTP request.",
+          "code": "@Injectable()\nexport class ApiKeyGuard implements ___ {\n  canActivate(context: ExecutionContext): boolean {\n    const req = context.___().getRequest();\n    return req.headers[\"x-api-key\"] === process.env.API_KEY;\n  }\n}",
+          "blanks": [
+            { "id": "a1", "accept": ["CanActivate"] },
+            { "id": "a2", "accept": ["switchToHttp"] }
+          ],
+          "explanation": "`ExecutionContext` abstracts the transport — `switchToHttp()`, `switchToWs()`, `switchToRpc()` — so the same guard can protect an HTTP route and a message handler. Returning `false` yields 403; throw `UnauthorizedException` for a missing credential."
+        },
+        {
+          "id": "roles-metadata",
+          "prompt": "Read route metadata set by a custom `@Roles()` decorator, letting the handler override the controller.",
+          "code": "const required = this.reflector.___<string[]>(ROLES_KEY, [\n  context.getHandler(),\n  context.getClass(),\n]);",
+          "blanks": [{ "id": "b1", "accept": ["getAllAndOverride"] }],
+          "explanation": "`getAllAndOverride` returns the first match in the array, so handler metadata wins over class metadata (`getAllAndMerge` unions them instead). The decorator itself is just `SetMetadata(ROLES_KEY, roles)` — configuration as data on the route, not an `if` inside the guard."
+        },
+        {
+          "id": "envelope-interceptor",
+          "prompt": "Wrap every successful response in `{ data }` — the operator that replaces the value, applied to the handler's stream.",
+          "code": "intercept(context: ExecutionContext, next: CallHandler) {\n  return next.___().pipe(___((data) => ({ data })));\n}",
+          "blanks": [
+            { "id": "c1", "accept": ["handle"] },
+            { "id": "c2", "accept": ["map"] }
+          ],
+          "explanation": "`next.handle()` is the handler, as an Observable — you must return it or the request hangs, because nothing subscribes. `map` transforms the emitted value; `tap` would only observe it and leave the response unchanged."
+        },
+        {
+          "id": "always-log",
+          "prompt": "Record the duration whether the handler succeeded or threw.",
+          "code": "return next.handle().pipe(\n  ___(() => this.logger.log(`${Date.now() - started}ms`)),\n);",
+          "blanks": [{ "id": "d1", "accept": ["finalize"] }],
+          "explanation": "`finalize` runs on completion, error, and unsubscribe — the right operator for metrics and cleanup. `tap(fn)` covers only the success notification, so it silently drops exactly the requests you most wanted to measure."
+        },
+        {
+          "id": "app-filter",
+          "prompt": "Register a global exception filter that needs a injected logger.",
+          "code": "@Module({\n  providers: [{ provide: ___, useClass: DomainErrorFilter }],\n})\nexport class AppModule {}",
+          "blanks": [{ "id": "e1", "accept": ["APP_FILTER"] }],
+          "explanation": "`useGlobalFilters(new DomainErrorFilter())` needs a hand-constructed instance, so it can't inject anything. The `APP_FILTER` token (like `APP_GUARD`, `APP_INTERCEPTOR`, `APP_PIPE`) registers it as a provider, so the injector builds it."
+        },
+        {
+          "id": "catch-narrow",
+          "prompt": "Handle only your domain error type in this filter, leaving everything else to Nest's default.",
+          "code": "@___(DomainError)\nexport class DomainErrorFilter implements ExceptionFilter {}",
+          "blanks": [{ "id": "f1", "accept": ["Catch"] }],
+          "explanation": "`@Catch(DomainError)` narrows the filter; a bare `@Catch()` catches everything and then owns the entire error contract, including the shapes Nest was formatting for you. Only one filter runs per exception — the narrowest, innermost match."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-lifecycle",
+      "snippets": [
+        {
+          "id": "order-logs",
+          "code": "// Registered globally: LoggingInterceptor, AuthGuard, ValidationPipe.\n// AuthGuard.canActivate:            console.log(\"guard\")\n// LoggingInterceptor.intercept:     console.log(\"pre\"); return next.handle().pipe(tap(() => console.log(\"post\")))\n// A custom pipe's transform():      console.log(\"pipe\")\n// The handler body:                 console.log(\"handler\")",
+          "question": "In what order do the five logs appear for one successful request?",
+          "answer": "guard, pre, pipe, handler, post",
+          "acceptable": ["guard pre pipe handler post", "guard, pre, pipe, handler, then post"],
+          "explanation": "The pipeline is guards → interceptors(pre) → pipes → handler → interceptors(post) → filters. Note what that means in practice: an interceptor's pre-handler code has already run by the time a pipe rejects the request with a 400."
+        },
+        {
+          "id": "forgot-return",
+          "code": "@Injectable()\nexport class BrokenInterceptor implements NestInterceptor {\n  intercept(context: ExecutionContext, next: CallHandler) {\n    next.handle().pipe(tap(() => console.log(\"done\")));   // no return\n  }\n}",
+          "question": "What does the client observe?",
+          "answer": "The request hangs — no response is ever sent",
+          "acceptable": ["it hangs", "the request never responds / times out", "no response"],
+          "explanation": "`next.handle()` returns a cold Observable: the handler doesn't run until something subscribes, and Nest subscribes to whatever the interceptor *returns*. Returning `undefined` means nobody subscribes, so the handler never executes and no response is written — a hang, not an error."
+        },
+        {
+          "id": "cache-shortcircuit",
+          "code": "// Global CacheInterceptor:\nintercept(context: ExecutionContext, next: CallHandler) {\n  const hit = this.store.get(keyOf(context));\n  if (hit) return of(hit);          // never calls next.handle()\n  return next.handle().pipe(tap((body) => this.store.set(keyOf(context), body)));\n}\n// Inside it: a handler-level interceptor that logs \"inner-pre\", a ValidationPipe, the handler.",
+          "question": "On a cache hit, which of \"inner-pre\", the pipe's validation, and the handler run?",
+          "answer": "None of them",
+          "acceptable": ["none", "neither — the outer interceptor short-circuits"],
+          "explanation": "Everything inside the pipeline is downstream of `next.handle()`. Skipping that call skips the inner interceptors, the pipes and the handler entirely — which is the point of a cache, and also why an unvalidated cache key is a security bug: nothing else got a chance to check the request."
+        },
+        {
+          "id": "domain-error-status",
+          "code": "class OrderClosedError extends Error {}\n\n@Post(\":id/items\")\naddItem(@Param(\"id\") id: string) {\n  throw new OrderClosedError(\"order already closed\");\n}\n// No custom exception filter is registered.",
+          "question": "What status code and body does the client receive?",
+          "answer": "500 with a generic \"Internal server error\" — the message is not exposed",
+          "acceptable": ["500", "500 Internal server error", "500, generic message"],
+          "explanation": "Nest's default filter only formats `HttpException` subclasses; anything else is treated as an unexpected failure, logged, and reported as a generic 500 so internal details don't leak. Throw `ConflictException(\"order already closed\")` — or map `OrderClosedError` in a `@Catch(OrderClosedError)` filter — to make it a 409 with a real message."
+        }
+      ]
+    }
+  ]
+}

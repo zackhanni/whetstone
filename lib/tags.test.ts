@@ -12,7 +12,7 @@ import {
 
 describe("taxonomy structure", () => {
   it("exposes the roots as dimensions", () => {
-    expect(dimensions()).toEqual(["frontend"]);
+    expect(dimensions()).toEqual(["frontend", "backend"]);
   });
 
   it("computes depth as the shortest path to a root", () => {

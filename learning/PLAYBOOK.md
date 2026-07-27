@@ -133,6 +133,29 @@ Writing the grader — conventions that survive contact with Sandpack:
 - Each planted bug should be caught by its **own** test — that's what makes a red run read like
   a to-do list. Say the fix order in a comment in the starter without writing the code.
 
+### Smoke-running a grader headlessly (when it needs no DOM)
+
+Rule 4 is graded in the browser, but a grader with **no RTL/DOM usage** (a pure-TS entry, e.g.
+`nest-validation-pipe`) can be checked in seconds first, which catches a broken assertion or a
+solution that doesn't actually pass before you open Sandpack. `pnpm test`'s `include` is scoped
+to `lib/**` + `learning/**`, and there's no `--include` CLI flag, so point Vitest at a
+throwaway config:
+
+```bash
+cat > /tmp/challenge.vitest.config.ts <<'EOF'
+import { defineConfig } from "vitest/config";
+export default defineConfig({
+  test: { globals: true, environment: "node", include: ["content/challenges/<slug>/**/*.test.ts"] },
+});
+EOF
+npx vitest run --root . --config /tmp/challenge.vitest.config.ts        # starter: MUST fail
+# then temporarily copy solution.tsx over the entry, re-run (all pass), and restore the starter
+```
+
+`globals: true` supplies the jest-style `describe`/`it`/`expect` the sandbox provides. This is
+a _smoke test_, not a substitute for the browser run: the module resolution, timers and
+`@testing-library` behaviour inside Sandpack are still their own environment.
+
 **IDE lint noise is expected here.** `content/challenges/**` is outside `tsconfig.json`, so the
 editor flags `describe`/`it`/`expect` as undefined in every challenge test. That's not a
 breakage — don't "fix" it by importing `vitest` (which breaks the Sandpack runner) or by pulling
