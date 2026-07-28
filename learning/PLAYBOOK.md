@@ -145,7 +145,7 @@ throwaway config:
 cat > /tmp/challenge.vitest.config.ts <<'EOF'
 import { defineConfig } from "vitest/config";
 export default defineConfig({
-  test: { globals: true, environment: "node", include: ["content/challenges/<slug>/**/*.test.ts"] },
+  test: { globals: true, environment: "node", include: ["content/challenges/<slug>/**/*.test.{ts,tsx}"] },
 });
 EOF
 npx vitest run --root . --config /tmp/challenge.vitest.config.ts        # starter: MUST fail
@@ -179,10 +179,12 @@ runtime inside the iframe otherwise. Widening the runner's dependency list means
 
 **Rule 3** (difficulty escalates down a unit) and the _behavioural_ half of **Rule 4** (starter
 fails / solution passes) are still not auto-checked — rule 3 is an authoring guideline; rule 4 is
-graded in the browser (Sandpack) and must be verified there by the author, since there's no
-headless challenge-test run at authoring time (a known gap). Don't describe a rule as
-auto-enforced until the validator actually checks it — and when you learn a rule the hard way,
-prefer _teaching the validator_ over adding a paragraph here.
+graded in the browser (Sandpack) and must be verified there by the author. A DOM-free grader can
+be _smoke-run_ headlessly first (see "Smoke-running a grader headlessly"), but that isn't the
+real environment and doesn't discharge the browser check — and an RTL grader has no headless
+path at all (a known gap). Don't describe a rule as auto-enforced until the validator actually
+checks it — and when you learn a rule the hard way, prefer _teaching the validator_ over adding
+a paragraph here.
 
 1. **Every quiz question / fill-blank / predict-output item has an `explanation`.** Wrong answers teach.
 2. **Every reading tier — Simple, Medium, Complex — has at least one example.** This is what
@@ -205,9 +207,10 @@ is a common habit, show the wrong way _and_ the right way side by side.
 Use `/new-lesson`. It scaffolds against the schema, generates the blocks, and authors the
 challenge, then gates on **`pnpm validate`** (zod schema + reading tiers + challenge
 contract) and **`pnpm build`**. The challenge's own tests are graded **in the browser**
-(Sandpack) and must be verified there — starter fails, solution passes — since there's no
-headless challenge-test run yet (see Rule 4). If the skill can't express what a lesson
-needs, that's a signal to improve the skill or the schema — not to hand-author around it.
+(Sandpack) and must be verified there — starter fails, solution passes — with the headless smoke
+run (Rule 4) as an optional first pass when the grader needs no DOM. If the skill can't express
+what a lesson needs, that's a signal to improve the skill or the schema — not to hand-author
+around it.
 
 ## The self-improvement loop (autonomous + audit log)
 

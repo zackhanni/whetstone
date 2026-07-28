@@ -28,5 +28,6 @@ Exception filters are last because they're the catch-all: anything thrown anywhe
 pipeline (guard, pipe, handler, service) ends up there and becomes a status code.
 
 Each of them can be registered at four scopes — global, controller, handler, and (for pipes)
-parameter — and for guards/interceptors the global ones run **outermost**, wrapping the
-controller-level ones.
+parameter. Guards at different scopes run in **sequence**, global first, then controller, then
+handler; interceptors **nest**, with the global one outermost, so it's the only one that wraps
+the others.

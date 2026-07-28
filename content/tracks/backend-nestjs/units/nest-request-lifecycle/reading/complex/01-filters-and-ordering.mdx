@@ -68,8 +68,8 @@ Consequences worth predicting:
 
 - A **cache interceptor** registered globally short-circuits the inner ones: if it returns
   `of(cached)` without calling `next.handle()`, no inner interceptor's pre-handler code runs,
-  no pipe validates, and no guard *below it* is consulted (guards, however, all run before any
-  interceptor).
+  no pipe validates, and the handler never executes. Guards are the exception — every guard has
+  already run before any interceptor starts, so a cache hit can't skip authorization.
 - A **global timing interceptor** measures every inner interceptor too — including the caching
   and serialization work — so its number is "time in Nest", not "time in my handler".
 - `ClassSerializerInterceptor` runs on the way *out*, so `@Exclude()` is applied after your

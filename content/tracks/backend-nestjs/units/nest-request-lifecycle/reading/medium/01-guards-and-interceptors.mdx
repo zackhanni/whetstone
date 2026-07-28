@@ -61,7 +61,12 @@ export class TimingInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap({
         next: () => this.logger.log(`${context.getHandler().name} ${Date.now() - started}ms`),
-        error: (err) => this.logger.warn(`failed after ${Date.now() - started}ms: ${err.message}`),
+        // A throw inside a tap handler becomes the stream's error, hiding the real one — so
+        // don't assume the rejected value is an Error.
+        error: (err: unknown) => {
+          const reason = err instanceof Error ? err.message : String(err);
+          this.logger.warn(`failed after ${Date.now() - started}ms: ${reason}`);
+        },
       }),
     );
   }

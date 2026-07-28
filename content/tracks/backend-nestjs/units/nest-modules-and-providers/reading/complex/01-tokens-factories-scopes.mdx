@@ -25,7 +25,11 @@ a **strategy**.
     },
     {
       provide: "REDIS",                                      // needs async setup / other providers
-      useFactory: async (config: ConfigService) => createClient(config.get("REDIS_URL")),
+      useFactory: async (config: ConfigService) => {
+        const client = createClient({ url: config.get("REDIS_URL") });
+        await client.connect();       // node-redis v4 doesn't connect on create — await it here
+        return client;                // consumers get a client that's ready to use
+      },
       inject: [ConfigService],
     },
   ],
