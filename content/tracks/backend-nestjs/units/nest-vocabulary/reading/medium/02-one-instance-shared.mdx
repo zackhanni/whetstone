@@ -1,0 +1,57 @@
+---
+id: one-instance-shared
+title: Singleton — one instance, shared by everybody
+---
+
+The **singleton pattern** means: there is exactly *one* instance of a thing, and everyone who
+asks for it gets that same object.
+
+Nest builds providers as singletons by default. At startup it creates one `UsersService` and
+hands that same object to every controller, every other service, every guard that asks for it.
+
+```ts
+@Injectable()
+export class UsersService {}
+
+// UsersController and ReportsController both get THE SAME UsersService object.
+```
+
+Why a framework wants this: a database connection pool, an HTTP client, a cache — you want one
+of those per process, not one per request. Creating them is expensive and they're meant to be
+shared.
+
+## The trap: a field on a singleton is global state
+
+Because there's one object, a field on it is shared by every request happening at once.
+
+```ts
+@Injectable()
+export class OrdersService {
+  private currentUser!: User;                 // one field, shared by the whole app
+
+  async handle(user: User) {
+    this.currentUser = user;                  // request A writes...
+    await this.slowDatabaseCall();            // ...and yields to the event loop here
+    return this.report(this.currentUser);     // request B may have overwritten it by now
+  }
+}
+```
+
+Node handles requests concurrently on one thread: while request A is awaiting the database,
+request B runs and reassigns `this.currentUser`. A then resumes and reports on B's user. It
+passes every test you write one-request-at-a-time and corrupts data under real traffic.
+
+The rule that avoids it: **fields on a provider are for things that belong to the
+application** (a connection, a config value, a cache). Anything that belongs to *one request*
+travels as an argument or a return value.
+
+```ts
+async handle(user: User) {
+  await this.slowDatabaseCall();
+  return this.report(user);        // the request's data stays in the call stack
+}
+```
+
+Nest can also create a provider per request (`Scope.REQUEST`) — but that's a cost, not a
+default, and it's the last resort rather than the fix. The next unit covers when it's
+justified.

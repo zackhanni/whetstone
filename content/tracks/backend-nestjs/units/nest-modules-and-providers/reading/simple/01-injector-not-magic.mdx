@@ -3,7 +3,8 @@ id: injector-not-magic
 title: A module is a registry; the injector is a lookup
 ---
 
-Nest looks magical until you name the two moving parts:
+This unit assumes the vocabulary from the previous one — decorator, controller, service,
+`constructor(private readonly x: T)`. Nest looks magical until you name the two moving parts:
 
 - A **provider** is anything the injector can hand out — usually a class marked
   `@Injectable()`.
@@ -13,7 +14,9 @@ Nest looks magical until you name the two moving parts:
 At boot Nest walks the module graph once, reads each class's constructor parameter types,
 and builds one instance of each provider (that's the default scope — the Complex tier covers
 per-request and per-consumer providers). That's it — `constructor(private users: UsersService)`
-means "look up the provider registered under the token `UsersService` and pass it in".
+means "look up the provider registered under the **token** `UsersService` and pass it in". A
+token is just the key a provider is filed under; for a class provider, the class itself is the
+key.
 
 ```ts
 @Injectable()
@@ -42,5 +45,5 @@ Two consequences worth internalizing on day one:
 - **You never call `new` on a service.** The class's dependencies are declared, not
   constructed, so a test can pass a fake in the same position.
 - **Providers are singletons by default** — one instance per application, shared by every
-  consumer. A field you set on a service is shared state for the whole process, not per
-  request.
+  **consumer** (anything that injects it — a controller, another service, a guard). A field you
+  set on a service is shared state for the whole process, not per request.

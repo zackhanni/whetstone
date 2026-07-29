@@ -1,0 +1,52 @@
+---
+id: a-whole-app-in-three-files
+title: A whole Nest app in three files
+---
+
+A Nest backend is a program that waits for HTTP **requests** and answers them. A request is
+just a message: `GET /users/42` means "give me the user with id 42".
+
+Everything else is Nest giving you a fixed place to put your code. Three files, three jobs:
+
+```ts
+// users.service.ts — the WORK. Plain class. Knows nothing about HTTP.
+@Injectable()
+export class UsersService {
+  findOne(id: string) {
+    return { id, name: "Ada" };
+  }
+}
+
+// users.controller.ts — the DOOR. Maps a URL to a method call.
+@Controller("users")            // every route in this class starts with /users
+export class UsersController {
+  constructor(private readonly users: UsersService) {}
+
+  @Get(":id")                   // GET /users/42
+  findOne(@Param("id") id: string) {
+    return this.users.findOne(id);   // hand the work to the service
+  }
+}
+
+// users.module.ts — the LIST. Tells Nest these two classes exist.
+@Module({
+  controllers: [UsersController],
+  providers: [UsersService],
+})
+export class UsersModule {}
+```
+
+Say each one out loud once and the rest of Nest gets much smaller:
+
+- A **controller** is the door: it receives requests and returns a response. Its job is
+  *translation* — read the URL and body, call something, hand back the result.
+- A **service** is the work: business rules, database calls, calculations. No HTTP words in it.
+- A **module** is the list: "here are the classes in this feature." Nest reads it at startup
+  to know what exists.
+- **Provider** is the general word for anything the module can hand to someone else. A service
+  is the most common kind of provider. So: *every service is a provider; not every provider is
+  a service* (a config object or a database connection can be one too).
+
+Why the split? Because the work outlives the door. The same `UsersService` can be called by an
+HTTP controller today and by a scheduled job or a queue consumer tomorrow, and it's testable
+without pretending to be a web server.

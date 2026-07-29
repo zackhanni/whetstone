@@ -1,0 +1,42 @@
+---
+id: a-decorator-is-a-sticky-note
+title: A decorator is a sticky note, not a spell
+---
+
+`@Injectable()`, `@Controller("users")`, `@Get(":id")`, `@Body()` — the `@` syntax is the part
+that feels magical. It isn't.
+
+**A decorator is a function that runs once, when the file is first loaded, and attaches a note
+to the thing below it.** The note is data. Nest reads those notes at startup and uses them to
+build a table of "this URL → that method".
+
+```ts
+@Controller("users")   // note on the class:  "routes here start with /users"
+export class UsersController {
+  @Get(":id")          // note on the method: "answer GET requests at /:id"
+  findOne(@Param("id") id: string) {   // note on the parameter: "put the URL's id here"
+    return { id };
+  }
+}
+```
+
+Three things follow from "it's just a note":
+
+- **Decorators don't run per request.** `@Get(":id")` runs once at startup to register the
+  route. The *method* runs per request.
+- **A decorator with `()` is a function call.** `@Controller("users")` calls `Controller` with
+  `"users"`, and that call returns the actual decorator. That's why some have parentheses with
+  arguments and some are bare-ish (`@Injectable()` still needs its `()`).
+- **A note nobody reads does nothing.** This is the single most common Nest surprise: you can
+  decorate a class perfectly and still get "Nest can't resolve dependencies" — because the
+  class was never listed in a module. Decorators describe; modules register.
+
+The ones you'll meet in the first week:
+
+| Decorator | Attaches to | Note it leaves |
+| --- | --- | --- |
+| `@Injectable()` | a class | "the injector may create and hand out this class" |
+| `@Controller("users")` | a class | "this class answers requests under `/users`" |
+| `@Get()` `@Post()` `@Patch()` `@Delete()` | a method | "this method answers that HTTP verb" |
+| `@Param("id")` `@Body()` `@Query()` | a parameter | "fill this argument from that part of the request" |
+| `@Module({...})` | a class | "here's the list of what this feature contains" |

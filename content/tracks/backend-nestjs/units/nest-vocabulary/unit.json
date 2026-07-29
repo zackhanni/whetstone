@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 1,
+  "slug": "nest-vocabulary",
+  "title": "Nest vocabulary: the words before the wiring",
+  "skills": [
+    "backend",
+    "nestjs",
+    "decorators",
+    "controllers",
+    "providers",
+    "modules",
+    "http",
+    "routing",
+    "dependency-injection"
+  ],
+  "difficulty": "intro",
+  "estimatedMinutes": 25,
+  "blocks": [
+    { "type": "reading", "id": "read-vocabulary", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-vocabulary",
+      "questions": [
+        {
+          "id": "where-does-logic-go",
+          "prompt": "You're adding \"a customer can't have more than 3 open orders\". Which file?",
+          "options": [
+            { "id": "service", "text": "The service — it's a business rule, and services hold the work" },
+            { "id": "controller", "text": "The controller, right after reading the body" },
+            { "id": "module", "text": "The module, since it decides what's allowed" },
+            { "id": "decorator", "text": "A decorator on the route" }
+          ],
+          "answer": "service",
+          "explanation": "The controller's job is translation: read the request, call something, return the result. Rules that would still be true if the request arrived from a queue or a cron job belong in the service — that's what makes them testable without HTTP and reusable from a second entry point."
+        },
+        {
+          "id": "service-vs-provider",
+          "prompt": "What's the relationship between a \"service\" and a \"provider\"?",
+          "options": [
+            { "id": "subset", "text": "Provider is the general term for anything the injector can hand out; a service is the most common kind" },
+            { "id": "same", "text": "They're two words for exactly the same thing" },
+            { "id": "opposite", "text": "A provider provides HTTP routes; a service provides data" },
+            { "id": "module", "text": "A provider is a module that exports a service" }
+          ],
+          "answer": "subset",
+          "explanation": "Every service is a provider; not every provider is a service. A config object, a database connection or a fake for tests can all be providers — they're just things registered in a module's `providers` array so the injector can hand them out."
+        },
+        {
+          "id": "decorator-when",
+          "prompt": "When does the `@Get(\":id\")` decorator actually run?",
+          "options": [
+            { "id": "startup", "text": "Once, when the class is first loaded — it attaches metadata Nest reads to build its route table" },
+            { "id": "per-request", "text": "On every matching request, just before the method" },
+            { "id": "never", "text": "Never — it's stripped by TypeScript, like a type" },
+            { "id": "build", "text": "Only at build time; it doesn't exist at runtime" }
+          ],
+          "answer": "startup",
+          "explanation": "A decorator is a function that runs once at class-definition time and leaves a note (metadata) behind. Nest reads those notes at startup to learn which URL maps to which method. The *method* is what runs per request — which is why putting expensive work \"in a decorator\" isn't a thing."
+        },
+        {
+          "id": "full-route",
+          "prompt": "`@Controller(\"users\")` on the class, `@Post(\":id/orders\")` on the method. What URL does that answer?",
+          "options": [
+            { "id": "joined", "text": "POST /users/:id/orders" },
+            { "id": "method-only", "text": "POST /:id/orders" },
+            { "id": "prefix-only", "text": "POST /users" },
+            { "id": "both", "text": "Both /users and /:id/orders, as two routes" }
+          ],
+          "answer": "joined",
+          "explanation": "The controller prefix and the method path are glued together — that's all a \"sub-route\" is. `:id` is a route parameter: it matches any segment there, and `@Param(\"id\")` pulls the matched text out."
+        },
+        {
+          "id": "partial-update-verb",
+          "prompt": "A client wants to change only an order's `note` field, leaving everything else alone. Which verb?",
+          "options": [
+            { "id": "patch", "text": "PATCH — a partial update of an existing resource" },
+            { "id": "put", "text": "PUT — it's an update" },
+            { "id": "post", "text": "POST — it's a write" },
+            { "id": "get", "text": "GET with the new value in the query string" }
+          ],
+          "answer": "patch",
+          "explanation": "`PUT` means \"replace the whole resource\" — send a PUT with only `note` and a strict server should blank the other fields. `PATCH` means \"apply this change\". `POST` is for creating or for actions that aren't safe to repeat, and `GET` must never change anything (browsers, proxies and prefetchers all assume that)."
+        },
+        {
+          "id": "param-is-string",
+          "prompt": "`@Param(\"id\") id: string` gets `/users/42`. What's in `id`, and why does the type say `string`?",
+          "options": [
+            { "id": "string", "text": "The text `\"42\"` — a URL carries only text, so everything from the path or query arrives as a string until a pipe converts it" },
+            { "id": "number", "text": "The number 42; TypeScript coerces it from the annotation" },
+            { "id": "object", "text": "An object `{ id: \"42\" }`" },
+            { "id": "undefined", "text": "`undefined`, unless the route declares a type" }
+          ],
+          "answer": "string",
+          "explanation": "TypeScript annotations are erased at runtime — they never convert anything. `\"42\"` stays a string until something at runtime parses it, which is exactly the job of a pipe (`ParseIntPipe`, or the global `ValidationPipe` with `transform: true`)."
+        },
+        {
+          "id": "parameter-property",
+          "prompt": "What does `constructor(private readonly users: UsersService) {}` do, beyond taking an argument?",
+          "options": [
+            { "id": "field", "text": "It declares a field and assigns the argument to it — `this.users` is available in every method" },
+            { "id": "nothing", "text": "Nothing extra; `private` is only documentation" },
+            { "id": "creates", "text": "It creates a new `UsersService` for this class" },
+            { "id": "registers", "text": "It registers `UsersService` with the module" }
+          ],
+          "answer": "field",
+          "explanation": "It's a TypeScript *parameter property*: `private readonly x: T` in a constructor is shorthand for declaring the field, taking the argument, and doing `this.x = x`. `private`/`readonly` are compile-time only — they express intent and are erased at runtime. Note what it doesn't do: no `new`, and no registration. The class only *declares* what it needs; the module registers, and the injector supplies."
+        },
+        {
+          "id": "singleton-field",
+          "prompt": "A service sets `this.currentUser = user` at the top of a method, awaits a DB call, then reads `this.currentUser`. What's wrong?",
+          "options": [
+            { "id": "shared", "text": "The provider is a singleton — one object shared by all requests — so a concurrent request can overwrite the field during the await" },
+            { "id": "gc", "text": "Nothing; each request gets its own instance by default" },
+            { "id": "readonly", "text": "The field should have been `readonly`" },
+            { "id": "types", "text": "Only a typing issue — the field needs `| undefined`" }
+          ],
+          "answer": "shared",
+          "explanation": "Node serves requests concurrently on one thread: at every `await`, another request can run and reassign the field. Fields on a provider are for application-lifetime things (a connection, config, a cache); request-specific data should stay in arguments and return values, where it can't be clobbered."
+        },
+        {
+          "id": "guard-vs-interceptor-plain",
+          "prompt": "In plain terms, what separates a guard from an interceptor?",
+          "options": [
+            { "id": "yesno", "text": "A guard decides yes/no before the handler; an interceptor wraps the handler and can also change what comes back" },
+            { "id": "auth", "text": "Guards are for auth; interceptors are for logging — nothing else is possible" },
+            { "id": "order", "text": "Nothing structural; they just run in a different order" },
+            { "id": "async", "text": "A guard is async, an interceptor is synchronous" }
+          ],
+          "answer": "yesno",
+          "explanation": "The contracts say it: `canActivate()` returns a boolean (may this continue?), while `intercept(context, next)` gets a handle on the rest of the chain, so it runs code before *and* after and can transform the response. That's why authorization is a guard and a `{ data }` envelope is an interceptor."
+        },
+        {
+          "id": "switch-to-http",
+          "prompt": "Why does a guard write `context.switchToHttp().getRequest()` instead of just taking `req`?",
+          "options": [
+            { "id": "transport", "text": "`ExecutionContext` is transport-agnostic — the same class can run for HTTP, WebSockets or microservice messages, so you say which world you're in" },
+            { "id": "perf", "text": "It's a performance optimization — the request is built lazily" },
+            { "id": "security", "text": "It sanitizes the request first" },
+            { "id": "express", "text": "It converts the Express request into a Fastify one" }
+          ],
+          "answer": "transport",
+          "explanation": "Guards, interceptors and filters run in every transport Nest supports, so the context is an envelope around \"whatever is being handled\", with `switchToHttp()` / `switchToWs()` / `switchToRpc()` to unwrap it. It also exposes `getHandler()` and `getClass()`, which is how a guard reads route metadata such as `@Roles(\"admin\")`."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-vocabulary",
+      "prompts": [
+        {
+          "id": "injectable-service",
+          "prompt": "Mark this class as something the injector may create and hand out.",
+          "code": "@___()\nexport class UsersService {\n  findAll() { return []; }\n}",
+          "blanks": [{ "id": "a1", "accept": ["Injectable"] }],
+          "explanation": "`@Injectable()` marks a class as available to the injector. It still has to be listed in a module's `providers` array — the decorator describes, the module registers. Note the parentheses: the decorator is a function call."
+        },
+        {
+          "id": "controller-and-route",
+          "prompt": "Answer `GET /users/42`: the class prefix, the verb decorator with a route parameter, and the decorator that reads it.",
+          "code": "@___(\"users\")\nexport class UsersController {\n  @___(\":id\")\n  findOne(@___(\"id\") id: string) {\n    return { id };\n  }\n}",
+          "blanks": [
+            { "id": "b1", "accept": ["Controller"] },
+            { "id": "b2", "accept": ["Get"] },
+            { "id": "b3", "accept": ["Param"] }
+          ],
+          "explanation": "Prefix + method path = the full route, so this is `/users/:id`. `@Param(\"id\")` pulls the matched segment out as a **string** — `\"42\"`, not `42`."
+        },
+        {
+          "id": "post-body",
+          "prompt": "Create an order from the request's JSON body.",
+          "code": "@___()\ncreate(@___() dto: CreateOrderDto) {\n  return this.orders.create(dto);\n}",
+          "blanks": [
+            { "id": "c1", "accept": ["Post"] },
+            { "id": "c2", "accept": ["Body"] }
+          ],
+          "explanation": "`POST` is the verb for creating a resource (repeat it and you get two orders — that's expected). `@Body()` hands you the parsed JSON. On its own it does **no** checking: the `CreateOrderDto` annotation is erased at runtime, so validating the shape is a pipe's job."
+        },
+        {
+          "id": "constructor-injection",
+          "prompt": "Give this controller the service in one line — declared, never constructed.",
+          "code": "export class UsersController {\n  constructor(___ readonly users: UsersService) {}\n\n  findAll() {\n    return ___.users.findAll();\n  }\n}",
+          "blanks": [
+            { "id": "d1", "accept": ["private"] },
+            { "id": "d2", "accept": ["this"] }
+          ],
+          "explanation": "`private readonly users: UsersService` is a parameter property: it declares the field, takes the argument, and assigns it. `this` is the object the method was called on, so `this.users` is the instance the injector supplied — not one this class created."
+        },
+        {
+          "id": "module-keys",
+          "prompt": "Register the controller and the service for this feature.",
+          "code": "@Module({\n  ___: [UsersController],\n  ___: [UsersService],\n})\nexport class UsersModule {}",
+          "blanks": [
+            { "id": "e1", "accept": ["controllers"] },
+            { "id": "e2", "accept": ["providers"] }
+          ],
+          "explanation": "`controllers` are the HTTP entry points; `providers` are the things the injector can build and hand out inside this module. Forgetting the `providers` entry is the classic cause of \"Nest can't resolve dependencies of the UsersController\"."
+        },
+        {
+          "id": "guard-context",
+          "prompt": "Reach the HTTP request from inside a guard.",
+          "code": "canActivate(context: ExecutionContext): boolean {\n  const request = context.___().getRequest();\n  return Boolean(request.headers.authorization);\n}",
+          "blanks": [{ "id": "f1", "accept": ["switchToHttp"] }],
+          "explanation": "`ExecutionContext` wraps whatever is being handled — an HTTP request, a WebSocket message, an RPC call — so you unwrap it with `switchToHttp()` (or `switchToWs()` / `switchToRpc()`). Returning `false` from `canActivate` makes Nest answer 403."
+        }
+      ]
+    }
+  ]
+}

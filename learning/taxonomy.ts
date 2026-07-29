@@ -192,9 +192,16 @@ export const TAXONOMY: TagNode[] = [
   { slug: "nestjs", label: "NestJS", parents: ["backend"] },
   { slug: "validation", label: "Validation", parents: ["backend"] },
   { slug: "auth", label: "Auth", parents: ["backend"] },
+  { slug: "http", label: "HTTP", parents: ["backend"] },
+
+  // http
+  { slug: "routing", label: "Routing", parents: ["http", "nestjs"] },
 
   // nestjs → topics
   { slug: "modules", label: "Modules", parents: ["nestjs"] },
+  { slug: "controllers", label: "Controllers", parents: ["nestjs", "http"] },
+  // Decorators are a TypeScript feature, but every learner meets them *as* the Nest surface.
+  { slug: "decorators", label: "Decorators", parents: ["nestjs"] },
   {
     slug: "dependency-injection",
     label: "Dependency Injection",
