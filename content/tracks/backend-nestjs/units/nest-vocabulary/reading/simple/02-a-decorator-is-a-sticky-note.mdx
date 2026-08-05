@@ -28,8 +28,9 @@ Three things follow from "it's just a note":
   `"users"`, and that call returns the actual decorator. That's why some have parentheses with
   arguments and some are bare-ish (`@Injectable()` still needs its `()`).
 - **A note nobody reads does nothing.** This is the single most common Nest surprise: you can
-  decorate a class perfectly and still get "Nest can't resolve dependencies" — because the
-  class was never listed in a module. Decorators describe; modules register.
+  decorate a service perfectly and still get "Nest can't resolve dependencies" — because it was
+  never listed in a module's `providers`. (Same cause, quieter symptom for a controller left out
+  of `controllers`: no error, the route just 404s.) Decorators describe; modules register.
 
 The ones you'll meet in the first week:
 

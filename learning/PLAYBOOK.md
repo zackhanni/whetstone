@@ -148,7 +148,7 @@ export default defineConfig({
   test: { globals: true, environment: "node", include: ["content/challenges/<slug>/**/*.test.{ts,tsx}"] },
 });
 EOF
-npx vitest run --root . --config /tmp/challenge.vitest.config.ts        # starter: MUST fail
+pnpm exec vitest run --root . --config /tmp/challenge.vitest.config.ts  # starter: MUST fail
 # then temporarily copy solution.tsx over the entry, re-run (all pass), and restore the starter
 ```
 

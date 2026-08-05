@@ -27,7 +27,9 @@ Two facts that follow directly from that order, and that explain most confusion:
 Exception filters are last because they're the catch-all: anything thrown anywhere inside the
 pipeline (guard, pipe, handler, service) ends up there and becomes a status code.
 
-Each of them can be registered at four scopes — global, controller, handler, and (for pipes)
-parameter. Guards at different scopes run in **sequence**, global first, then controller, then
+Guards, interceptors, pipes and filters can each be registered at three scopes — global,
+controller, handler — plus, for pipes, a fourth: a single parameter. (Middleware is the
+exception: it isn't registered by scope at all, but bound to route patterns in a module's
+`configure`.) Guards at different scopes run in **sequence**, global first, then controller, then
 handler; interceptors **nest**, with the global one outermost, so it's the only one that wraps
 the others.

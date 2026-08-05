@@ -127,7 +127,7 @@
             { "id": "async", "text": "A guard is async, an interceptor is synchronous" }
           ],
           "answer": "yesno",
-          "explanation": "The contracts say it: `canActivate()` returns a boolean (may this continue?), while `intercept(context, next)` gets a handle on the rest of the chain, so it runs code before *and* after and can transform the response. That's why authorization is a guard and a `{ data }` envelope is an interceptor."
+          "explanation": "The contracts say it: `canActivate()` answers with a boolean — or a `Promise`/`Observable` of one, so it can await a token check — while `intercept(context, next)` gets a handle on the rest of the chain, so it runs code before *and* after and can transform the response. Both can be async; the difference is structural, not timing. That's why authorization is a guard and a `{ data }` envelope is an interceptor."
         },
         {
           "id": "switch-to-http",

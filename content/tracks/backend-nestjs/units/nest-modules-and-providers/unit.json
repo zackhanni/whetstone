@@ -203,7 +203,7 @@
         {
           "id": "factory-inject",
           "prompt": "Build a provider asynchronously from another provider.",
-          "code": "{\n  provide: \"REDIS\",\n  ___: async (config: ConfigService) => createClient(config.get(\"REDIS_URL\")),\n  ___: [ConfigService],\n}",
+          "code": "{\n  provide: \"REDIS\",\n  ___: async (config: ConfigService) => {\n    const client = createClient({ url: config.get(\"REDIS_URL\") });\n    await client.connect();\n    return client;\n  },\n  ___: [ConfigService],\n}",
           "blanks": [
             {
               "id": "c1",
@@ -218,7 +218,7 @@
               ]
             }
           ],
-          "explanation": "`useFactory` may be async — Nest awaits it during boot — and `inject` supplies its parameters positionally. Swap the factory's body and every consumer is unaffected: they depend on the token, not on how it's built."
+          "explanation": "`useFactory` may be async — Nest awaits it during boot, which is why the factory can return an already-connected client — and `inject` supplies its parameters positionally. Swap the factory's body and every consumer is unaffected: they depend on the token, not on how it's built."
         },
         {
           "id": "override-in-test",

@@ -22,7 +22,7 @@ The verb says what kind of operation it is. It's a convention, not enforcement â
 | `GET` | read something, change nothing | same result â€” safe |
 | `POST` | create something / run an action | two calls = two orders |
 | `PUT` | replace the whole thing | same result |
-| `PATCH` | change part of a thing | same result |
+| `PATCH` | change part of a thing | depends on the patch (`note: "x"` yes, `quantity += 1` no) |
 | `DELETE` | remove it | same result (already gone) |
 
 ## The full path is two halves glued together
