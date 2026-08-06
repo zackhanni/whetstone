@@ -13,7 +13,7 @@ whole problem — each is just a class with one method.
 | **Guard** | May this request continue? Yes/no | `canActivate(context)` → `boolean \| Promise<boolean> \| Observable<boolean>` |
 | **Interceptor** | Wrap the call — do something before *and* after | `intercept(context, next)` |
 | **Pipe** | Check/convert one argument | `transform(value, metadata)` |
-| **Exception filter** | Turn a thrown error into an HTTP response | `catch(error, host)` |
+| **Exception filter** | Turn a thrown error into a response for the current transport | `catch(error, host)` |
 
 They run in a fixed order around the handler:
 
