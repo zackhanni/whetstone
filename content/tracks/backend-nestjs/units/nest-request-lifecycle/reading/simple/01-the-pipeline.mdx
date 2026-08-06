@@ -1,0 +1,35 @@
+---
+id: the-pipeline
+title: A request is a pipeline, and the order is fixed
+---
+
+Your handler is the middle of a sandwich. For every request Nest runs:
+
+```
+middleware
+  → guards                (may I? -> 401/403)
+    → interceptors (before)
+      → pipes             (is the input valid/typed? -> 400)
+        → HANDLER
+      ← interceptors (after)   (map the response, log the duration)
+  ← exception filters      (turn any thrown error into an HTTP response)
+```
+
+Two facts that follow directly from that order, and that explain most confusion:
+
+- **Guards run before pipes.** So inside a guard the body is still raw, untransformed input —
+  a guard cannot rely on a DTO instance. Authorization decisions that depend on the payload
+  either re-read the raw request or move into the handler/service.
+- **Interceptors wrap the handler on both sides.** They're the only component that sees the
+  request *and* the response, which is why timing, logging, caching and response envelopes
+  live there.
+
+Exception filters are last because they're the catch-all: anything thrown anywhere inside the
+pipeline (guard, pipe, handler, service) ends up there and becomes a status code.
+
+Guards, interceptors, pipes and filters can each be registered at three scopes — global,
+controller, handler — plus, for pipes, a fourth: a single parameter. (Middleware is the
+exception: it isn't registered by scope at all — it's either `app.use(...)` in `main.ts` for
+everything, or bound to route patterns in a module's `configure`.) Guards at different scopes
+run in **sequence**, global first, then controller, then handler; interceptors **nest**, with
+the global one outermost, so it's the only one that wraps the others.

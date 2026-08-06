@@ -1,0 +1,71 @@
+---
+id: pipe-options-that-matter
+title: The ValidationPipe options that change behaviour
+---
+
+```ts
+app.useGlobalPipes(
+  new ValidationPipe({
+    whitelist: true,              // strip properties with no decorator
+    forbidNonWhitelisted: false,  // …or 400 instead of stripping
+    transform: true,              // return a real DTO instance, coerce declared types
+    forbidUnknownValues: true,    // fail loudly if the "DTO" has no metadata at all
+  }),
+);
+```
+
+## `whitelist` is a security control, not tidiness
+
+Without it, extra keys survive into your handler. That matters the moment anything downstream
+does a bulk assignment:
+
+```ts
+// body: { "email": "a@b.c", "role": "admin", "credits": 999999 }
+await this.repo.update(id, dto);   // ❌ mass assignment: role/credits go straight through
+```
+
+`whitelist: true` deletes every property that has no validation decorator, so a DTO with only
+`email` yields `{ email }`. The stricter `forbidNonWhitelisted: true` rejects the request
+instead — better for internal APIs where an unknown field means the client is wrong, worse for
+public APIs where you want forward compatibility.
+
+## `transform` gives you an instance, and coercion
+
+Two distinct effects:
+
+- The handler receives an **instance of the DTO class**, not a plain object — so DTO methods
+  and `class-transformer` `@Expose`/`@Type` behaviour work.
+- Declared primitive types are coerced (`"2"` → `2`) when combined with
+  `transformOptions: { enableImplicitConversion: true }` or an explicit `@Type(() => Number)`.
+
+Implicit conversion is convenient and occasionally surprising: it will happily turn
+`"false"` into a truthy boolean-ish value depending on the target type, and it coerces
+*before* validators run. Prefer the explicit `@Type(() => Number)` on query DTOs, where the
+input genuinely is always a string.
+
+## The status codes are part of the contract
+
+- **400** — the body/params failed validation. `ValidationPipe` throws `BadRequestException`
+  with a `message` array of human-readable failures.
+- **422** — sometimes preferred for "syntactically fine, semantically invalid". Pick one and
+  be consistent; Nest's default is 400.
+- **500** — what you get when validation *didn't* happen and the handler blew up on
+  `undefined`. A 500 on bad input is a missing-validation bug.
+
+Return *all* failures, not the first one: a client fixing a form one field per round-trip is a
+bad API. `class-validator` collects them; a hand-rolled validator has to be written to.
+
+## Keep response shape separate from request shape
+
+`CreateUserDto` and the user you return are different contracts — the response must never leak
+`passwordHash`. Two options:
+
+```ts
+// class-transformer, applied by an interceptor
+@Exclude() passwordHash: string;
+// main.ts: app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+```
+
+…or an explicit `toResponse()`/mapper that builds the response object field by field. The
+mapper is more code and impossible to get wrong by forgetting a decorator — which is why many
+teams prefer it for anything sensitive.

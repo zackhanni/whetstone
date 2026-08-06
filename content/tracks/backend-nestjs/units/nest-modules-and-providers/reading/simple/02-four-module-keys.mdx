@@ -1,0 +1,31 @@
+---
+id: four-module-keys
+title: The four keys of @Module, and what each one is for
+---
+
+`@Module()` has four arrays. Knowing which one a symbol belongs in removes most wiring
+errors.
+
+| Key | Means | Rule of thumb |
+| --- | --- | --- |
+| `providers` | Instantiate these **in this module** | Where the class actually lives |
+| `controllers` | HTTP entry points of this module | Never exported; routes are global |
+| `imports` | Other **modules** whose exports I may inject | Import modules, never services |
+| `exports` | Providers other modules may inject | The module's public API |
+
+```ts
+@Module({
+  imports: [DatabaseModule],       // gives us whatever DatabaseModule EXPORTS
+  controllers: [OrdersController],
+  providers: [OrdersService],
+  exports: [OrdersService],        // other modules may now inject OrdersService
+})
+export class OrdersModule {}
+```
+
+The trap that bites everyone once: putting a class from *another* module into your own
+`providers` array to "fix" a resolution error. It compiles, it boots — and you now have
+**two instances**, because `providers` means *construct it here*. The in-memory cache one
+half of the app writes to is not the one the other half reads.
+
+Import the owning module instead, and make sure that module `exports` the provider.

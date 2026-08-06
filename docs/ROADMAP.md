@@ -61,6 +61,12 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ **Context vs client store vs server state** (`context-vs-store-vs-server-state`) — who _owns_ a value, the failure mode of each wrong choice, and how one screen combines URL + query cache + store. Decision unit: reading + quiz + fill-blank, no challenge.
   - ✅ **Zustand basics** (`zustand-basics`) — `create`, atomic vs object selectors, `set` shallow-merge, `getState`/`setState` outside React, `persist` (`partialize`, `version`, hydration gate), testing a singleton. Challenge: `selector-store-subscription` (rebuild the hook on `useSyncExternalStore`).
   - ⬜ _blocked:_ a challenge that imports **real** `zustand` — `components/challenge-runner.tsx` hard-codes the Sandpack dependency list, so challenges can't declare their own deps yet. Either add an optional `dependencies` field to the challenge schema + runner, or keep teaching the mechanism with the hand-rolled store.
+- ✅ **Backend with NestJS** — 4 units
+  - ✅ **Nest vocabulary: the words before the wiring** (`nest-vocabulary`) — controller/service/module/provider, decorators as metadata that runs once, HTTP verbs + prefix-plus-path routes + `@Param`/`@Query`/`@Body`, the `constructor(private readonly x: T)` line unpacked, singleton = one shared instance, and a plain-words tour of middleware/guard/interceptor/pipe/filter. Authored from feedback that the DI unit assumed its own vocabulary.
+  - ✅ **Modules, providers & the injector** (`nest-modules-and-providers`) — modules as registries, the four `@Module` keys, reading the "can't resolve dependencies" error, duplicate registration → two instances, tokens for interfaces, `useFactory`/`inject`, scopes vs state-on-a-singleton, `forwardRef` as a smell. No challenge (no `@nestjs/*` in the sandbox).
+  - ✅ **DTOs & validation** (`nest-dtos-and-validation`) — the DTO as trust boundary, why the type alone validates nothing, `whitelist` as mass-assignment defence, coercion, `@ValidateNested` + `@Type`, `PartialType`, uniqueness as 409 in the service. Challenge: `nest-validation-pipe` (hand-rolled ValidationPipe).
+  - ✅ **The request lifecycle** (`nest-request-lifecycle`) — guards → interceptors → pipes → handler → filters, `Reflector` + custom decorators, `map`/`tap`/`finalize` on `next.handle()`, 401 vs 403, one filter per exception, `APP_GUARD`/`APP_FILTER` for injectable globals.
+  - ⬜ _blocked:_ any challenge that imports `@nestjs/common` — the same runner dependency limit as the zustand note above. The lifecycle unit therefore ends at predict-output; a hand-rolled "compose the pipeline" challenge is the workaround if it's worth one.
 
 ### Frontend
 
@@ -100,7 +106,10 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ⬜ CORS, preflight, and why it only bites in the browser
   - ⬜ Sync vs async APIs — polling, webhooks, queues, long-running jobs
 - ⬜ **Next.js & the Network** — server components vs actions vs route handlers, cache-control/response headers, gzip/brotli, revalidation & caching layers, streaming/Suspense
-- ⬜ **Backend / NestJS** — contracts (DTOs + validation), controllers, modules, providers/DI, guards & interceptors; Redis (cache, sessions, rate limiting); microservices & message patterns
+- 🔨 **Backend / NestJS** — first 3 units shipped (see Shipped → Backend with NestJS)
+  - ⬜ Redis — cache-aside, sessions, rate limiting (`ThrottlerGuard`), and what to do when the cache is down
+  - ⬜ Microservices & message patterns — request-response vs event, transports, retries/idempotency, `@MessagePattern`/`@EventPattern`
+  - ⬜ Controllers & routing in their own right — route ordering, versioning, `@Res()` and what it costs you
 - ⬜ **Databases** — relational fundamentals (keys, joins, normalization, indexes, transactions); relational vs document vs graph; N+1 queries; migrations
 
 ### Quality, security & tooling

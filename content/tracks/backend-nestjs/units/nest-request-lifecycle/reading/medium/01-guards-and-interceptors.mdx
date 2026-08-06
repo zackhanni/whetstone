@@ -1,0 +1,87 @@
+---
+id: guards-and-interceptors
+title: Writing a guard and an interceptor
+---
+
+## A guard is a boolean, plus metadata
+
+```ts
+export const ROLES_KEY = "roles";
+export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    // Handler metadata first, class metadata as the fallback — that's what getAllAndOverride does.
+    const required = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required?.length) return true;                   // no @Roles on this route -> open
+
+    const { user } = context.switchToHttp().getRequest();
+    if (!user) throw new UnauthorizedException();          // 401: we don't know who you are
+    return required.some((role) => user.roles.includes(role)); // false -> 403
+  }
+}
+```
+
+Three things to take from that:
+
+- **`ExecutionContext` is transport-agnostic.** `switchToHttp()` is how you get the HTTP
+  request; the same guard can handle a WebSocket or a microservice message via
+  `switchToWs()` / `switchToRpc()`. Reaching straight for `req` only works for HTTP.
+- **`Reflector` + a custom decorator** is the idiomatic way to make a guard configurable per
+  route. `@Roles("admin")` is data attached to the handler, not an `if` in the guard.
+- **`return false` → 403.** Throw `UnauthorizedException` when a credential is missing so the
+  client knows to re-authenticate.
+
+Registering it globally still lets you inject providers, as long as you register it as one:
+
+```ts
+{ provide: APP_GUARD, useClass: RolesGuard }   // in a module's providers
+```
+
+`app.useGlobalGuards(new RolesGuard(...))` also works but has to be constructed by hand, so it
+can't inject. That's the whole reason `APP_GUARD` / `APP_INTERCEPTOR` / `APP_FILTER` / `APP_PIPE`
+exist.
+
+## An interceptor wraps the call
+
+```ts
+@Injectable()
+export class TimingInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(TimingInterceptor.name);
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const started = Date.now();
+    // Nothing runs until the returned Observable is subscribed — next.handle() IS the handler.
+    return next.handle().pipe(
+      tap({
+        next: () => this.logger.log(`${context.getHandler().name} ${Date.now() - started}ms`),
+        // A throw inside a tap handler becomes the stream's error, hiding the real one — so
+        // don't assume the rejected value is an Error.
+        error: (err: unknown) => {
+          const reason = err instanceof Error ? err.message : String(err);
+          this.logger.warn(`failed after ${Date.now() - started}ms: ${reason}`);
+        },
+      }),
+    );
+  }
+}
+```
+
+`next.handle()` returns an `Observable` of the handler's eventual return value. Code *before*
+it runs pre-handler; operators you `pipe` run post-handler. The classic bugs:
+
+- **Forgetting to return the stream** — the request hangs forever, because nothing subscribed.
+- **`tap` vs `map`** — `tap` observes, `map` replaces. A response envelope needs
+  `map((data) => ({ data }))`.
+- **Only handling the success path** — `tap(() => …)` (the single-callback form) never fires
+  when the handler throws, so your duration metric silently ignores every failure. Use the
+  observer form above, or `finalize`.
+
+Useful shapes this unlocks: `catchError` to translate errors, `timeout(5000)` to bound a slow
+dependency, a cache interceptor returning `of(cached)` without ever calling `next.handle()`.

@@ -88,6 +88,7 @@ export type Taxonomy = z.infer<typeof Taxonomy>;
 export const TAXONOMY: TagNode[] = [
   // Dimensions (roots)
   { slug: "frontend", label: "Frontend", parents: [] },
+  { slug: "backend", label: "Backend", parents: [] },
 
   // frontend → areas
   { slug: "react", label: "React", parents: ["frontend"] },
@@ -97,7 +98,13 @@ export const TAXONOMY: TagNode[] = [
     label: "State Management",
     parents: ["frontend"],
   },
-  { slug: "architecture", label: "Architecture", parents: ["frontend"] },
+  // Architecture spans both dimensions: "where does this responsibility live?" is the same
+  // question in a component tree and in a module graph.
+  {
+    slug: "architecture",
+    label: "Architecture",
+    parents: ["frontend", "backend"],
+  },
 
   // react → topics
   { slug: "hooks", label: "Hooks", parents: ["react"] },
@@ -179,6 +186,53 @@ export const TAXONOMY: TagNode[] = [
     slug: "server-state",
     label: "Server State",
     parents: ["state-management", "data-fetching"],
+  },
+
+  // backend → areas
+  { slug: "nestjs", label: "NestJS", parents: ["backend"] },
+  { slug: "validation", label: "Validation", parents: ["backend"] },
+  { slug: "auth", label: "Auth", parents: ["backend"] },
+  { slug: "http", label: "HTTP", parents: ["backend"] },
+
+  // http
+  { slug: "routing", label: "Routing", parents: ["http", "nestjs"] },
+
+  // nestjs → topics
+  { slug: "modules", label: "Modules", parents: ["nestjs"] },
+  { slug: "controllers", label: "Controllers", parents: ["nestjs", "http"] },
+  // Decorators are a TypeScript feature, but every learner meets them *as* the Nest surface.
+  { slug: "decorators", label: "Decorators", parents: ["nestjs"] },
+  {
+    slug: "dependency-injection",
+    label: "Dependency Injection",
+    parents: ["nestjs", "architecture"],
+  },
+  { slug: "providers", label: "Providers", parents: ["dependency-injection"] },
+  {
+    slug: "request-lifecycle",
+    label: "Request Lifecycle",
+    parents: ["nestjs", "architecture"],
+  },
+  { slug: "guards", label: "Guards", parents: ["request-lifecycle", "auth"] },
+  {
+    slug: "interceptors",
+    label: "Interceptors",
+    parents: ["request-lifecycle"],
+  },
+  {
+    slug: "exception-filters",
+    label: "Exception Filters",
+    parents: ["request-lifecycle"],
+  },
+  {
+    slug: "pipes",
+    label: "Pipes",
+    parents: ["request-lifecycle", "validation"],
+  },
+  {
+    slug: "dto",
+    label: "DTOs & Contracts",
+    parents: ["validation", "architecture"],
   },
 ];
 

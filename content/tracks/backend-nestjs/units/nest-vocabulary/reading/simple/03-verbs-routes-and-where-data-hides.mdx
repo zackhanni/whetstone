@@ -1,0 +1,62 @@
+---
+id: verbs-routes-and-where-data-hides
+title: Verbs, routes, and where the data hides in a request
+---
+
+Every HTTP request is four things: a **verb**, a **path**, some **headers**, and (sometimes) a
+**body**.
+
+```http
+POST /users/42/orders?draft=true      <- verb + path + query string
+Authorization: Bearer abc123          <- a header
+Content-Type: application/json
+
+{ "sku": "TEA-1", "quantity": 2 }     <- the body
+```
+
+The verb says what kind of operation it is. It's a convention, not enforcement — but everyone
+(and every proxy, cache and client library) assumes you follow it:
+
+| Verb | Means | Repeat it twice? |
+| --- | --- | --- |
+| `GET` | read something, change nothing | same result — safe |
+| `POST` | create something / run an action | two calls = two orders |
+| `PUT` | replace the whole thing | same result |
+| `PATCH` | change part of a thing | depends on the patch (`note: "x"` yes, `quantity += 1` no) |
+| `DELETE` | remove it | same result (already gone) |
+
+## The full path is two halves glued together
+
+The controller's prefix plus the method's path make the route — that's all a "sub-route" is.
+
+```ts
+@Controller("users")           // prefix
+export class UsersController {
+  @Get()                       // -> GET  /users
+  findAll() {}
+
+  @Get(":id")                  // -> GET  /users/42        (":id" is a route parameter)
+  findOne() {}
+
+  @Post(":id/orders")          // -> POST /users/42/orders
+  createOrder() {}
+}
+```
+
+## Three places data arrives, three decorators
+
+```ts
+@Post(":id/orders")
+create(
+  @Param("id") userId: string,       // from the PATH      -> "42"
+  @Query("draft") draft: string,     // from the ?QUERY    -> "true"
+  @Body() body: CreateOrderDto,      // from the BODY      -> { sku, quantity }
+) {}
+```
+
+Two things that trip everyone up on day one:
+
+- **Everything from the path and query arrives as a `string`.** `"42"`, `"true"` — the URL has
+  no other type. Turning them into a number or boolean is a *pipe's* job (a later unit).
+- **A method with no decorated parameters gets nothing.** Nest fills arguments only where you
+  asked; there's no implicit `req` unless you ask for it with `@Req()`.

@@ -1,0 +1,60 @@
+---
+id: constructor-private-this
+title: constructor(private readonly x) — the line that confuses everyone
+---
+
+Half of "I don't understand Nest" is really "I don't understand this one TypeScript line".
+
+```ts
+export class UsersController {
+  constructor(private readonly users: UsersService) {}
+
+  findAll() {
+    return this.users.findAll();
+  }
+}
+```
+
+Take it apart:
+
+- **`constructor`** — the method that runs when the object is created. Its parameters are what
+  the class needs in order to exist.
+- **`private readonly users: UsersService`** — a *parameter property*. This one line does three
+  things that you'd otherwise write out longhand:
+
+```ts
+// Longhand: exactly the same class.
+export class UsersController {
+  private readonly users: UsersService;      // 1. declare a field on the object
+  constructor(users: UsersService) {         // 2. take it as an argument
+    this.users = users;                      // 3. store it on the object
+  }
+}
+```
+
+- **`private`** — "only code inside this class may touch `this.users`." It's a **compile-time**
+  rule; TypeScript erases it, so nothing stops a caller at runtime. Use it to say *intent*.
+- **`readonly`** — you can't reassign `this.users` later. Same deal: compile-time only.
+- **`this`** — the object the method was called on. Inside `findAll()`, `this` is *that
+  controller instance*, so `this.users` is the service that was handed to it. A plain local
+  variable would vanish when the constructor returned; a field on `this` survives for the life
+  of the object.
+- **A `method` is just a function that lives on a class** and can use `this`. `findAll()` above
+  is a method; the arrow function you pass to `.map()` is not.
+
+## Why "declared, not constructed" matters
+
+Notice what the constructor does *not* do: it never says `new UsersService()`. It only
+*declares* "I need a `UsersService`". Something else — Nest's injector — decides which object
+to pass in.
+
+That's dependency injection, and its whole payoff shows up in tests:
+
+```ts
+// No Nest, no HTTP, no database.
+const controller = new UsersController({ findAll: () => [{ id: "1" }] } as UsersService);
+expect(controller.findAll()).toHaveLength(1);
+```
+
+If the controller had built its own service with `new`, you couldn't swap it — you'd be forced
+to boot the real thing (and its database) just to test one `if`.

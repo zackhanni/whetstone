@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "slug": "nest-modules-and-providers",
+  "title": "Modules, providers & the injector",
+  "skills": [
+    "backend",
+    "nestjs",
+    "modules",
+    "dependency-injection",
+    "providers",
+    "architecture"
+  ],
+  "difficulty": "intro",
+  "estimatedMinutes": 25,
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-di",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-di",
+      "questions": [
+        {
+          "id": "resolution-scope",
+          "prompt": "`OrdersService` injects `PricingService`, which is declared in `PricingModule`'s `providers`. Boot fails with \"Nest can't resolve dependencies of the OrdersService (?)\". What are the two things to check?",
+          "options": [
+            {
+              "id": "export-import",
+              "text": "That `PricingModule` exports `PricingService`, and that `OrdersModule` imports `PricingModule`"
+            },
+            {
+              "id": "add-to-providers",
+              "text": "Add `PricingService` to `OrdersModule`'s `providers` array"
+            },
+            {
+              "id": "global",
+              "text": "Mark `PricingService` as `@Global()`"
+            },
+            {
+              "id": "injectable-controller",
+              "text": "That `OrdersController` is decorated with `@Injectable()`"
+            }
+          ],
+          "answer": "export-import",
+          "explanation": "Modules are encapsulated: the injector searches this module's own providers plus the exports of its imports. So the provider must leave its home module (`exports`) and be let into yours (`imports`). Adding it to your own `providers` also \"fixes\" the error — by constructing a second, separate instance. `@Global()` is a module-level decorator, not a provider one."
+        },
+        {
+          "id": "two-instances",
+          "prompt": "What is the actual consequence of listing the same service class in two modules' `providers` arrays?",
+          "options": [
+            {
+              "id": "two",
+              "text": "Two independent instances — any in-memory state in one is invisible to the other"
+            },
+            {
+              "id": "error",
+              "text": "Nest throws a duplicate-provider error at boot"
+            },
+            {
+              "id": "shared",
+              "text": "Nothing; Nest deduplicates by class and shares one instance"
+            },
+            {
+              "id": "last-wins",
+              "text": "The last module to be loaded wins and the other injection is undefined"
+            }
+          ],
+          "answer": "two",
+          "explanation": "`providers` means \"instantiate this here\". Each module gets its own instance, and the bug is silent until something stateful (a cache, a counter, an open connection, a subscription) diverges between them. One owner module + `exports` is the fix."
+        },
+        {
+          "id": "interface-token",
+          "prompt": "`constructor(private mailer: Mailer)` where `Mailer` is a TypeScript `interface` fails to resolve. Why?",
+          "options": [
+            {
+              "id": "erased",
+              "text": "Interfaces don't exist at runtime, so there's no token for the injector to look up — use a string/symbol token with `@Inject`, or an abstract class"
+            },
+            {
+              "id": "decorator",
+              "text": "Interfaces can't be decorated with `@Injectable()`, so Nest skips them"
+            },
+            {
+              "id": "strict",
+              "text": "It needs `strictPropertyInitialization` disabled in tsconfig"
+            },
+            {
+              "id": "readonly",
+              "text": "The parameter is missing `readonly`"
+            }
+          ],
+          "answer": "erased",
+          "explanation": "DI is driven by emitted metadata about the constructor's parameter types. A type that compiles away leaves `Object` behind, so there's nothing to resolve. `@Inject(MAILER)` with an exported `Symbol` (or an abstract class, which is both a type and a runtime value) gives you a real token."
+        },
+        {
+          "id": "usefactory",
+          "prompt": "You need a Redis client whose URL comes from `ConfigService` and whose connection is established asynchronously. Which provider form?",
+          "options": [
+            {
+              "id": "factory",
+              "text": "`{ provide: \"REDIS\", useFactory: async (c: ConfigService) => …, inject: [ConfigService] }`"
+            },
+            {
+              "id": "useclass",
+              "text": "`{ provide: \"REDIS\", useClass: RedisClient }`"
+            },
+            {
+              "id": "usevalue",
+              "text": "`{ provide: \"REDIS\", useValue: createClient(process.env.REDIS_URL) }`"
+            },
+            {
+              "id": "constructor",
+              "text": "Connect inside the consuming service's constructor"
+            }
+          ],
+          "answer": "factory",
+          "explanation": "Of the four forms, `useFactory` is the only one that can both await setup and depend on other providers (via the positional `inject` array). `useValue` would run the connect at module-load time, outside Nest's control and untestable; connecting in a constructor makes construction slow and un-awaitable. The other legitimate shape is a `useClass` provider that connects in `onModuleInit` — Nest awaits that hook — which is what you want when the connection has a lifecycle (reconnects, graceful shutdown) rather than being a one-shot value."
+        },
+        {
+          "id": "request-state",
+          "prompt": "A service stores `this.currentUser` at the start of each request and reads it later in the call. What's the failure mode?",
+          "options": [
+            {
+              "id": "cross-request",
+              "text": "Providers are app-wide singletons, so concurrent requests overwrite each other's `currentUser`"
+            },
+            {
+              "id": "gc",
+              "text": "The field is garbage collected between the await points"
+            },
+            {
+              "id": "none",
+              "text": "None — Nest creates a provider per request by default"
+            },
+            {
+              "id": "types",
+              "text": "Only a typing problem, since the field must be optional"
+            }
+          ],
+          "answer": "cross-request",
+          "explanation": "`Scope.DEFAULT` is one instance for the whole application. Any \"current request\" field is shared mutable state across concurrent requests, and it fails intermittently under load — the worst kind of bug. Pass the value as an argument, or use `AsyncLocalStorage`; `Scope.REQUEST` works but spreads per-request instantiation up the whole injection chain."
+        },
+        {
+          "id": "global-tradeoff",
+          "prompt": "What do you give up by marking many modules `@Global()`?",
+          "options": [
+            {
+              "id": "graph",
+              "text": "The module graph stops documenting real dependencies — nothing declares what it needs, so coupling and boot-order problems become invisible"
+            },
+            {
+              "id": "singleton",
+              "text": "Global providers are no longer singletons"
+            },
+            {
+              "id": "testing",
+              "text": "Global modules can't be overridden in `Test.createTestingModule`"
+            },
+            {
+              "id": "perf",
+              "text": "Resolution becomes O(n) at request time"
+            }
+          ],
+          "answer": "graph",
+          "explanation": "`@Global()` is a legitimate tool for root infrastructure registered once (config, logger, DB connection). Used broadly it removes the `imports` lines that were your dependency documentation, and \"who can reach this?\" becomes \"everyone\". Globals are still singletons and still overridable in tests."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-di",
+      "prompts": [
+        {
+          "id": "export-provider",
+          "prompt": "Let another module inject `OrdersService` while keeping `OrdersRepository` private to this module.",
+          "code": "@Module({\n  imports: [DatabaseModule],\n  controllers: [OrdersController],\n  providers: [OrdersService, OrdersRepository],\n  ___: [OrdersService],\n})\nexport class OrdersModule {}",
+          "blanks": [
+            {
+              "id": "a1",
+              "accept": [
+                "exports"
+              ]
+            }
+          ],
+          "explanation": "`exports` is the module's public API. `OrdersRepository` stays out of it, so it remains an implementation detail — and only one instance of each exists, because they're constructed exactly once here."
+        },
+        {
+          "id": "custom-token",
+          "prompt": "Inject an implementation behind an interface, using an explicit symbol token.",
+          "code": "export const MAILER = Symbol(\"MAILER\");\n\n@Injectable()\nexport class SignupService {\n  constructor(@___(MAILER) private readonly mailer: Mailer) {}\n}",
+          "blanks": [
+            {
+              "id": "b1",
+              "accept": [
+                "Inject"
+              ]
+            }
+          ],
+          "explanation": "`@Inject(token)` overrides the metadata-based lookup, which is what makes interface-typed dependencies possible. The module then registers `{ provide: MAILER, useClass: SesMailer }` — and a test registers `{ provide: MAILER, useValue: fake }` in the same slot."
+        },
+        {
+          "id": "factory-inject",
+          "prompt": "Build a provider asynchronously from another provider.",
+          "code": "{\n  provide: \"REDIS\",\n  ___: async (config: ConfigService) => {\n    const client = createClient({ url: config.get(\"REDIS_URL\") });\n    await client.connect();\n    return client;\n  },\n  ___: [ConfigService],\n}",
+          "blanks": [
+            {
+              "id": "c1",
+              "accept": [
+                "useFactory"
+              ]
+            },
+            {
+              "id": "c2",
+              "accept": [
+                "inject"
+              ]
+            }
+          ],
+          "explanation": "`useFactory` may be async — Nest awaits it during boot, which is why the factory can return an already-connected client — and `inject` supplies its parameters positionally. Swap the factory's body and every consumer is unaffected: they depend on the token, not on how it's built."
+        },
+        {
+          "id": "override-in-test",
+          "prompt": "Replace a real dependency with a fake in a unit test, using the same token the injector uses.",
+          "code": "const moduleRef = await Test.createTestingModule({\n  providers: [\n    OrdersService,\n    { ___: PricingService, ___: { quote: () => 100 } },\n  ],\n}).compile();",
+          "blanks": [
+            {
+              "id": "d1",
+              "accept": [
+                "provide"
+              ]
+            },
+            {
+              "id": "d2",
+              "accept": [
+                "useValue"
+              ]
+            }
+          ],
+          "explanation": "This is DI's payoff: no module mocking, no import interception — you register a different value under the same token. `useValue` takes any object that satisfies the shape the consumer actually calls."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-di",
+      "snippets": [
+        {
+          "id": "singleton-shared",
+          "code": "@Injectable()\nclass CounterService {\n  private hits = 0;\n  bump() { return ++this.hits; }\n}\n\n// CounterService is in ONE module's providers; two controllers inject it.\n// Request 1 hits ControllerA -> counter.bump()\n// Request 2 hits ControllerB -> counter.bump()\n// Request 3 hits ControllerA -> counter.bump()",
+          "question": "What do the three calls return?",
+          "answer": "1, 2, 3",
+          "acceptable": [
+            "1 2 3",
+            "1, then 2, then 3"
+          ],
+          "explanation": "One instance per application, shared by both controllers — so the counter keeps climbing across requests and across consumers. That's exactly why an instance field is fine for a cache and catastrophic for \"the current user\"."
+        },
+        {
+          "id": "duplicate-registration",
+          "code": "@Injectable()\nclass CacheService {\n  store = new Map<string, string>();\n}\n\n@Module({ providers: [CacheService, AService], exports: [AService] })\nclass AModule {}\n\n@Module({ providers: [CacheService, BService], exports: [BService] })\nclass BModule {}\n\n// AService: this.cache.store.set(\"k\", \"v\")\n// then BService: this.cache.store.get(\"k\")",
+          "question": "What does BService read back?",
+          "answer": "undefined",
+          "acceptable": [
+            "undefined — two separate instances"
+          ],
+          "explanation": "Listing `CacheService` in both `providers` arrays constructs it twice, so each module holds its own `Map`. Nest boots without complaint. One owner module + `exports` + `imports` is the only way to share the instance."
+        },
+        {
+          "id": "constructor-vs-oninit",
+          "code": "@Injectable()\nclass DbService implements OnModuleInit {\n  ready = false;\n  constructor() { this.connect(); }          // async, not awaited\n  async connect() { await sleep(50); this.ready = true; }\n  async onModuleInit() { console.log(\"init:\", this.ready); }\n}\n\n// A controller handles a request immediately after boot and logs `db.ready`.",
+          "question": "What does onModuleInit log, and why is the constructor version unsafe?",
+          "answer": "init: false",
+          "acceptable": [
+            "false",
+            "init: false — the connect promise wasn't awaited"
+          ],
+          "explanation": "A constructor can't be awaited, so the un-awaited `connect()` is still pending when Nest continues booting — the app can start serving before the dependency is usable. Async setup belongs in `onModuleInit` (which Nest awaits) or in a `useFactory`."
+        }
+      ]
+    }
+  ]
+}

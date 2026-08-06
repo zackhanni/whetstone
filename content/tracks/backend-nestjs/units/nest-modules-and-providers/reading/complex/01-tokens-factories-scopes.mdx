@@ -1,0 +1,104 @@
+---
+id: tokens-factories-scopes
+title: Tokens, factories, scopes, and circular graphs
+---
+
+`providers: [UsersService]` is shorthand for the full form:
+
+```ts
+{ provide: UsersService, useClass: UsersService }
+```
+
+Once you see the long form, the rest of the provider system is just choosing a **token** and
+a **strategy**.
+
+## Four strategies
+
+```ts
+@Module({
+  providers: [
+    UsersService,                                            // useClass shorthand
+    { provide: "CLOCK", useValue: { now: () => new Date() } }, // a value/fake
+    {
+      provide: PaymentGateway,                               // swap the implementation
+      useClass: process.env.NODE_ENV === "test" ? FakeGateway : StripeGateway,
+    },
+    {
+      provide: "REDIS",                                      // needs async setup / other providers
+      useFactory: async (config: ConfigService) => {
+        const client = createClient({ url: config.get("REDIS_URL") });
+        await client.connect();       // node-redis v4 doesn't connect on create — await it here
+        return client;                // consumers get a client that's ready to use
+      },
+      inject: [ConfigService],
+    },
+  ],
+})
+export class InfraModule {}
+```
+
+`useFactory` is the escape hatch for anything you can't express as "call the constructor":
+async connections, values that depend on config, one provider assembled from several others.
+`inject` is positional — it feeds the factory's parameters in order.
+
+## Interfaces can't be tokens
+
+The injector reads *runtime* metadata, and TypeScript interfaces don't exist at runtime.
+`constructor(private mailer: Mailer)` where `Mailer` is an `interface` gives you an
+unresolvable dependency. Use a string/symbol token — declared once, next to the interface —
+plus `@Inject`:
+
+```ts
+export const MAILER = Symbol("MAILER");
+export interface Mailer { send(to: string, body: string): Promise<void> }
+
+constructor(@Inject(MAILER) private readonly mailer: Mailer) {}
+```
+
+An abstract class works too, and keeps the type and the token as one symbol.
+
+## Scopes: singleton is a decision, not a default you can ignore
+
+| Scope | Instances | Use when |
+| --- | --- | --- |
+| `DEFAULT` | One per app | Almost always — services must be stateless |
+| `REQUEST` | One per request | You need the request (tenant, user) inside a deep provider |
+| `TRANSIENT` | One per consumer | Each injector wants its own copy (e.g. a scoped logger) |
+
+Request scope is contagious: a request-scoped provider forces every provider that injects it
+to be re-instantiated per request too, up the chain — including the controller. That's a real
+throughput cost, and it's why `AsyncLocalStorage` (or passing the value as an argument) often
+beats `Scope.REQUEST`.
+
+The mirror-image bug is state on a singleton:
+
+```ts
+@Injectable()
+export class ReportService {
+  private currentUser?: User;          // ❌ shared by every concurrent request
+  run(user: User) { this.currentUser = user; /* … */ }
+}
+```
+
+Two overlapping requests and user A gets user B's report. Fields on a singleton are for
+dependencies and caches keyed by input — never for "the current request".
+
+## Circular dependencies
+
+If `A` injects `B` and `B` injects `A`, one of the two classes is `undefined` at the moment
+the other's metadata is read. Nest offers `forwardRef`:
+
+```ts
+constructor(@Inject(forwardRef(() => OrdersService)) private orders: OrdersService) {}
+```
+
+Treat it as a smell, not a solution. A cycle almost always means a third responsibility is
+hiding inside one of the two classes — extract it into a module both can depend on. The same
+goes for two modules importing each other (`imports: [forwardRef(() => OtherModule)]`).
+
+## Lifecycle hooks
+
+Providers can implement `OnModuleInit` / `OnApplicationShutdown`. Do connection work there,
+not in the constructor: the constructor must stay cheap and synchronous, and shutdown hooks
+(with `app.enableShutdownHooks()`) are what let a deployment drain in-flight requests instead
+of dropping them.

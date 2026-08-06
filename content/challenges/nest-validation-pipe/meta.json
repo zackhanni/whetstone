@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "slug": "nest-validation-pipe",
+  "title": "Make the validation pipe behave like Nest's",
+  "prompt": "validateBody is the pipe that guards a handler, and it leaks: it trusts unknown keys, never coerces the declared types, gives up after the first error, and lets a missing required field through. Make it whitelist, transform, collect every failure, and reject with 400 — the four behaviours ValidationPipe({ whitelist: true, transform: true }) gives you.",
+  "skills": ["backend", "nestjs", "dto", "validation", "pipes"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "stack": ["react", "ts"],
+  "entry": "validation-pipe.ts",
+  "acceptanceCriteria": [
+    "A valid body is accepted and returns the parsed value",
+    "Properties that are not in the schema are stripped from the value (whitelist)",
+    "Declared int/boolean fields are coerced from their string form (transform)",
+    "Every failing field is reported, not just the first one",
+    "A missing non-optional field fails with status 400"
+  ]
+}
