@@ -42,6 +42,11 @@ as tagged challenges.
   Unstated version drift is where shipped lessons have most often been wrong. Confirm a link by
   what the page says, not by its HTTP status: docs.nestjs.com is a single-page app that answers
   200 for any path, real or not (its raw Markdown is in the `nestjs/docs.nestjs.com` repo).
+- **No official docs for the topic?** (System design, architecture.) Use primary sources: cloud
+  providers' architecture centres and engineering libraries (AWS Builders' Library, Azure/Google
+  Cloud architecture centres), vendor reference docs (PostgreSQL, Redis), and the original papers
+  (Dynamo, PACELC). Still no blogs or interview-prep sites. MDN's browser-compat-data counts as MDN
+  — its tables render client-side, so cite the compat data when a page won't show them.
 - **Run it when you can.** Framework behaviour is often not what its docs say: 5 of the 12 NestJS
   findings, and several React, Zustand and TanStack ones, could only be settled by running a
   pinned install. When the code and the docs disagree, teach what the code does, say "observed on
@@ -84,6 +89,12 @@ now to keep the future cheap.
 - **Ids are progress keys.** Keep an item's `id` when you reword it and its meaning stays; give it
   a new `id` when it now asks something different (stored progress on the old id is orphaned,
   which is what you want). Say which ids changed in the PR.
+- **A predict-output `answer` (and each `acceptable`) is plain text**, unlike the question:
+  backticks show literally and line breaks collapse. Keep it to one line; for multi-line output
+  write the lines joined with " / " and show the real layout in the explanation.
+- **Link to another unit with `[its title](/learn/<track>/<unit>)`** in readings, cards,
+  explanations or a README, rather than naming its slug in backticks. `pnpm validate` fails a link
+  that doesn't resolve to a real track or unit.
 - **Say the mode when a predict-output answer depends on it.** Anything that logs during render or
   runs an effect differs under StrictMode in development (React 18+): write "Production build"
   (or "StrictMode, development") into the snippet or question, and give the other answer in the
@@ -253,6 +264,13 @@ Writing the grader — conventions that survive contact with Sandpack:
   reviews of the first 30 challenges found such a pass in about one challenge in three.
 - **Hints teach the idea, not the line.** A hint that contains the fix's code turns the
   challenge into copying.
+- **Isolate each planted bug's test** from the other rules (a workflow with no branch filter when
+  testing path rules, a store that never fails when testing paging), so fixing one bug flips
+  exactly one test. Check by re-adding one bug at a time to the solution.
+- **Give a fake store or server a runaway valve**: throw after an implausible number of calls, so
+  a missing retry cap or paging limit fails its test with a message instead of hanging the suite.
+- A `/* … */` comment in a challenge file can't contain `*/` — a glob like `src/**/*.ts` ends it.
+  Use `//` comments for those.
 
 ### Grading headlessly — `pnpm test:challenges`
 
@@ -306,6 +324,8 @@ Sandpack iframe:
     `require("x")` form, comments ignored) resolves to a sandbox package or a declared dependency
   - the grader uses no jest-dom matcher and nothing from `vi.*` / `jest.*`
   - every test name in a grader file is unique (Sandpack keys its results by name)
+  - (all content) no invisible characters (zero-width, BOM, U+2028/2029, stray control
+    characters), and every `](/learn/…)` link resolves to a real track or unit
   - every sandbox package is a devDependency at the same pinned version
 - **The headless grader** (`pnpm test:challenges`) checks Rule 4's behaviour: the starter fails
   and the solution passes. `pnpm test:challenges:browser` checks the same in Sandpack itself

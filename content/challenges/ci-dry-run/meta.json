@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "ci-dry-run",
+  "title": "Dry-run GitHub Actions: triggers, concurrency and billed minutes",
+  "skills": ["ci-cd", "github-actions"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "ci-planner.ts",
+  "acceptanceCriteria": [
+    "A pull request's `branches` filter is matched against the branch it targets, so a stacked PR doesn't run a `branches: [main]` workflow",
+    "Without `types`, only `opened`, `synchronize` and `reopened` start a `pull_request` workflow; `edited` (a retarget) does only when listed",
+    "`paths-ignore` skips a run only when every changed file is ignored; `paths` runs when at least one file matches",
+    "In a busy concurrency group a newer run replaces the waiting one, which is cancelled; the running one is untouched",
+    "`billedMinutes` rounds each job up to a whole minute: `[40, 40, 40, 40]` bills 4"
+  ]
+}

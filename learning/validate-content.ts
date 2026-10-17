@@ -32,6 +32,8 @@ type Run = {
   report: ValidationReport;
   /** Every skill referenced by content that resolves in the taxonomy, for the orphan check. */
   referencedTags: Set<string>;
+  /** In-app links (`](/learn/<track>/<unit>)`) seen in content, resolved once every unit is known. */
+  appLinks: { where: string; href: string }[];
 };
 
 const info = (run: Run, text: string) => run.report.lines.push({ kind: "info", text });
@@ -141,13 +143,39 @@ export function testNames(src: string): string[] {
   return names;
 }
 
+/**
+ * Characters that render as nothing (or as a line break the author never typed) and so can't be
+ * seen in review: C0 controls other than tab/newline/CR, DEL, zero-width characters, the BOM, and
+ * the Unicode line/paragraph separators. They get into content through shell heredocs and copy-paste.
+ */
+const INVISIBLE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200D\u2028\u2029\uFEFF]/;
+
+/** Checks one piece of content text: no invisible characters, and remember its in-app links. */
+function checkText(run: Run, where: string, text: string) {
+  const bad = INVISIBLE.exec(text);
+  if (bad) {
+    const code = bad[0].codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0");
+    fail(run, `${where}: contains the invisible character U+${code} — delete it (it renders as nothing or as a stray line break)`);
+  }
+  for (const m of text.matchAll(/\]\((\/learn\/[^)\s#?]*)/g)) run.appLinks.push({ where, href: m[1] });
+}
+
+/** Calls `visit` on every string inside parsed JSON. */
+function eachString(value: unknown, visit: (s: string) => void) {
+  if (typeof value === "string") visit(value);
+  else if (Array.isArray(value)) value.forEach((v) => eachString(v, visit));
+  else if (value && typeof value === "object") Object.values(value).forEach((v) => eachString(v, visit));
+}
+
 /** Module specifiers imported by a file, in any of the four syntaxes we author with. */
 function importedModules(source: string): string[] {
   const src = stripComments(source);
   const specifiers: string[] = [];
+  // Static imports are statements, so they are matched only from the start of a line; a word
+  // like "import" or "from" inside a string literal (["import", "Plan: …"]) is not a statement.
   const patterns = [
-    /\bfrom\s*["']([^"']+)["']/g, // import x from "y" / export * from "y"
-    /\bimport\s*["']([^"']+)["']/g, // import "y"
+    /^\s*(?:import|export)\s[^;]*?\bfrom\s*["']([^"']+)["']/gm, // import x from "y" / export * from "y"
+    /^\s*import\s*["']([^"']+)["']/gm, // import "y"
     /\bimport\s*\(\s*["']([^"']+)["']/g, // await import("y")
     /\brequire\s*\(\s*["']([^"']+)["']/g, // require("y")
   ];
@@ -365,8 +393,11 @@ async function checkChallenge(run: Run, slug: string, devDependencies: Record<st
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     fail(run, `challenge ${slug}: missing README.md (the problem statement and hint)`);
   }
-  if (readme !== null)
+  if (readme !== null) {
     for (const problem of readmeProblems(readme)) fail(run, `challenge ${slug}/README.md: ${problem}`);
+    checkText(run, `challenge ${slug}/README.md`, readme);
+  }
+  eachString(meta, (text) => checkText(run, `challenge ${slug}/meta.json`, text));
 
   // Mirror loadChallenge's contract: meta.entry must resolve inside the challenge dir.
   const base = path.resolve(cDir);
@@ -415,7 +446,9 @@ async function checkExampleFolder(
     const where = `${label}/${f}`;
     // Examples are ordered by filename; an unnumbered file sorts unpredictably.
     if (!/^\d{2}-/.test(f)) fail(run, `${where}: filename must start with a two-digit number (01-…)`);
-    const { data, body } = parseFrontmatter(await fs.readFile(path.join(dir, f), "utf8"));
+    const raw = await fs.readFile(path.join(dir, f), "utf8");
+    checkText(run, where, raw);
+    const { data, body } = parseFrontmatter(raw);
     if (!data.id || !data.title) fail(run, `${where}: missing id/title frontmatter`);
     for (const [key, value] of Object.entries(data)) {
       if (key !== "id" && key !== "title")
@@ -532,7 +565,9 @@ async function checkTrack(
 
     let unit: Unit;
     try {
-      unit = Unit.parse(await readJson(path.join(uDir, "unit.json")));
+      const raw: unknown = await readJson(path.join(uDir, "unit.json"));
+      eachString(raw, (text) => checkText(run, `unit ${ts}/${us}/unit.json`, text));
+      unit = Unit.parse(raw);
     } catch (e) {
       fail(run, `unit ${ts}/${us}: ${describe(e)}`);
       continue;
@@ -577,6 +612,7 @@ export async function validateContent(root: string): Promise<ValidationReport> {
     root,
     report: { lines: [], errors: [], warnings: [] },
     referencedTags: new Set(),
+    appLinks: [],
   };
 
   // Structural integrity of the tag registry itself: unique slugs, parents resolve, acyclic.
@@ -607,6 +643,14 @@ export async function validateContent(root: string): Promise<ValidationReport> {
       warn(run, `challenge ${slug}: no unit references it, so learners can't reach it`);
   }
   info(run, `challenges: ${challengeSlugs.size} checked`);
+
+  // A link to /learn/<track>/<unit> that names no real unit 404s; the build can't catch it,
+  // because the page it's on still renders.
+  for (const { where, href } of run.appLinks) {
+    const [, , track, unit, ...rest] = href.split("/");
+    const ok = rest.length === 0 && (unit ? unitOwner.get(unit) === track : trackFolders.includes(track));
+    if (!ok) fail(run, `${where}: links to ${href}, which is not a track or unit (expected /learn/<track>/<unit>)`);
+  }
 
   checkOrphanTags(run);
   return run.report;

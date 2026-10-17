@@ -1,0 +1,69 @@
+---
+id: backends-and-environments
+title: Remote state, locking, and one root module per environment
+---
+
+A remote backend is configured in a `terraform` block. With the S3 backend:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket       = "acme-terraform-state"
+    key          = "shop/production/terraform.tfstate"
+    region       = "eu-west-1"
+    encrypt      = true
+    use_lockfile = true    # S3-native locking
+  }
+}
+```
+
+Details that bite:
+
+- **Locking is opt-in on S3.** `use_lockfile` became generally available in Terraform 1.11; the
+  older `dynamodb_table` locking is deprecated and slated for removal. Without either, nothing
+  stops two CI jobs applying against the same state at once, each working from a snapshot the
+  other is about to change. With it, the second job stops with *Error acquiring the state
+  lock* — immediately, because `-lock-timeout` defaults to `0s`.
+- **`force-unlock` is for your own dead lock only.** A run killed mid-apply can leave a lock
+  behind; `terraform force-unlock LOCK_ID` clears it. Run it while someone else's apply is
+  live and you have two writers — exactly what the lock prevents.
+- **The backend block can't use variables.** It's read before anything else is evaluated. Leave
+  the varying parts out and pass them at init — `terraform init -backend-config=prod.hcl` — a
+  so-called partial configuration. Any value you pass this way is saved under `.terraform/`
+  and into plan files, so supply credentials through the environment instead.
+- **Turn on bucket versioning.** Terraform's S3 backend docs recommend it so a corrupted or
+  deleted state can be recovered.
+- **State is a secrets store.** Every attribute is in plain text, `sensitive` values included.
+  Restrict who can read the bucket as tightly as the database password it contains. Terraform
+  1.10 added ephemeral values and 1.11 write-only arguments (where a provider supports them)
+  precisely so some secrets never reach state or plan files at all.
+
+### Environments: separate configurations, not workspaces
+
+`terraform workspace new staging` gives one configuration several state files *in the same
+backend*. Terraform's docs say that suits a short-lived parallel copy — testing a change
+before it touches production — and that workspaces are **not** a suitable isolation mechanism
+when deployments need different credentials and access controls, because every workspace uses
+the same backend. Staging and production are exactly that case: CI for staging should not be
+able to read production state at all.
+
+The documented alternative is the layout from the *Medium* tier: shared modules, and one thin
+root module per environment.
+
+```text
+modules/service/        # the real resources
+envs/staging/main.tf    # backend "s3" { key = "shop/staging/…" }  + module "service" { … }
+envs/production/main.tf # backend "s3" { key = "shop/production/…" } + module "service" { … }
+```
+
+Each environment has its own backend and its own credentials, a change reaches production
+only by being applied in `envs/production`, and a bad staging apply can't touch production
+state.
+
+<!--more-->
+
+**Lost or corrupted state is an incident, not a quick fix.** Restore the previous object
+version from the versioned bucket rather than rebuilding state by hand; Terraform also keeps a
+local `terraform.tfstate.backup` from the previous write when you use the local backend. If an
+object exists that state forgot, bring it back with an `import` block — never by pasting JSON
+into the state file.

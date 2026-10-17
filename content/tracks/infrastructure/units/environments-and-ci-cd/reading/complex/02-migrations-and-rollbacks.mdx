@@ -1,0 +1,51 @@
+---
+id: migrations-and-rollbacks
+title: Deploy order with a schema change, and what a rollback undoes
+---
+
+Code and schema change in separate steps, so every release that touches the database has a
+window where **old code runs against the new schema** (the migration finished, instances
+are still on the previous build) or **new code runs against the old schema** (the build
+went out first). A safe pipeline makes both windows boring.
+
+### The rule: each step works with its neighbours
+
+Make every migration *additive* for the code that's still running, and ship it in the
+**same PR** as the code that needs it, so review sees both and no deploy can carry one
+without the other. Renaming `users.name` to `full_name` becomes several releases
+(expand/contract — the Databases track's `databases/migrations` unit covers the SQL):
+
+1. **Expand** — add `full_name`; deploy code that writes both columns and still reads `name`.
+2. **Backfill** existing rows.
+3. **Switch** reads to `full_name`.
+4. **Contract** — stop writing `name`, and in a later release drop it.
+
+In the pipeline the migration is its own job that the deploy `needs`, so a failed migration
+stops the deploy, and the old code keeps working while the migration runs because nothing it
+uses has gone. A preview deployment must never run migrations against a database it shares
+with production — that is the shared-database trap from the *Simple* tier, with DDL.
+
+### What a rollback undoes
+
+Take Vercel's **Instant Rollback**, which is typical. It points the production domains back at
+a previous production build, with no rebuild, and its docs spell out what that means:
+
+- **Environment variables are not updated.** The restored build runs with the variables it was
+  built with; a value you changed since is not picked up.
+- **Only the deployment moves.** The docs remind you that external APIs, databases and CMSes
+  have kept changing; nothing outside the build is restored. The old code meets today's schema
+  and data.
+- **New pushes stop going live.** After a rollback Vercel turns off automatic assignment of
+  production domains, so your next merge to `main` builds but doesn't reach users until you
+  undo the rollback or promote a deployment.
+
+So a rollback is only safe if the previous build works with the *current* schema — exactly what
+expand/contract guarantees, and exactly what a release that dropped a column breaks. When it
+doesn't hold, **roll forward**: ship a fix through the normal pipeline.
+
+<!--more-->
+
+**Infrastructure has no rollback button either.** Reverting a Terraform commit and applying
+produces a *new* plan from today's state; it doesn't restore what the bad apply destroyed. A
+dropped database comes back from a backup, not from `git revert`. That's why the plan gate
+from the Terraform unit stops on any `delete` before apply, rather than counting on undo.

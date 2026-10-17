@@ -1,0 +1,64 @@
+---
+id: anatomy-of-a-workflow
+title: A GitHub Actions workflow, top to bottom
+---
+
+A workflow is a YAML file in `.github/workflows/`. This one checks every pull request into
+`main` (it passes `actionlint` 1.7.12):
+
+```yaml
+name: CI
+
+on:                                  # 1. which events start a run
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:                         # 2. what the run's GITHUB_TOKEN may do
+  contents: read
+
+jobs:                                # 3. units of work, each on its own machine
+  check:
+    runs-on: ubuntu-latest
+    steps:                           # 4. run in order; the first failure stops the job
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+```
+
+Reading it:
+
+1. **`on`** lists the triggers. Here: any pull request that targets `main`, and any push to
+   `main` (which is what a merge is). Filters on these are the subject of the next tier.
+2. **`permissions`** sets what the automatic `GITHUB_TOKEN` can do. Name one permission and
+   every one you didn't name drops to `none`, so this token can read the code and nothing else.
+3. **`jobs`** run **in parallel** by default, each on a fresh runner (`runs-on`). Nothing is
+   shared between jobs unless you pass it explicitly — files on disk from one job don't exist
+   in the next.
+4. **`steps`** run in order inside one job. `uses:` runs a published action (a version tag
+   like `@v7`, or a full commit SHA if you want it immutable); `run:` runs a shell command. A
+   step that exits non-zero fails the job, and the check on the PR goes red.
+
+To make jobs run in sequence, say which ones a job **needs**:
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: [...]
+  deploy:
+    needs: test          # waits for test; skipped if test fails
+    runs-on: ubuntu-latest
+    steps: [...]
+```
+
+That's the whole shape of a pipeline: jobs, ordered by `needs`, gated by triggers. Everything
+else in this unit — which events start it, what it may touch, what it costs — is detail on
+those four keys.

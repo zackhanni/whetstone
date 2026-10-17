@@ -1,0 +1,59 @@
+---
+id: minutes-are-a-budget
+title: CI minutes are a budget — how private-repo runs are billed
+---
+
+Standard GitHub-hosted runners are free for public repositories. For **private** ones, every
+account gets a monthly allowance and pays (or is blocked, with no payment method on file)
+beyond it. GitHub's billing docs, October 2026:
+
+| Plan | Included minutes per month |
+| --- | --- |
+| GitHub Free (personal or organization) | 2,000 |
+| GitHub Pro / GitHub Team | 3,000 |
+
+The allowance is per **account**, shared by every private repository the account owns, and
+charged to the repository owner no matter who triggered the run.
+
+### The rounding rule
+
+> GitHub rounds the minutes and partial minutes each job uses up to the nearest whole minute.
+
+Each **job**, not each run. So the same 160 seconds of work costs differently by shape:
+
+| Shape | Billed |
+| --- | --- |
+| one job, 160 s | 3 minutes |
+| four parallel jobs, 40 s each | 4 minutes |
+| a 10-job matrix, 20 s each | 10 minutes |
+
+And each job pays its own setup: a fresh runner, checkout, toolchain, dependency install. A
+job that does 5 seconds of linting after 50 seconds of `install` bills a full minute for 55
+seconds of mostly setup. Splitting a pipeline into many small parallel jobs makes it faster,
+and multiplies the bill.
+
+### Where minutes leak
+
+- **Runs nobody needed.** Docs-only PRs (fix with `paths-ignore` — but not on a required
+  check), superseded pushes to a PR (fix with a per-branch `concurrency` group and
+  `cancel-in-progress: true`), and the same workflow firing on both `push` and `pull_request`
+  for one commit (scope `push` to `main`).
+- **Per-run downloads.** `npx playwright install --with-deps` installs browsers *and* their
+  Linux packages — on Ubuntu runners Playwright runs `apt-get update` and `apt-get install` —
+  on every run, and Playwright's CI guide notes those OS dependencies can't be cached.
+  Installing one browser instead of all of them (`npx playwright install --with-deps
+  chromium`) shrinks it; running the job in Playwright's prebuilt Docker image, which already
+  contains the browsers and their packages, removes it.
+- **Expensive runners.** Windows and macOS minutes cost more than Linux in GitHub's price list
+  ($0.010 and $0.062 per minute against $0.006 for a standard 2-core Linux runner), and larger
+  runners can't use included minutes at all.
+- **Retries.** A failed run's minutes are spent; the re-run spends them again.
+
+<!--more-->
+
+**Do the arithmetic before adding a workflow.** A 3-job CI at about 2 billed minutes per job,
+on 15 pushes a day, is 6 × 15 × 30 ≈ 2,700 minutes a month — over a Free account's allowance
+on one repository, before any other private repo runs anything. Cheap alternatives exist:
+fewer, fatter jobs; caching the package store (`actions/setup-node` with `cache:`); or letting
+the hosting platform run the same check command inside its own build, which spends none of
+the Actions allowance at all.

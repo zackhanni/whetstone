@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 3,
+  "slug": "observability-basics",
+  "title": "Observability basics: logs, metrics, traces and alerts",
+  "skills": ["infrastructure", "observability", "structured-logging", "metrics", "tracing", "opentelemetry", "alerting"],
+  "difficulty": "core",
+  "estimatedMinutes": 45,
+  "objectives": [
+    "Say which question a log, a metric and a trace each answer, and write structured log lines that carry the request's trace ID",
+    "Choose counter, gauge or histogram for a measurement, follow Prometheus naming, and keep label cardinality bounded",
+    "Read a trace — spans, parent/child, kind, status — and explain how `traceparent` carries it across services",
+    "Explain why an average hides tail latency, and compute percentiles and an under-300 ms share from cumulative `le` buckets",
+    "Alert on symptoms users feel — golden signals and error-budget burn rate — rather than on causes like CPU"
+  ],
+  "sources": [
+    { "title": "OpenTelemetry: Traces", "url": "https://opentelemetry.io/docs/concepts/signals/traces/" },
+    { "title": "OpenTelemetry: Metrics", "url": "https://opentelemetry.io/docs/concepts/signals/metrics/" },
+    { "title": "OpenTelemetry: Logs", "url": "https://opentelemetry.io/docs/concepts/signals/logs/" },
+    { "title": "OpenTelemetry: Context propagation", "url": "https://opentelemetry.io/docs/concepts/context-propagation/" },
+    { "title": "OpenTelemetry: Instrumentation for JavaScript", "url": "https://opentelemetry.io/docs/languages/js/instrumentation/" },
+    { "title": "OpenTelemetry semantic conventions: HTTP metrics", "url": "https://opentelemetry.io/docs/specs/semconv/http/http-metrics/" },
+    { "title": "Prometheus: Metric types", "url": "https://prometheus.io/docs/concepts/metric_types/" },
+    { "title": "Prometheus: Metric and label naming", "url": "https://prometheus.io/docs/practices/naming/" },
+    { "title": "Prometheus: Histograms and summaries", "url": "https://prometheus.io/docs/practices/histograms/" },
+    { "title": "Prometheus: Query functions (histogram_quantile, rate)", "url": "https://prometheus.io/docs/prometheus/latest/querying/functions/" },
+    { "title": "Google SRE book: Monitoring Distributed Systems", "url": "https://sre.google/sre-book/monitoring-distributed-systems/" },
+    { "title": "Google SRE workbook: Alerting on SLOs", "url": "https://sre.google/workbook/alerting-on-slos/" },
+    { "title": "Grafana docs: Dashboard best practices (RED, USE)", "url": "https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/best-practices/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-observability", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-observability",
+      "questions": [
+        {
+          "id": "which-signal",
+          "prompt": "Checkout's p99 jumped from 300 ms to 4 s ten minutes ago. What tells you **which downstream call** got slow?",
+          "options": [
+            { "id": "trace", "text": "A trace of a slow checkout — its spans show which hop took the time" },
+            { "id": "avg", "text": "The service's average latency graph" },
+            { "id": "user-histogram", "text": "The latency histogram broken down by a `user_id` label" },
+            { "id": "cpu", "text": "CPU utilisation on the database host" }
+          ],
+          "answer": "trace",
+          "explanation": "The metric already told you *that* something is slow; a trace tells you *where*, because each hop — database query, payment call — is a timed span in one tree. The average is what hid the problem in the first place. A `user_id` label would explode the series count without saying anything about downstream calls. Database CPU is a possible cause to check once the trace points at the database."
+        },
+        {
+          "id": "structured-log",
+          "prompt": "Which log line is most useful when you're debugging one failed order at 3 a.m.?",
+          "options": [
+            { "id": "json-trace", "text": "`{\"level\":\"error\",\"msg\":\"order failed\",\"order_id\":\"o_123\",\"duration_ms\":2310,\"trace_id\":\"c50e…\"}`" },
+            { "id": "sentence", "text": "`order o_123 failed after 2310ms: payment timeout`" },
+            { "id": "full-request", "text": "The JSON of the whole incoming request, headers and body included" },
+            { "id": "bare-error", "text": "`console.log(err)` in the catch block" }
+          ],
+          "answer": "json-trace",
+          "explanation": "Named fields can be filtered and aggregated without regex, and the `trace_id` joins the line to the request's trace and to every other line it wrote. The sentence has the facts but buried in prose. Logging whole requests copies `Authorization` headers, cookies and personal data into a system with wide access and long retention. A bare error has no order ID, no duration and no way to find the request it belonged to."
+        },
+        {
+          "id": "metric-type",
+          "prompt": "Which metric type fits \"jobs currently waiting in the queue\"?",
+          "options": [
+            { "id": "gauge", "text": "A gauge — a current value that goes up and down" },
+            { "id": "counter", "text": "A counter named `jobs_waiting_total`" },
+            { "id": "histogram", "text": "A histogram of queue sizes" },
+            { "id": "summary", "text": "A summary with p50 and p99 quantiles" }
+          ],
+          "answer": "gauge",
+          "explanation": "Queue depth rises and falls, so it's a gauge (an `UpDownCounter` or `Gauge` in OpenTelemetry). Prometheus's docs: don't use a counter for a value that can decrease — a counter only grows, and you read it through `rate()`. A *counter* fits \"jobs enqueued\" (`jobs_enqueued_total`); a histogram fits \"how long jobs waited\"."
+        },
+        {
+          "id": "cardinality",
+          "prompt": "Which label on `http_server_request_duration_seconds` would make the number of time series grow without bound?",
+          "options": [
+            { "id": "path", "text": "`path=\"/orders/o_8f3k2\"` — the raw request path" },
+            { "id": "route", "text": "`route=\"/orders/:id\"` — the route template" },
+            { "id": "method", "text": "`method=\"GET\"`" },
+            { "id": "status", "text": "`status=\"200\"`" }
+          ],
+          "answer": "path",
+          "explanation": "Every distinct label combination is a separate time series, and a raw path has one value per order — unbounded, multiplied by every bucket of the histogram. The route template has one value per endpoint, and method and status have a handful each. OpenTelemetry's HTTP conventions require `http.route` to be low-cardinality for this reason; per-request detail like the order ID belongs on spans and logs."
+        },
+        {
+          "id": "traceparent",
+          "prompt": "Service A calls service B over HTTP, but B's spans always start a **new** trace instead of joining A's. What's the most likely cause?",
+          "options": [
+            { "id": "no-header", "text": "The `traceparent` header isn't sent — e.g. a hand-rolled HTTP client with no instrumentation injecting it" },
+            { "id": "clock", "text": "Clock skew between the two hosts" },
+            { "id": "kind", "text": "B's spans use kind `INTERNAL` instead of `SERVER`" },
+            { "id": "status", "text": "A sets its spans' status to `OK`" }
+          ],
+          "answer": "no-header",
+          "explanation": "Context crosses a process boundary only in the request: the W3C `traceparent` header carries the trace ID and the caller's span ID, and B's server span adopts them. No header, no link — B starts a fresh trace. Clock skew distorts timings, not trace IDs; span kind and status don't decide which trace a span joins."
+        },
+        {
+          "id": "average-p99",
+          "prompt": "Two instances serve equal traffic. One reports p99 = 1,000 ms, the other p99 = 10 ms. What is the service's p99?",
+          "options": [
+            { "id": "unknown", "text": "Can't be computed from those two numbers — aggregate the histogram buckets across instances, then take the quantile" },
+            { "id": "avg", "text": "505 ms, the average of the two" },
+            { "id": "max", "text": "1,000 ms, the worse of the two" },
+            { "id": "min", "text": "10 ms, because most traffic is fast" }
+          ],
+          "answer": "unknown",
+          "explanation": "Percentiles don't average. If every request took 10 ms except two 1-second ones on the first instance, the true p99 of all 200 requests is 10 ms, and the average, 505 ms, is a latency no request had — Prometheus calls averaged quantiles \"statistically nonsensical\". Histogram buckets are counters, so they *can* be summed across instances (`sum by (le) (rate(...))`) before `histogram_quantile`; precomputed summary quantiles can't."
+        },
+        {
+          "id": "bucket-threshold",
+          "prompt": "The objective is \"99% of requests within 250 ms\", but the histogram's bounds are 100, 300 and 1,000 ms. What can you compute exactly?",
+          "options": [
+            { "id": "add-bound", "text": "Nothing exact for 250 ms — add a 250 ms bucket bound, then it's `count(le=250) / count(+Inf)`" },
+            { "id": "use-300", "text": "Use the `le=\"300\"` bucket; it's close enough" },
+            { "id": "interpolate", "text": "Interpolate between the 100 and 300 ms buckets for the exact share" },
+            { "id": "mean", "text": "Check that `_sum / _count` is under 250 ms" }
+          ],
+          "answer": "add-bound",
+          "explanation": "A cumulative bucket answers \"how many took ≤ le\" only for its own bound. The 300 ms bucket counts requests between 250 and 300 ms as passing, so it overstates compliance; interpolation is an estimate that assumes requests are spread evenly inside the bucket; the mean says nothing about the 99th percentile. Prometheus's guide notes the \"within 300 ms\" query strictly requires a boundary at 0.3 — so put bounds at your thresholds."
+        },
+        {
+          "id": "symptom-alert",
+          "prompt": "Which of these should page someone at 3 a.m.?",
+          "options": [
+            { "id": "burn", "text": "Checkout errors burning the 30-day error budget at 14.4× for the last hour (2% of the budget gone), still high over the last 5 minutes" },
+            { "id": "cpu", "text": "CPU above 90% on one node for 5 minutes" },
+            { "id": "disk", "text": "A disk at 80%, growing 1% a month" },
+            { "id": "single-500", "text": "Any single HTTP 500" }
+          ],
+          "answer": "burn",
+          "explanation": "That's a symptom users feel, significant (2% of the month's budget in an hour is the SRE workbook's suggested paging threshold) and still happening (the short window). High CPU is a possible cause that may hurt no one; the disk needs a ticket, not a wake-up; a single 500 is noise against any realistic budget. The SRE book's test: every page should be actionable and require intelligence to handle."
+        },
+        {
+          "id": "short-window-noise",
+          "prompt": "Why does the SRE workbook advise against paging on \"error rate above the SLO's 0.1% for 10 minutes\"?",
+          "options": [
+            { "id": "too-small", "text": "Such a blip spends only about 0.02% of a 30-day budget, so it pages people for something that barely matters" },
+            { "id": "too-slow", "text": "Ten minutes is too slow; it should page on the first error over 0.1%" },
+            { "id": "wrong-signal", "text": "Error rate is a cause, not a symptom" },
+            { "id": "cardinality", "text": "Short windows create too many time series" }
+          ],
+          "answer": "too-small",
+          "explanation": "The workbook's example: a 0.1% error rate for 10 minutes would alert while consuming only 0.02% of the monthly error budget. Burn-rate alerts instead ask how fast the budget is going — 14.4× over an hour, confirmed by a 5-minute window, pages; a slow burn of 1× over three days opens a ticket. Error rate is very much a symptom; the problem is the threshold and window, not the signal."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-observability",
+      "prompts": [
+        {
+          "id": "log-trace-id",
+          "prompt": "Put the active span's trace ID on a structured log line (OpenTelemetry JS API).",
+          "code": [
+            "const ctx = trace.getActiveSpan()?.spanContext();",
+            "logger.info({ msg: \"order placed\", order_id: orderId, trace_id: ctx?.___ });"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["traceId"] }],
+          "explanation": "A span's context carries `traceId` and `spanId`. Putting the trace ID on every log line links logs to traces across services; OpenTelemetry's log bridges can add it automatically when your logging library is routed through the SDK."
+        },
+        {
+          "id": "rate-counter",
+          "prompt": "Requests per second over the last 5 minutes, from a counter.",
+          "code": "___(http_server_requests_total[5m])",
+          "blanks": [{ "id": "b1", "accept": ["rate"] }],
+          "explanation": "A counter's raw value only grows and resets on restart, so it's never graphed directly. `rate()` gives the per-second increase over the window and adjusts for resets — take the rate first, then `sum` across instances, or resets go undetected."
+        },
+        {
+          "id": "share-within",
+          "prompt": "Share of requests that finished within 300 ms, from a classic histogram in seconds.",
+          "code": [
+            "sum(___(http_request_duration_seconds_bucket{___=\"0.3\"}[5m]))",
+            "  /",
+            "sum(rate(http_request_duration_seconds_count[5m]))"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["rate"] },
+            { "id": "c2", "accept": ["le"] }
+          ],
+          "explanation": "`le` means \"less than or equal\": the 0.3 bucket counts every request of 300 ms or less, because buckets are cumulative. Dividing by `_count` (equal to the `+Inf` bucket) gives the share. It only works if 0.3 is an actual bucket bound — Prometheus won't invent one."
+        },
+        {
+          "id": "span-error",
+          "prompt": "Mark the span as failed — not just annotated — and make sure it's exported.",
+          "code": [
+            "try {",
+            "  await chargeCard(order);",
+            "} catch (err) {",
+            "  span.recordException(err);",
+            "  span.___({ code: SpanStatusCode.___, message: err.message });",
+            "  throw err;",
+            "} finally {",
+            "  span.___();",
+            "}"
+          ],
+          "blanks": [
+            { "id": "d1", "accept": ["setStatus"] },
+            { "id": "d2", "accept": ["ERROR"] },
+            { "id": "d3", "accept": ["end"] }
+          ],
+          "explanation": "`recordException` only adds an `exception` event; the span's status stays `UNSET` (\"no error\") until you call `setStatus` with `ERROR`, which is what error-rate views count. `end()` in `finally` runs on both paths — a span that's never ended is never exported."
+        },
+        {
+          "id": "traceparent-header",
+          "prompt": "The W3C Trace Context header that carries a trace into the next service.",
+          "code": "___: 00-c50ed0daa0f6fd6a6087220a3d34fffa-78ea985cd0d32eef-01",
+          "blanks": [{ "id": "e1", "accept": ["traceparent"] }],
+          "explanation": "`traceparent` is `version-traceid-parentid-flags`: here version `00`, a 32-hex-digit trace ID, the caller's 16-hex-digit span ID, and flags `01` (sampled). OpenTelemetry's default propagator reads and writes it; HTTP instrumentation does that for you, hand-written clients have to."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-observability",
+      "snippets": [
+        {
+          "id": "default-sort",
+          "code": [
+            "const latenciesMs = [5, 40, 300, 1200];",
+            "latenciesMs.sort();",
+            "console.log(latenciesMs);"
+          ],
+          "question": "What does it print?",
+          "answer": "[ 1200, 300, 40, 5 ]",
+          "acceptable": ["[1200, 300, 40, 5]", "1200, 300, 40, 5"],
+          "explanation": "Without a comparator, `sort()` converts values to strings and compares them character by character: \"1200\" < \"300\" < \"40\" < \"5\". A percentile helper built on it returns 300 as the median of these four. Use `sort((a, b) => a - b)` — on a copy (`[...xs]`), because `sort` also reorders the caller's array."
+        },
+        {
+          "id": "mean-vs-p99",
+          "code": [
+            "function percentile(samples, p) {",
+            "  const sorted = [...samples].sort((a, b) => a - b);",
+            "  return sorted[Math.ceil((p / 100) * sorted.length) - 1];",
+            "}",
+            "",
+            "const samples = [...Array(98).fill(10), 2000, 2000]; // ms",
+            "const mean = samples.reduce((a, b) => a + b, 0) / samples.length;",
+            "console.log(mean, percentile(samples, 95), percentile(samples, 99));"
+          ],
+          "question": "What are the mean, p95 and p99?",
+          "answer": "49.8 10 2000",
+          "acceptable": ["mean 49.8, p95 10, p99 2000", "49.8, 10, 2000"],
+          "explanation": "The mean, 49.8 ms, matches no request anyone made and barely moves when the slow ones get slower. p95 is still 10 ms because only 2% of requests are slow; p99 lands on them. Report percentiles, and watch the tail."
+        },
+        {
+          "id": "record-exception-status",
+          "code": [
+            "tracer.startActiveSpan(\"charge-card\", (span) => {",
+            "  try {",
+            "    throw new Error(\"card declined\");",
+            "  } catch (err) {",
+            "    span.recordException(err);",
+            "  } finally {",
+            "    span.end();",
+            "  }",
+            "});",
+            "// The exported span's status code: UNSET = 0, OK = 1, ERROR = 2"
+          ],
+          "question": "What status does the exported `charge-card` span have?",
+          "answer": "UNSET (code 0)",
+          "acceptable": ["0", "UNSET", "unset — it counts as a success"],
+          "explanation": "`recordException` attaches an `exception` event and nothing else; the status stays at its default, `UNSET`, which means \"completed without error\". An error-rate view built on span status counts this declined card as a success. Call `span.setStatus({ code: SpanStatusCode.ERROR })` as well — OpenTelemetry's docs recommend doing both. (Run with `@opentelemetry/sdk-trace-node` 2.11.)"
+        },
+        {
+          "id": "start-span-not-active",
+          "code": [
+            "// Top-level code: no span is active yet.",
+            "const parent = tracer.startSpan(\"load-order\");",
+            "const child = tracer.startSpan(\"query-db\");",
+            "child.end();",
+            "parent.end();"
+          ],
+          "question": "Is `query-db` a child of `load-order` in the exported trace?",
+          "answer": "No — it has no parent and starts its own trace",
+          "acceptable": ["no", "no, it's a separate root span", "no parent"],
+          "explanation": "`startSpan` creates a span without making it the active one, so the next span is started from whatever context was active before — here, none — and becomes a root in a new trace. Use `startActiveSpan(name, (span) => { … })` to make spans inside the callback its children, or pass a context explicitly."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-latency-percentiles", "challengeSlug": "latency-percentiles" }
+  ]
+}

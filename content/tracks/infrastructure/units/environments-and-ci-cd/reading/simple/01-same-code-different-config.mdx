@@ -1,0 +1,42 @@
+---
+id: same-code-different-config
+title: Environments — same code, different config, secrets and data
+---
+
+An **environment** is a running copy of your app plus everything it's wired to: its
+configuration, its secrets and its data. Most teams have four:
+
+| Environment | Who uses it | Lives for | Its data |
+| --- | --- | --- | --- |
+| Local | you | your session | a local or seeded database |
+| Preview | reviewers of one PR | as long as the branch | its own throwaway or seeded database |
+| Staging | the team, before release | long-lived | production-shaped, **not** production |
+| Production | your users | for good | the real thing |
+
+The point of having more than one is to test the *same* code before users meet it. So the
+rule is: **the code and the build are the same everywhere; only configuration differs.** If
+staging builds with different flags or runs a different command, a green staging tells you
+little about production.
+
+What legitimately differs, and lives in environment variables rather than in code:
+
+- **Config** — API base URLs, feature flags, log levels.
+- **Secrets** — each environment gets its *own* keys: a test-mode payment key in preview, the
+  live one only in production. A leaked preview key should be worthless.
+- **Data** — which database the app connects to.
+
+Hosting platforms scope variables per environment. On Vercel, for example, every variable is
+assigned to Production, Preview and/or Development (Pro and Enterprise plans can add custom
+environments such as `staging`); Preview applies to every branch that isn't the production
+branch, and a branch-specific value overrides it. One detail catches people:
+Vercel applies a changed variable only to **new** deployments, so you redeploy to pick it up.
+
+### The trap: a preview on the production database
+
+The quickest way to get a working preview is to copy production's `DATABASE_URL` into the
+Preview scope. Now every pull request's deployment — code nobody has approved yet — reads and
+writes real customer data. A branch that adds a column, or a migration that runs on deploy,
+changes production's schema before the PR is merged, or even if it never is.
+
+Give previews their own database: a seeded one shared by all previews, or a database branch
+per PR if your provider offers it. "Preview" should mean *safe to break*.

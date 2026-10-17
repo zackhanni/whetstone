@@ -1,0 +1,70 @@
+---
+id: when-a-workflow-runs
+title: When a workflow runs — branch and path filters, PR activity, concurrency
+---
+
+```yaml
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+Every rule below is from GitHub's Actions documentation, and each one surprises someone.
+
+**`branches` means different things per event.** Under `push` it's the branch pushed to. Under
+`pull_request` it's the branch the PR **targets** — its base. A PR from `feature/login` into
+`main` matches `branches: [main]`; a PR from `feature/login-ui` into `feature/login` (a stacked
+PR) does not, so this CI never runs on it.
+
+**`pull_request` listens to three activities by default:** `opened`, `synchronize` (new commits
+on the PR's branch) and `reopened`. Retitling a PR — or changing its base branch — is `edited`,
+which isn't in the list. Retarget that stacked PR onto `main` after its parent merges, and CI
+still doesn't start until something is pushed to it (or it's closed and reopened), unless the
+workflow lists `edited` under `types`.
+
+**`paths` runs if *any* file matches; `paths-ignore` skips only if *every* file matches.** A PR
+that changes `docs/setup.md` and `src/login.ts` runs, because one file isn't ignored. Patterns
+match from the repository root, and `*` stops at `/` while `**` crosses it: `docs/*` matches
+`docs/a.md` but not `docs/guides/a.md`; `docs/**` matches both. When a workflow has branch
+*and* path filters, both must be satisfied.
+
+**A skipped workflow doesn't report success.** If a filter skips a workflow whose check is
+*required* by branch protection, the check stays "Pending" and the PR can't merge. GitHub's
+advice is blunt: avoid requiring workflows that can be skipped.
+
+### Concurrency: one running, one waiting
+
+A **concurrency group** is a name; runs that compute the same name share one slot. GitHub's
+rules for a group (with the default `queue: single`):
+
+- at most **one run executes**;
+- at most **one run waits** — when a newer run arrives, the waiting one is **cancelled** and
+  the newcomer takes its place;
+- `cancel-in-progress: true` additionally cancels the run that's executing.
+
+So three quick pushes to a branch with `cancel-in-progress: false` give: run 1 executes,
+run 2 is cancelled when run 3 arrives, run 3 runs after run 1. With `true`, as above, only the
+newest push is ever worth finishing — right for PR checks, where an older commit's result is
+useless the moment a newer one exists.
+
+The group name decides what competes. `ci-${{ github.ref }}` gives each branch or PR its own
+group, so two PRs never cancel each other. A bare `group: ci` would make every PR in the
+repository fight over one slot.
+
+<!--more-->
+
+**Deploys want the opposite.** Cancelling a production deploy halfway is worse than waiting for
+it. Use a fixed group such as `deploy-production` and leave `cancel-in-progress` off. Since
+May 2026, `queue: max` lets up to 100 runs wait instead of only the newest — GitHub starts
+them first in, first out, though it doesn't guarantee the order — which suits deploys that must
+all happen. It can't be combined with `cancel-in-progress: true`, and linters released before
+it, such as `actionlint` 1.7.12, still reject the key.
