@@ -1,0 +1,66 @@
+---
+id: what-locks-what
+title: The DDL that takes production down — locks, rewrites and the lock queue
+---
+
+## Most `ALTER TABLE` forms take `ACCESS EXCLUSIVE`
+
+The manual: an `ACCESS EXCLUSIVE` lock is acquired unless a subform says otherwise. That lock
+conflicts with everything, including plain `SELECT`. For a metadata-only change it's held for
+milliseconds — *once it's granted*. Getting it granted is the trap.
+
+## The lock queue
+
+Three sessions, run against a real server (PostgreSQL 14; the queueing is the same in 18):
+
+```text
+A: BEGIN; SELECT count(*) FROM orders;        -- a long report; holds ACCESS SHARE until it ends
+B: ALTER TABLE orders ADD COLUMN status text;  -- needs ACCESS EXCLUSIVE: waits for A
+C: SELECT total FROM orders WHERE id = 1;      -- conflicts with B's *pending* request: waits too
+-- 1.5 s later A commits; B runs; C finishes after ~1.7 s
+```
+
+C only needed `ACCESS SHARE`, which A also holds — but it queued behind B's waiting request. One
+slow transaction plus one "instant" migration stalls **every** query on the table for as long as
+the slow transaction lasts. That's how a one-millisecond `ADD COLUMN` causes an outage.
+
+The defence is to give up quickly and retry:
+
+```sql
+SET lock_timeout = '2s';
+ALTER TABLE orders ADD COLUMN status text;
+-- ERROR 55P03: canceling statement due to lock timeout   (and C proceeds)
+```
+
+With `lock_timeout = '500ms'` in the same scenario, B gave up after 500 ms and C finished right
+after. Retry the migration later, ideally after finding what held the lock.
+
+## Rewrites: when "ALTER" means "copy the whole table"
+
+Some changes rewrite every row and every index, holding `ACCESS EXCLUSIVE` the whole time. Checked
+on PostgreSQL 18 by watching whether the table's storage file changed:
+
+| Change                                                          | Rewrite? |
+| --------------------------------------------------------------- | -------- |
+| `ADD COLUMN status text NOT NULL DEFAULT 'pending'` (constant)  | no — since PostgreSQL 11 the default is stored in metadata |
+| `ADD COLUMN created_at timestamptz DEFAULT now()`               | no — `now()` isn't volatile, so it's evaluated once |
+| `ADD COLUMN imported_at timestamptz DEFAULT clock_timestamp()`  | **yes** — a volatile default is computed per row |
+| `ALTER COLUMN note TYPE varchar(200)` (was `varchar(50)`)       | no |
+| `ALTER COLUMN total TYPE bigint` (was `int`)                    | **yes** — and indexes are rebuilt |
+| `RENAME COLUMN`                                                 | no — no effect on stored data |
+
+Note the second row's trap: every *existing* row gets the migration's timestamp — one value for all
+100,000 rows in the test — not when the row was created. A column that means "created at" needs a
+real backfill, or `NULL` for the past.
+
+## Indexes: `CREATE INDEX` blocks writes
+
+A plain `CREATE INDEX` lets reads continue but blocks `INSERT`, `UPDATE` and `DELETE` until it
+finishes — minutes, on a big table. `CREATE INDEX CONCURRENTLY` keeps writes flowing, at a price:
+
+- It scans the table twice and waits for transactions that might use the index, so it's slower.
+- It **can't run inside a transaction block** (`25001`) — if your migration tool wraps each
+  migration in a transaction, this one needs the tool's escape hatch.
+- If it fails (a deadlock, or a duplicate in a unique index), it leaves an **invalid** index behind
+  that queries ignore but writes still maintain. Drop it and try again, or
+  `REINDEX INDEX CONCURRENTLY`.
