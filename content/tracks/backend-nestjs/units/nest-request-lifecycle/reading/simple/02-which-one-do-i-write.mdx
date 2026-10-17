@@ -28,6 +28,6 @@ run and never sees the return value; it only has `(req, res, next)`. Anything ab
 - **401 Unauthorized** — I don't know who you are (missing/expired/invalid token).
 - **403 Forbidden** — I know who you are and you're still not allowed.
 
-An `AuthGuard` that returns `false` produces 403 by default. When the real problem is a
+An auth guard that returns `false` produces 403 by default. When the real problem is a
 missing credential, throw `UnauthorizedException` from the guard so the client knows to
 re-authenticate instead of giving up.

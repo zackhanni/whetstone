@@ -1,0 +1,65 @@
+---
+id: who-wraps-whom
+title: Who wraps whom, and testing the wiring
+---
+
+## Who wraps whom
+
+Guards simply run one after another (global, controller, route). Interceptors **nest**,
+outside-in:
+
+```
+global interceptor
+  controller interceptor
+    handler interceptor
+      pipes -> HANDLER
+```
+
+Consequences worth predicting:
+
+- A **cache interceptor** registered globally short-circuits the inner ones: if it returns
+  `of(cached)` without calling `next.handle()`, no inner interceptor's pre-handler code runs,
+  no pipe validates, and the handler never executes. Guards are the exception — every guard has
+  already run before any interceptor starts, so a cache hit can't skip authorization.
+- A **global timing interceptor** measures every inner interceptor and every pipe too —
+  including caching and serialization work — but none of the guards or middleware that ran
+  before it. Its number is neither "time in my handler" nor the request's full latency.
+- `ClassSerializerInterceptor` runs on the way *out*, so `@Exclude()` is applied after your
+  handler returns. Return the entity instance, not `JSON.parse(JSON.stringify(entity))`, or the
+  metadata is gone and nothing is excluded.
+
+## Order in one line
+
+```
+middleware → guards → interceptors(pre) → pipes → handler → interceptors(post) → filters
+```
+
+Two more implications:
+
+- **Pipes run after guards**, so validation cost is only paid by authorized requests — and a
+  guard can never see a validated DTO.
+- **Interceptors run before pipes**, so an interceptor's pre-handler code runs even for a
+  request that's about to be rejected with a 400 — an audit log written there records
+  malformed requests too. Guards run before pipes as well, so neither can wait for validation.
+  What a guard does get is the front of the line: it runs before every interceptor (and a
+  global guard before controller- and route-level ones), which is why a global `ThrottlerGuard`
+  turns a throttled request away before any of that work starts.
+
+## Testing the lifecycle
+
+Guards and interceptors are classes with one method, so unit-test them by handing over a fake
+`ExecutionContext`:
+
+```ts
+const context = {
+  getHandler: () => handler,
+  getClass: () => Controller,
+  switchToHttp: () => ({ getRequest: () => ({ user: { roles: ["admin"] } }) }),
+} as unknown as ExecutionContext;
+
+expect(guard.canActivate(context)).toBe(true);
+```
+
+For the wiring itself (is it actually applied to that route? in the right order?), an e2e test
+with `Test.createTestingModule({ imports: [AppModule] })` + `supertest` is the only honest
+check — the order is a property of the app, not of the class.

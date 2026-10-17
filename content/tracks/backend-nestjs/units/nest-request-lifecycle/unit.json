@@ -17,7 +17,7 @@
   "objectives": [
     "Predict the order guards, interceptors, pipes and the handler run in, and what each one can see",
     "Choose a guard for admit/reject decisions and an interceptor for shaping or timing the response",
-    "Write a role guard with Reflector, throw 401 vs return false (403), and register it via APP_GUARD",
+    "Write guards that fail closed and read @Roles metadata with Reflector; throw 401 vs return false (403); register via APP_GUARD",
     "Write interceptors that map the response, log failures with finalize, and return next.handle()",
     "Predict the status a thrown error becomes and which single filter handles it; register via APP_FILTER"
   ],
@@ -59,7 +59,7 @@
         },
         {
           "id": "app-guard-token",
-          "prompt": "Your global guard needs to inject `ConfigService`. Which registration works?",
+          "prompt": "Your global guard takes `ConfigService` in its constructor. Which registration lets Nest's injector build it?",
           "options": [
             { "id": "app-guard", "text": "`{ provide: APP_GUARD, useClass: RolesGuard }` in a module's providers" },
             { "id": "useglobalguards", "text": "`app.useGlobalGuards(new RolesGuard(config))` in main.ts" },
@@ -67,7 +67,7 @@
             { "id": "usepipes", "text": "`@UsePipes(RolesGuard)` on every controller" }
           ],
           "answer": "app-guard",
-          "explanation": "`useGlobalGuards` takes an instance you constructed by hand, so it's outside the injector — nothing gets injected. Registering under the `APP_GUARD` token puts the guard in a module, so Nest builds it with its dependencies. `APP_INTERCEPTOR`, `APP_FILTER` and `APP_PIPE` exist for the same reason."
+          "explanation": "Registering under the `APP_GUARD` token makes the guard a provider of a module, so Nest builds it with its dependencies. `useGlobalGuards` takes an instance you constructed outside any module: the injector supplies nothing, so the `config` in that option has to be fetched by hand (`app.get(ConfigService)`) and every future constructor change repeated in `main.ts`. It can work; it just isn't the injector doing it. `@Global()` applies to modules, and `@UsePipes` binds pipes, not guards. `APP_INTERCEPTOR`, `APP_FILTER` and `APP_PIPE` exist for the same reason."
         },
         {
           "id": "return-false-status",
@@ -95,15 +95,15 @@
         },
         {
           "id": "filters-dont-chain",
-          "prompt": "You have a global `@Catch()` filter and a controller-level `@Catch(DomainError)` filter. A `DomainError` is thrown in that controller. What runs?",
+          "prompt": "A controller has `@UseFilters(DomainErrorFilter)`, which is `@Catch(DomainError)`. One of its routes adds `@UseFilters(AuditAllFilter)`, a bare `@Catch()`. That route throws a `DomainError`. What handles it?",
           "options": [
-            { "id": "one", "text": "Only the controller-level filter — Nest selects the single most specific/narrowest-scoped match; filters don't chain" },
-            { "id": "both", "text": "Both, controller-level first, then the global one" },
-            { "id": "global", "text": "Only the global one, since it was registered first" },
+            { "id": "route-first", "text": "Only `AuditAllFilter` — Nest checks route filters, then controller, then global, and the first whose `@Catch` matches wins" },
+            { "id": "most-specific", "text": "Only `DomainErrorFilter` — Nest prefers the filter bound to the most specific exception type" },
+            { "id": "both", "text": "Both: `AuditAllFilter` first, then `DomainErrorFilter`" },
             { "id": "error", "text": "Nest throws an ambiguous-filter error at boot" }
           ],
-          "answer": "one",
-          "explanation": "Filter resolution picks one handler: handler-level, then controller-level, then global, preferring a matching `@Catch(Type)`. That's why a global catch-all has to produce a complete response itself (or extend `BaseExceptionFilter`) — nothing downstream will fill in the gaps."
+          "answer": "route-first",
+          "explanation": "Selection is by position, not by specificity: route-level filters are tried first, and a bare `@Catch()` matches everything, so `AuditAllFilter` wins and `DomainErrorFilter` never sees the error. Filters don't chain either: the chosen one owns the whole response, which is why a catch-all must produce a complete response itself (or extend `BaseExceptionFilter`). To keep the domain mapping on that route, narrow the route filter or bind both there — listing the catch-all first, since within one `@UseFilters()` the last one listed is tried first."
         },
         {
           "id": "unknown-error-500",
@@ -121,13 +121,13 @@
           "id": "throttle-guard",
           "prompt": "Why is Nest's rate limiter a *guard* rather than an interceptor?",
           "options": [
-            { "id": "before", "text": "Guards run before interceptors and pipes, so a throttled request is rejected before any per-request work — and a boolean/throw is exactly the decision it needs to make" },
-            { "id": "observable", "text": "Interceptors can't be async" },
-            { "id": "response", "text": "Only guards can set response headers" },
-            { "id": "di", "text": "Only guards can inject a store" }
+            { "id": "before", "text": "Rate limiting is an admit/reject decision — a guard's whole contract — and guards run before every interceptor, so a throttled request is turned away before that work starts" },
+            { "id": "after-pipes", "text": "Guards run after validation, so requests that fail the pipes never count against the limit" },
+            { "id": "malformed", "text": "An interceptor would also count requests the pipes are about to reject with a 400; a guard doesn't" },
+            { "id": "response", "text": "Only guards can set response headers" }
           ],
           "answer": "before",
-          "explanation": "Rate limiting is an admit/reject decision, which is a guard's entire contract, and doing it first means a flood costs you almost nothing. In an interceptor the counter would also increment for requests that pipes are about to reject with a 400, and the interceptor's pre-handler work would already have run."
+          "explanation": "Rate limiting is an admit/reject decision, which is a guard's entire contract. Guards also run before every interceptor (and a global guard before the controller- and route-level guards, such as a token check), so a throttled request is turned away before that work starts. Both tempting reasons get the order wrong: guards run *before* pipes, so a guard-based limiter counts malformed requests exactly as an interceptor would — which is what you want from a rate limiter anyway. And interceptors can set headers too."
         }
       ]
     },
@@ -137,21 +137,23 @@
       "prompts": [
         {
           "id": "guard-shape",
-          "prompt": "The two members of a guard: the interface it implements, and the transport-agnostic way to reach the HTTP request.",
+          "prompt": "An API-key guard that can't fail open: the interface it implements, and what it returns when no key is configured.",
           "code": [
             "@Injectable()",
             "export class ApiKeyGuard implements ___ {",
             "  canActivate(context: ExecutionContext): boolean {",
-            "    const req = context.___().getRequest();",
-            "    return req.headers[\"x-api-key\"] === process.env.API_KEY;",
+            "    const expected = process.env.API_KEY;",
+            "    if (!expected) return ___;",
+            "    const req = context.switchToHttp().getRequest();",
+            "    return req.headers[\"x-api-key\"] === expected;",
             "  }",
             "}"
           ],
           "blanks": [
             { "id": "a1", "accept": ["CanActivate"] },
-            { "id": "a2", "accept": ["switchToHttp"] }
+            { "id": "a2", "accept": ["false"] }
           ],
-          "explanation": "`ExecutionContext` abstracts the transport — `switchToHttp()`, `switchToWs()`, `switchToRpc()` — so the same guard can protect an HTTP route and a message handler. Returning `false` yields 403; throw `UnauthorizedException` for a missing credential."
+          "explanation": "Without the `if`, an unset `API_KEY` makes the last line compare `undefined === undefined` for any request that omits the header — `true`, so the guard admits everyone. A comparison-based check must first confirm it has something to compare against, and refuse when it doesn't (`false` → 403). Better still, validate `API_KEY` at boot so the app won't start without it, and keep this line as the backstop."
         },
         {
           "id": "roles-metadata",
@@ -177,7 +179,7 @@
             { "id": "c1", "accept": ["handle"] },
             { "id": "c2", "accept": ["map"] }
           ],
-          "explanation": "`next.handle()` is the handler, as an Observable — you must return it or the request hangs, because nothing subscribes. `map` transforms the emitted value; `tap` would only observe it and leave the response unchanged."
+          "explanation": "`next.handle()` is the handler, as an Observable, and you must return it: Nest subscribes to what `intercept()` returns, so returning nothing gets the client a 500 and the handler never runs. `map` transforms the emitted value; `tap` would only observe it and leave the response unchanged."
         },
         {
           "id": "always-log",
@@ -192,7 +194,7 @@
         },
         {
           "id": "app-filter",
-          "prompt": "Register a global exception filter that needs a injected logger.",
+          "prompt": "Register a global exception filter that needs an injected logger.",
           "code": [
             "@Module({",
             "  providers: [{ provide: ___, useClass: DomainErrorFilter }],",
@@ -200,7 +202,7 @@
             "export class AppModule {}"
           ],
           "blanks": [{ "id": "e1", "accept": ["APP_FILTER"] }],
-          "explanation": "`useGlobalFilters(new DomainErrorFilter())` needs a hand-constructed instance, so it can't inject anything. The `APP_FILTER` token (like `APP_GUARD`, `APP_INTERCEPTOR`, `APP_PIPE`) registers it as a provider, so the injector builds it."
+          "explanation": "`useGlobalFilters(new DomainErrorFilter())` takes an instance you construct outside any module, so the injector supplies nothing. The `APP_FILTER` token (like `APP_GUARD`, `APP_INTERCEPTOR`, `APP_PIPE`) registers it as a provider, so the injector builds it."
         },
         {
           "id": "catch-narrow",
@@ -210,7 +212,7 @@
             "export class DomainErrorFilter implements ExceptionFilter {}"
           ],
           "blanks": [{ "id": "f1", "accept": ["Catch"] }],
-          "explanation": "`@Catch(DomainError)` narrows the filter; a bare `@Catch()` catches everything and then owns the entire error contract, including the shapes Nest was formatting for you. Only one filter runs per exception — the narrowest, innermost match."
+          "explanation": "`@Catch(DomainError)` narrows the filter; a bare `@Catch()` catches everything and then owns the entire error contract, including the shapes Nest was formatting for you. Only one filter runs per exception: the first match, checking route-level filters, then controller-level, then global."
         }
       ]
     },
@@ -221,31 +223,36 @@
         {
           "id": "order-logs",
           "code": [
-            "// Registered globally: LoggingInterceptor, AuthGuard, ValidationPipe.",
-            "// AuthGuard.canActivate:            console.log(\"guard\")",
+            "// Registered globally, in this order: LoggingInterceptor, AuthGuard, LogPipe.",
+            "// AuthGuard.canActivate:            console.log(\"guard\"); return true",
             "// LoggingInterceptor.intercept:     console.log(\"pre\"); return next.handle().pipe(tap(() => console.log(\"post\")))",
-            "// A custom pipe's transform():      console.log(\"pipe\")",
-            "// The handler body:                 console.log(\"handler\")"
+            "// LogPipe.transform:                console.log(\"pipe\"); return value",
+            "",
+            "@Post()",
+            "create(@Body() dto: CreateOrderDto) {   // one argument, so the pipe runs once",
+            "  console.log(\"handler\");",
+            "}"
           ],
           "question": "In what order do the five logs appear for one successful request?",
           "answer": "guard, pre, pipe, handler, post",
           "acceptable": ["guard pre pipe handler post", "guard, pre, pipe, handler, then post"],
-          "explanation": "The pipeline is guards → interceptors(pre) → pipes → handler → interceptors(post) → filters. Note what that means in practice: an interceptor's pre-handler code has already run by the time a pipe rejects the request with a 400."
+          "explanation": "The pipeline is guards → interceptors(pre) → pipes → handler → interceptors(post) → filters, whatever order you registered them in — registration order only matters among components of the same kind. Note what that means in practice: an interceptor's pre-handler code has already run by the time a pipe rejects the request with a 400. (Pipes run per argument: a handler taking both `@Param()` and `@Body()` would log `pipe` twice.)"
         },
         {
           "id": "forgot-return",
           "code": [
             "@Injectable()",
-            "export class BrokenInterceptor implements NestInterceptor {",
+            "export class AuditInterceptor {          // no `implements NestInterceptor`, so this compiles",
             "  intercept(context: ExecutionContext, next: CallHandler) {",
             "    next.handle().pipe(tap(() => console.log(\"done\")));   // no return",
             "  }",
-            "}"
+            "}",
+            "// Bound with @UseInterceptors(AuditInterceptor) on GET /orders; no custom filters."
           ],
-          "question": "What does the client observe?",
-          "answer": "The request hangs — no response is ever sent",
-          "acceptable": ["it hangs", "the request never responds / times out", "no response"],
-          "explanation": "`next.handle()` returns a cold Observable: the handler doesn't run until something subscribes, and Nest subscribes to whatever the interceptor *returns*. Returning `undefined` means nobody subscribes, so the handler never executes and no response is written — a hang, not an error."
+          "question": "What does the client get for `GET /orders`, and does the handler run?",
+          "answer": "A 500 Internal server error, and the handler never runs",
+          "acceptable": ["500", "500, handler never runs", "500 Internal server error"],
+          "explanation": "Nest subscribes to whatever `intercept()` returns, merging it into the response stream with RxJS. `undefined` isn't a stream, so that throws `TypeError: You provided 'undefined' where a stream was expected`, and the default filter turns it into a logged, generic 500 (Nest 11 and 12) — not a hang. Meanwhile `next.handle()` was never subscribed, so the handler never ran and `done` never prints. With `implements NestInterceptor` the class wouldn't compile: the interface requires `intercept()` to return an `Observable` (or a `Promise` of one)."
         },
         {
           "id": "cache-shortcircuit",

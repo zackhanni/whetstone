@@ -44,9 +44,10 @@ Registering it globally still lets you inject providers, as long as you register
 { provide: APP_GUARD, useClass: RolesGuard }   // in a module's providers
 ```
 
-`app.useGlobalGuards(new RolesGuard(...))` also works but has to be constructed by hand, so it
-can't inject. That's the whole reason `APP_GUARD` / `APP_INTERCEPTOR` / `APP_FILTER` / `APP_PIPE`
-exist.
+`app.useGlobalGuards(new RolesGuard(...))` also works, but you construct it outside any module,
+so the injector supplies nothing: every dependency has to be fetched and passed by hand
+(`new RolesGuard(app.get(Reflector))`), and kept in sync with the constructor. That's the whole
+reason `APP_GUARD` / `APP_INTERCEPTOR` / `APP_FILTER` / `APP_PIPE` exist.
 
 ## An interceptor wraps the call
 
@@ -76,7 +77,10 @@ export class TimingInterceptor implements NestInterceptor {
 `next.handle()` returns an `Observable` of the handler's eventual return value. Code *before*
 it runs pre-handler; operators you `pipe` run post-handler. The classic bugs:
 
-- **Forgetting to return the stream** — the request hangs forever, because nothing subscribed.
+- **Forgetting to return the stream** — Nest subscribes to whatever `intercept()` returns, so
+  `undefined` throws ("You provided 'undefined' where a stream was expected") and the client
+  gets a 500, while the handler never runs. Writing `implements NestInterceptor` turns this into
+  a compile error, because the interface requires an `Observable` back.
 - **`tap` vs `map`** — `tap` observes, `map` replaces. A response envelope needs
   `map((data) => ({ data }))`.
 - **Only handling the success path** — `tap(() => …)` (the single-callback form) never fires
@@ -85,3 +89,11 @@ it runs pre-handler; operators you `pipe` run post-handler. The classic bugs:
 
 Useful shapes this unlocks: `catchError` to translate errors, `timeout(5000)` to bound a slow
 dependency, a cache interceptor returning `of(cached)` without ever calling `next.handle()`.
+
+<!--more-->
+
+**The newer decorator form.** The current docs, and Nest 12's `nest g decorator`, write the
+decorator as `export const Roles = Reflector.createDecorator<string[]>()` and read it with
+`getAllAndOverride(Roles, …)` — the decorator is its own key, so there's no string constant to
+keep in sync. `SetMetadata` with a string key, as above, is the lower-level form; the docs show
+both.
