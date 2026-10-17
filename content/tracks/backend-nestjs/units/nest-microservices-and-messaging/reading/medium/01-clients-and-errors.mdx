@@ -1,0 +1,78 @@
+---
+id: clients-and-errors
+title: A gateway that calls a service — wiring, errors, timeouts
+---
+
+The common shape: an HTTP **gateway** that turns a request into a message to a microservice, and
+the reply back into an HTTP response. Here's one end to end, with what crosses the wire at each
+step (behaviour checked on Nest 12.1 over TCP).
+
+## Register and inject the client
+
+```ts
+@Module({
+  imports: [
+    ClientsModule.register([
+      { name: "PRICING", transport: Transport.TCP, options: { host: "pricing", port: 4000 } },
+    ]),
+  ],
+  controllers: [ProductsController],
+})
+export class GatewayModule {}
+```
+
+`name` is an injection token, so the client is injected with `@Inject("PRICING")` — the modules
+unit's rule for any token that isn't a class. The client connects lazily, on the first message; call
+`await this.pricing.connect()` in `onApplicationBootstrap()` if a missing service should stop the
+gateway from starting.
+
+## Call it, bound it, translate its errors
+
+```ts
+@Controller("products")
+export class ProductsController {
+  constructor(@Inject("PRICING") private readonly pricing: ClientProxy) {}
+
+  @Get(":sku/price")
+  async price(@Param("sku") sku: string) {
+    try {
+      return await lastValueFrom(
+        this.pricing.send<number>("price.get", { sku }).pipe(timeout(2_000)),
+      );
+    } catch (err) {
+      if (err instanceof TimeoutError) throw new GatewayTimeoutException();
+      if (rpcCode(err) === "SKU_NOT_FOUND") throw new NotFoundException(`no price for ${sku}`);
+      throw err;                                     // anything else: a 500, and logged
+    }
+  }
+}
+
+/** Errors from another service arrive as plain objects, not Error instances. */
+function rpcCode(err: unknown): string | undefined {
+  return typeof err === "object" && err !== null && "code" in err ? String(err.code) : undefined;
+}
+```
+
+That `catch` exists because of what errors look like after a trip across the transport:
+
+| The pricing handler… | The gateway's `await` rejects with |
+| --- | --- |
+| throws `new RpcException("Out of stock")` | the plain object `{ status: "error", message: "Out of stock" }` |
+| throws `new RpcException({ code: "SKU_NOT_FOUND", message: "…" })` | that object, as is |
+| throws `new NotFoundException()` or any other `Error` | `{ status: "error", message: "Internal server error" }` |
+| doesn't exist for that pattern | the string `"There is no matching message handler defined in the remote service."` |
+| can't be reached | an `ECONNREFUSED` error |
+
+Two consequences. **HTTP status codes don't travel**: a `NotFoundException` in the microservice
+arrives as "Internal server error", so 404s must be expressed as data (`RpcException` with a code)
+and turned back into HTTP exceptions by the gateway. And **what arrives is usually not an
+`Error`**: the gateway's default exception filter sees a plain object, not an `HttpException`, and
+answers 500 unless you translate it. On the microservice side, throw `RpcException` for anything
+the caller is meant to understand.
+
+## Timeouts and retries
+
+`timeout(2_000)` makes the gateway give up; it does **not** stop the pricing handler, which runs
+to the end. For a read like `price.get`, a retry is harmless. For `stock.reserve`, a retry after a
+timeout can reserve the stock twice — the first attempt was never cancelled, only abandoned.
+Retry a message only when its handler is idempotent, which is where the rest of this unit goes.
