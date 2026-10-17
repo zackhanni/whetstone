@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "latency-percentiles",
+  "title": "Fix the latency percentiles and histogram buckets",
+  "skills": ["observability", "metrics"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "latency.ts",
+  "acceptanceCriteria": [
+    "`percentile` sorts numerically, on a copy — the caller's array keeps its order",
+    "`percentile` uses a 1-based nearest rank: p50 of 101…200 is 150, p99 is 199, p100 is 200, and p50 of 10, 20, 30, 40, 50 is 30",
+    "`toBuckets` is cumulative: each `le` counts every sample at or below it, and the `Infinity` bucket counts them all",
+    "`fractionWithin` answers only at an existing bucket bound and returns `null` otherwise",
+    "`summarize` reports the tail the mean hides: mean 49.8 ms but p99 2,000 ms for 98 × 10 ms + 2 × 2 s",
+    "A 99%-within-300-ms check computed from `toBuckets` output gives 0.995 for the sample day"
+  ]
+}

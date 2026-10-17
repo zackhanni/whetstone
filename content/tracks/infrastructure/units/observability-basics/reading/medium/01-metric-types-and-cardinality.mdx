@@ -1,0 +1,67 @@
+---
+id: metric-types-and-cardinality
+title: Counter, gauge, histogram — and the label that costs a fortune
+---
+
+What a Prometheus scrape of a small API looks like, in its text format:
+
+```text
+# TYPE http_server_requests_total counter
+http_server_requests_total{method="GET",route="/orders/:id",status="200"} 10432
+http_server_requests_total{method="GET",route="/orders/:id",status="500"} 17
+
+# TYPE jobs_waiting gauge
+jobs_waiting 42
+
+# TYPE http_server_request_duration_seconds histogram
+http_server_request_duration_seconds_bucket{le="0.1"} 9210
+http_server_request_duration_seconds_bucket{le="0.3"} 10102
+http_server_request_duration_seconds_bucket{le="1"} 10398
+http_server_request_duration_seconds_bucket{le="+Inf"} 10449
+http_server_request_duration_seconds_sum 1342.7
+http_server_request_duration_seconds_count 10449
+```
+
+**Counter** — only goes up (or resets to zero when the process restarts). Requests served,
+errors, bytes sent. The raw value is meaningless; you query its *rate* —
+`rate(http_server_requests_total[5m])` — and Prometheus adjusts for resets. Prometheus's naming
+guide gives accumulating counts a `_total` suffix. Never use a counter for something that can
+go down.
+
+**Gauge** — a value right now that moves both ways: jobs waiting, memory in use, open
+connections. You read it as is, or take its min/max over a window.
+
+**Histogram** — the shape of a distribution, for latency and sizes. It's a set of counters,
+one per bucket, and the buckets are **cumulative**: `le="0.3"` (less than or equal) counts
+every request that took 0.3 s *or less*, including the 9,210 already counted under `le="0.1"`.
+`le="+Inf"` counts everything and equals `_count`. From these you get percentiles and "what
+share of requests finished within 300 ms" (*Complex* tier). Note the unit in the name:
+Prometheus's guide asks for base units — `_seconds`, `_bytes` — not milliseconds.
+
+OpenTelemetry has the same three ideas under its own names — `Counter`, `UpDownCounter` and
+`Gauge`, and `Histogram` — plus asynchronous variants that are read once per export.
+
+### Cardinality: every label combination is its own series
+
+Prometheus's docs: *"every unique combination of key-value label pairs represents a new time
+series"* — so don't use labels for high-cardinality dimensions such as user IDs or email
+addresses. Do the arithmetic on that histogram:
+
+- 40 routes × 5 methods × 6 status codes = 1,200 label combinations;
+- with the 14 bucket boundaries OpenTelemetry recommends for request duration, each
+  combination is 17 series (15 buckets including `+Inf`, `_sum`, `_count`) = **20,400
+  series** — fine;
+- add `user_id` with 50,000 users and it's about **a billion**.
+
+The usual leak isn't a deliberate `user_id`; it's a raw URL. `path="/orders/o_8f3k2"` creates a
+series per order, where `route="/orders/:id"` creates one. OpenTelemetry's HTTP conventions
+require `http.route` to be low-cardinality for exactly this reason. Put per-request detail —
+user, order, raw path — on **logs and spans**, which are priced per event, not per combination.
+
+<!--more-->
+
+**When the limit hits.** The OpenTelemetry metrics SDK specification caps each metric at 2,000
+attribute combinations per collection unless you configure a different limit. Past that, new combinations are folded into one overflow point marked
+`otel.metric.overflow=true`: totals stay right, but any query that filters or groups by the
+attribute quietly undercounts. A dashboard that "lost" traffic after a release is worth
+checking for that attribute before anything else.

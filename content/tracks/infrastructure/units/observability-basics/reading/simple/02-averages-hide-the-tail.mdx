@@ -1,0 +1,45 @@
+---
+id: averages-hide-the-tail
+title: An average hides the slow requests — percentiles don't
+---
+
+A hundred requests: 98 take 10 ms, 2 take 2 seconds.
+
+```js
+const samples = [...Array(98).fill(10), 2000, 2000];
+mean(samples);            // 49.8  — "about 50 ms, fine"
+percentile(samples, 50);  // 10
+percentile(samples, 95);  // 10
+percentile(samples, 99);  // 2000  — the users having a bad time
+```
+
+The mean describes no request that actually happened: nobody waited 49.8 ms. Worse, it moves
+very little when the tail gets dramatically worse, so a dashboard of averages stays calm
+through exactly the incident you need to see. Google's SRE book makes the same point: a service
+averaging 100 ms can easily have 1% of requests taking 5 seconds.
+
+A **percentile** answers "what latency did P% of requests stay at or under?" The simplest
+definition, *nearest rank*:
+
+```js
+function percentile(samples, p) {
+  const sorted = [...samples].sort((a, b) => a - b); // numeric sort, on a copy
+  const rank = Math.ceil((p / 100) * sorted.length);  // 1-based rank
+  return sorted[rank - 1];
+}
+```
+
+- **p50** (the median) — the typical request.
+- **p95 / p99** — the slow end most users still hit now and then. Note that p95 above is still
+  10 ms: only 2% of requests are slow, so it takes p99 to see them.
+- **max** — one outlier; useful as a sanity check, too noisy to alert on.
+
+Two small details from that function bite in practice. `Array.prototype.sort()` with no
+comparator compares values **as strings**, so `[5, 40, 300, 1200].sort()` returns
+`[1200, 300, 40, 5]`. And the rank is 1-based: `sorted[Math.floor(p / 100 * n)]` is one place
+too high whenever `p / 100 * n` is a whole number — p50 of 100 samples, say — and for p100 reads
+past the end of the array.
+
+Real systems don't keep every sample to sort — the next tiers show how histogram buckets
+answer the same questions from counts. The habit is what matters here: **report latency as
+percentiles, and look at the tail.**
