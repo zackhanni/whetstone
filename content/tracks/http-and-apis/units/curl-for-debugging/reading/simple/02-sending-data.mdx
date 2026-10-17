@@ -1,0 +1,64 @@
+---
+id: sending-data
+title: -d, --json, and what they quietly change
+---
+
+The fastest way to learn what a flag does is to point it at an endpoint that echoes the
+request back. `/echo` below returns the method, the interesting headers and the raw body.
+
+## `-d` makes it a POST — of a *form*
+
+```console
+$ curl -d 'name=ada' http://localhost:4123/echo
+{"method":"POST","path":"/echo","headers":{"content-type":"application/x-www-form-urlencoded","content-length":"8","accept":"*/*"},"body":"name=ada"}
+```
+
+Two things changed that you didn't type: the method became `POST`, and curl added
+`Content-Type: application/x-www-form-urlencoded` — what an HTML form sends. That's right for
+form data and wrong for everything else:
+
+```console
+$ curl -d '{"email":"ada@example.com"}' http://localhost:4123/echo
+{"method":"POST","path":"/echo","headers":{"content-type":"application/x-www-form-urlencoded","content-length":"27","accept":"*/*"},"body":"{\"email\":\"ada@example.com\"}"}
+```
+
+The bytes are JSON; the label says form. A JSON API's body parser skips it, and the handler sees
+no body.
+
+## `--json` (curl 7.82.0 and later)
+
+```console
+$ curl --json '{"email":"ada@example.com"}' http://localhost:4123/echo
+{"method":"POST","path":"/echo","headers":{"content-type":"application/json","content-length":"27","accept":"application/json"},"body":"{\"email\":\"ada@example.com\"}"}
+```
+
+The curl manual defines `--json` as a shortcut for three options: `--data-binary` with your
+data, `-H "Content-Type: application/json"` and `-H "Accept: application/json"`. On an older
+curl, write those out:
+
+```console
+$ curl -H 'Content-Type: application/json' --data-raw '{"email":"ada@example.com"}' http://localhost:4123/echo
+```
+
+`curl --version` tells you which you have.
+
+## The rest of the family
+
+| You write | curl sends |
+| --- | --- |
+| `-d 'a=1' -d 'b=2'` | one POST body, `a=1&b=2` |
+| `-G -d 'q=tea' -d 'page=2'` | a `GET` to `/echo?q=tea&page=2`, no body |
+| `-F 'title=Q3' -F 'file=@note.txt'` | a `multipart/form-data` POST with `note.txt` attached as a file |
+| `-H 'Name: value'` | an extra request header (or a replacement for one curl would add) |
+| `-X PUT -d …` | the same body, with the method word changed to `PUT` |
+
+You almost never need `-X POST`: `-d`, `--json` and `-F` already make the request a `POST`.
+`-X` exists for methods curl has no flag for — `PUT`, `PATCH`, `DELETE` — and it changes
+only the method *word*. The surprises that causes are in this unit's complex example.
+
+<!--more-->
+
+**Why `--json` uses `--data-binary`.** Plain `-d @file.json` strips carriage returns and
+newlines from the file before sending it. For pretty-printed JSON that's harmless (the newlines
+are whitespace); for newline-delimited JSON (one object per line) it glues the records together.
+`--data-binary` and `--json` send the file byte for byte.

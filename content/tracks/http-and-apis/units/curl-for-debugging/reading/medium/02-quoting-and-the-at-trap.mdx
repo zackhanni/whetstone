@@ -1,0 +1,80 @@
+---
+id: quoting-and-the-at-trap
+title: Quoting JSON for the shell, and the @ trap
+---
+
+Half of "curl sends the wrong thing" is the shell rewriting your command before curl runs.
+Everything here behaves the same in zsh and bash unless it says otherwise.
+
+## Single quotes for literal JSON, double quotes for variables
+
+```console
+$ curl --json '{"email":"ada@example.com"}' http://localhost:4123/echo      # literal: fine
+$ curl -H "Authorization: Bearer $TOKEN" http://localhost:4123/me           # needs $TOKEN expanded
+```
+
+Single quotes pass everything through untouched — `"`, `$`, `!`. Double quotes let `$VAR`
+expand, which is what you want for a header and what breaks JSON (every inner `"` needs a `\`).
+When JSON needs a variable, don't hand-splice quotes; let `jq` build it, so a value containing
+`"` is escaped correctly:
+
+```console
+$ EMAIL=ada@example.com
+$ NOTE='say "hi"'
+$ jq -n --arg email "$EMAIL" --arg note "$NOTE" '{email: $email, note: $note}' \
+    | curl -sS --json @- http://localhost:4123/echo
+```
+
+`--json @-` reads the body from stdin.
+
+## Quote every URL with `?` or `&` in it
+
+```console
+% curl http://localhost:4123/echo?q=tea
+zsh: no matches found: http://localhost:4123/echo?q=tea
+```
+
+zsh treats an unquoted `?` as a filename wildcard and refuses to run the command when nothing
+matches; bash passes it through. And in **any** shell an unquoted `&` ends the command —
+`curl http://…/echo?q=tea&page=2` runs `curl …?q=tea` in the background and never sends
+`page=2`. Single-quote the URL and both problems disappear.
+
+## The `@` trap
+
+For `-d` (and `--data-binary`, `--json`), data that **starts with** `@` isn't data — it's a
+filename to read the body from. That's a feature (`-d @payload.json`) until the data you meant
+to send happens to start with `@`:
+
+```console
+$ curl -d '@ada' http://localhost:4123/echo
+curl: Failed to open ada
+curl: option -d: error encountered when reading a file
+```
+
+Since curl 8.3.0 a missing file is an error (exit code 26). Before that, curl warned and sent an
+**empty** `POST` — a request that "succeeds" with no body. If a file named `ada` *does* exist,
+every version sends its contents. When the value is literal text, say so:
+
+```console
+$ curl --data-raw '@ada' http://localhost:4123/echo
+{"method":"POST","path":"/echo","headers":{"content-type":"application/x-www-form-urlencoded","content-length":"4","accept":"*/*"},"body":"@ada"}
+```
+
+`--data-raw` is `-d` without the `@` rule. Use it for any value you didn't write yourself —
+a handle, a comment, a variable.
+
+<!--more-->
+
+**`-d @file` edits your file.** When `-d` reads a file it strips carriage returns, newlines and
+NUL bytes. Two lines of newline-delimited JSON become one invalid line:
+
+```console
+$ printf '{"a":1}\n{"a":2}\n' > events.ndjson
+$ curl -s -H 'Content-Type: application/x-ndjson' -d @events.ndjson http://localhost:4123/echo
+{…,"body":"{\"a\":1}{\"a\":2}"}
+$ curl -s -H 'Content-Type: application/x-ndjson' --data-binary @events.ndjson http://localhost:4123/echo
+{…,"body":"{\"a\":1}\n{\"a\":2}\n"}
+```
+
+`-F` has its own `@`: `-F 'file=@note.txt'` attaches `note.txt` as a file upload, and
+`-F 'story=<note.txt'` sends its contents as a plain text field.

@@ -1,0 +1,114 @@
+---
+id: signup-login-bearer
+title: Worked example — sign up, log in, call an authenticated endpoint
+---
+
+The bug report says "login works but `/me` returns 401". Before reading any server code,
+reproduce the whole flow in a terminal. Real output from a local API:
+
+## 1. Sign up — expect `201`
+
+```console
+$ curl -i --json '{"email":"ada@example.com","password":"correct-horse"}' \
+    http://localhost:4123/auth/signup
+HTTP/1.1 201 Created
+Content-Type: application/json
+Content-Length: 39
+Location: /users/u_1
+Date: Sat, 17 Oct 2026 06:41:34 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":"u_1","email":"ada@example.com"}
+```
+
+`201` plus `Location` — the user exists. Run it again and you get `409 Conflict` with
+`{"error":"email already registered"}`, which is worth knowing before you debug "signup is broken".
+
+## 2. Log in — expect `200` and an access token
+
+```console
+$ curl -i -c jar.txt --json '{"email":"ada@example.com","password":"correct-horse"}' \
+    http://localhost:4123/auth/login
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 229
+Set-Cookie: refresh_token=pi1B33Pk3rNJ1MovEnXR0gG4KVYF3vP8; HttpOnly; Secure; SameSite=Strict; Path=/auth; Max-Age=1209600
+Date: Sat, 17 Oct 2026 06:41:34 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"accessToken":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1XzEiLCJzY29wZSI6Im9yZGVyczpyZWFkIiwiaWF0IjoxNzkyMjE5Mjk0LCJleHAiOjE3OTIyMjAxOTR9.5wc-kqjtumFJgsybymv4FKVWuHGJLT2NbtOXsvW_wMI","tokenType":"Bearer","expiresIn":900}
+```
+
+Two credentials came back: an `accessToken` in the body, and a refresh token in a `Set-Cookie`.
+`-c jar.txt` told curl to save every cookie it receives into `jar.txt`, in the Netscape
+cookie-file format.
+
+## 3. Capture the token and send it
+
+```console
+$ TOKEN=$(curl -sS --json '{"email":"ada@example.com","password":"correct-horse"}' \
+    http://localhost:4123/auth/login | jq -r .accessToken)
+
+$ curl -i -H "Authorization: Bearer $TOKEN" http://localhost:4123/me
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 35
+Date: Sat, 17 Oct 2026 06:41:39 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":"u_1","scope":"orders:read"}
+```
+
+`jq -r` prints the string without quotes (`jq` is a separate tool: recent macOS ships one,
+otherwise install it, e.g. `brew install jq`).
+`-s` matters here: without it, the progress meter would go to your terminal while the pipe
+carries the body. And the header is in **double** quotes so the shell expands `$TOKEN`.
+
+## 4. Compare with the failures
+
+```console
+$ curl -i http://localhost:4123/me
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="api"
+…
+{"error":"missing bearer token"}
+
+$ curl -i -H 'Authorization: Bearer $TOKEN' http://localhost:4123/me
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="api", error="invalid_token"
+…
+{"error":"invalid or expired token"}
+```
+
+The second one is the shell, not the server: single quotes keep `$TOKEN` literal, so the server
+received the six characters `$TOKEN` as the token. `curl -v` would have shown it on the
+`> Authorization:` line.
+
+## 5. Send the cookie back
+
+```console
+$ curl -i -b jar.txt -c jar.txt -X POST http://localhost:4123/auth/refresh
+HTTP/1.1 200 OK
+Set-Cookie: refresh_token=-Zrw4CiF-HiFN9vvibZa_55z2_WAhusl; HttpOnly; Secure; SameSite=Strict; Path=/auth; Max-Age=1209600
+…
+```
+
+`-b jar.txt` **reads** cookies from the file and sends the ones that match the URL (here, because
+`/auth/refresh` is under the cookie's `Path=/auth`); `-c jar.txt` **writes** the rotated cookie back. Naming the same
+file for both is the normal way to carry a session across commands. The cookie is `Secure`, yet
+curl kept and sent it over `http://` — curl, like browsers, treats `localhost` as a secure
+context. (`-X POST` is one of its few
+honest uses: a `POST` with no body at all. `-d ''` would also send an empty body, but labelled
+`application/x-www-form-urlencoded` with `Content-Length: 0`.)
+
+<!--more-->
+
+**`--oauth2-bearer "$TOKEN"`** builds the same `Authorization: Bearer …` header for you.
+
+**Secrets in your shell history.** Whatever you type literally — a pasted token, the password in
+that `--json` body — lands in your shell history; a value captured into a variable with `$(…)`
+doesn't. And `-v` output contains your `Authorization` and `Cookie` headers: scrub them before
+pasting a trace into a ticket.
