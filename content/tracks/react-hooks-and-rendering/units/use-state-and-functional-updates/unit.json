@@ -1,10 +1,20 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "use-state-and-functional-updates",
   "title": "useState & functional updates",
   "skills": ["react", "hooks", "useState", "state"],
   "difficulty": "core",
   "estimatedMinutes": 25,
+  "objectives": [
+    "Predict what repeated setState calls in one handler produce, given state is a per-render snapshot",
+    "Choose the functional updater form whenever the next state is computed from the previous state",
+    "Fix stacked updates that lose increments by rewriting setX(x + 1) as setX(prev => prev + 1)"
+  ],
+  "sources": [
+    { "title": "React docs: useState", "url": "https://react.dev/reference/react/useState" },
+    { "title": "React docs: Queueing a Series of State Updates", "url": "https://react.dev/learn/queueing-a-series-of-state-updates" },
+    { "title": "React docs: State as a Snapshot", "url": "https://react.dev/learn/state-as-a-snapshot" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
     {
@@ -59,7 +69,16 @@
       "snippets": [
         {
           "id": "direct-double",
-          "code": "function Counter() {\n  const [count, setCount] = useState(0);\n  function bump() {\n    setCount(count + 1);\n    setCount(count + 1);\n  }\n  return <button onClick={bump}>{count}</button>;\n}",
+          "code": [
+            "function Counter() {",
+            "  const [count, setCount] = useState(0);",
+            "  function bump() {",
+            "    setCount(count + 1);",
+            "    setCount(count + 1);",
+            "  }",
+            "  return <button onClick={bump}>{count}</button>;",
+            "}"
+          ],
           "question": "After clicking the button once, what does it show?",
           "answer": "1",
           "acceptable": ["shows 1", "count is 1", "just 1"],
@@ -67,7 +86,16 @@
         },
         {
           "id": "functional-double",
-          "code": "function Counter() {\n  const [count, setCount] = useState(0);\n  function bump() {\n    setCount(c => c + 1);\n    setCount(c => c + 1);\n  }\n  return <button onClick={bump}>{count}</button>;\n}",
+          "code": [
+            "function Counter() {",
+            "  const [count, setCount] = useState(0);",
+            "  function bump() {",
+            "    setCount(c => c + 1);",
+            "    setCount(c => c + 1);",
+            "  }",
+            "  return <button onClick={bump}>{count}</button>;",
+            "}"
+          ],
           "question": "After clicking once, what does it show now?",
           "answer": "2",
           "acceptable": ["shows 2", "count is 2", "just 2"],

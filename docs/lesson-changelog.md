@@ -15,6 +15,9 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — schema v3 — units gain `objectives` + `sources`; challenge `prompt` removed and README title/checklist/Running moved into meta.json; multi-line `code` as arrays; `content/catalog.json`; all content swept (README text kept, 2 duplicate blank answers pruned).
+- 2026-10-17 — all units — objectives and official-docs sources backfilled for the 14 units (drafted per track, URLs checked against each docs site); 47 accuracy findings logged in `docs/content-review.md`, none fixed yet.
+
 - 2026-10-17 — schema v2 — every object `.strict()`; removed fields nothing read (`ChallengeBlock.mode`, `Challenge.stack`, `Challenge.testCommand`, `Track.skills`); all 27 content files swept (version 1 → 2 and those keys deleted, nothing else).
 - 2026-10-17 — authoring system — `pnpm test:challenges` (in `pnpm check`) grades every challenge headlessly: starter fails, solution passes; new schema/validator checks (answer ids, duplicate ids, block order, slugs, unit listing, reading files, every challenge folder); pinned challenge `dependencies`; predict-output shows `acceptable`.
 

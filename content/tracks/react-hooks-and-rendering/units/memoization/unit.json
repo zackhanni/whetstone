@@ -1,10 +1,22 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "memoization",
   "title": "Memoization: memo, useMemo & useCallback",
   "skills": ["react", "hooks", "memo", "useMemo", "useCallback", "rendering", "performance", "referential-identity"],
   "difficulty": "advanced",
   "estimatedMinutes": 30,
+  "objectives": [
+    "Explain how memo() skips a re-render only when every prop is shallow-equal by Object.is",
+    "Predict whether a memo child re-renders when its parent passes inline objects or functions",
+    "Choose between useMemo (cache a value) and useCallback (cache a function), with the right deps",
+    "Fix a memo child's needless re-renders by giving its callback prop a stable identity with useCallback",
+    "Spot premature memoization, where the cache and comparison cost more than the re-render saved"
+  ],
+  "sources": [
+    { "title": "React docs: memo", "url": "https://react.dev/reference/react/memo" },
+    { "title": "React docs: useMemo", "url": "https://react.dev/reference/react/useMemo" },
+    { "title": "React docs: useCallback", "url": "https://react.dev/reference/react/useCallback" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
     {
@@ -88,7 +100,11 @@
         {
           "id": "memo-wrap",
           "prompt": "Wrap this child so it skips re-rendering when its props are shallow-equal.",
-          "code": "const Row = ___(function Row({ label }) {\n  return <li>{label}</li>;\n});",
+          "code": [
+            "const Row = ___(function Row({ label }) {",
+            "  return <li>{label}</li>;",
+            "});"
+          ],
           "blanks": [
             { "id": "b1", "accept": ["memo", "React.memo"] }
           ],
@@ -102,7 +118,22 @@
       "snippets": [
         {
           "id": "inline-callback-defeats-memo",
-          "code": "const Child = memo(function Child({ onClick }: { onClick: () => void }) {\n  console.log(\"Child render\");\n  return <button onClick={onClick}>child</button>;\n});\n\nfunction Parent() {\n  const [count, setCount] = useState(0);\n  return (\n    <>\n      <button onClick={() => setCount((c) => c + 1)}>{count}</button>\n      <Child onClick={() => console.log(\"clicked\")} />\n    </>\n  );\n}",
+          "code": [
+            "const Child = memo(function Child({ onClick }: { onClick: () => void }) {",
+            "  console.log(\"Child render\");",
+            "  return <button onClick={onClick}>child</button>;",
+            "});",
+            "",
+            "function Parent() {",
+            "  const [count, setCount] = useState(0);",
+            "  return (",
+            "    <>",
+            "      <button onClick={() => setCount((c) => c + 1)}>{count}</button>",
+            "      <Child onClick={() => console.log(\"clicked\")} />",
+            "    </>",
+            "  );",
+            "}"
+          ],
           "question": "Every time you click the count button, does the memo'd Child re-render (does \"Child render\" log again)?",
           "answer": "Yes — Child re-renders on every parent update",
           "acceptable": ["yes", "yes, it re-renders", "it re-renders every time", "yes it logs again", "child render logs every click"],
@@ -110,7 +141,23 @@
         },
         {
           "id": "usememo-reference-stability",
-          "code": "const Child = memo(function Child({ style }: { style: object }) {\n  console.log(\"Child render\");\n  return <div style={style}>hi</div>;\n});\n\nfunction Parent() {\n  const [n, setN] = useState(0);\n  const style = useMemo(() => ({ color: \"red\" }), []);\n  return (\n    <>\n      <button onClick={() => setN(n + 1)}>{n}</button>\n      <Child style={style} />\n    </>\n  );\n}",
+          "code": [
+            "const Child = memo(function Child({ style }: { style: object }) {",
+            "  console.log(\"Child render\");",
+            "  return <div style={style}>hi</div>;",
+            "});",
+            "",
+            "function Parent() {",
+            "  const [n, setN] = useState(0);",
+            "  const style = useMemo(() => ({ color: \"red\" }), []);",
+            "  return (",
+            "    <>",
+            "      <button onClick={() => setN(n + 1)}>{n}</button>",
+            "      <Child style={style} />",
+            "    </>",
+            "  );",
+            "}"
+          ],
           "question": "With `style` wrapped in useMemo([]), does clicking the button re-render Child?",
           "answer": "No — Child does not re-render",
           "acceptable": ["no", "no, it does not re-render", "child renders only once", "it stays memoized", "no it doesn't log again"],

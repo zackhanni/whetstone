@@ -26,6 +26,8 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ✅ Local-first progress tracking — dashboard, per-track/unit bars, "continue where you left off"
 - ⬜ **Swipe feed** — a third study mode (alongside Browse + Drill) for micro-learning. Design note in "Planned features" below; build later.
 - ✅ **Tags & interest filtering** — validated multi-parent taxonomy (`learning/taxonomy.ts`), rolled-up chips on cards, and an interest filter that soft-reorders the catalog (PR #9). Design record: `docs/tags-design.md`.
+- ✅ **Lesson structure (2026-10-17, schema v3)** — every unit has 2–5 `objectives` (shown at the top) and official-docs `sources` (shown as "Further reading"); challenge title + acceptance criteria live only in meta.json (the app renders them; READMEs hold the problem + collapsible hints); multi-line `code` is an array of lines; fill-blank answers match ignoring case/whitespace/quotes; inline Markdown renders in prompts and options; track order in `content/catalog.json`; validator moved to `learning/validate-content.ts` with a test per check; "Flag" links open `lesson-feedback` GitHub issues for `/improve-lesson`.
+- ⬜ **Content accuracy pass** — 47 findings from the sources backfill in `docs/content-review.md` (version drift, claims the docs contradict, internal contradictions). Do this before writing new units on the same topics.
 - ✅ **Authoring-system hardening (2026-10-17)** — challenge graders run headlessly in `pnpm check` (starter must fail, solution must pass); schema v2 (`.strict()` objects, dead fields removed, quiz answers must name real options, block order checked); validator checks slugs vs folders, unlisted unit folders, globally unique unit slugs, reading-file rules, and every challenge folder; challenges may declare pinned `dependencies`.
 
 ### Phase 2 — Multi-user
@@ -34,7 +36,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - ⬜ Progress tracking (per user, per block) — key it by **unit slug alone** (`pnpm validate` has required unit slugs to be unique across tracks since 2026-10-17), not today's `track/unit`, so moving a unit to another track keeps its progress
 - ⬜ Ratings on examples/questions → rate-to-reorder
 - ⬜ Issue reports + comments on lessons
-- ⬜ Self-improvement loop wired to real feedback (`/improve-lesson`)
+- 🔨 Self-improvement loop wired to real feedback — ✅ "Flag" links open `lesson-feedback` issues that `/improve-lesson` reads (2026-10-17); ⬜ ratings and in-app comments need accounts
 
 ## Content tracks (the learning backlog)
 

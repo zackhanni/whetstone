@@ -1,10 +1,22 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "choosing-where-state-lives",
   "title": "Choosing where state lives",
   "skills": ["react", "state-management", "context", "zustand", "tanstack-query", "architecture", "frontend"],
   "difficulty": "advanced",
   "estimatedMinutes": 30,
+  "objectives": [
+    "Choose the smallest home for state: lift to a common parent first, and use the URL for shareable state",
+    "Spot fetched data that belongs in a useQuery cache, not in useState or a client store",
+    "Predict that every Context consumer re-renders on a new value, and explain how store selectors avoid it",
+    "Fix a provider's fresh value object with useMemo and useCallback so unrelated updates skip consumers"
+  ],
+  "sources": [
+    { "title": "React docs: Sharing State Between Components", "url": "https://react.dev/learn/sharing-state-between-components" },
+    { "title": "React docs: useContext", "url": "https://react.dev/reference/react/useContext" },
+    { "title": "React docs: Choosing the State Structure", "url": "https://react.dev/learn/choosing-the-state-structure" },
+    { "title": "TanStack Query docs: Overview", "url": "https://tanstack.com/query/latest/docs/framework/react/overview" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
     {
@@ -75,7 +87,10 @@
         {
           "id": "memoize-context-value",
           "prompt": "Stop this provider from re-rendering every consumer on each render by giving the value a stable identity.",
-          "code": "const value = ___(() => ({ user, logout }), [user, logout]);\nreturn <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;",
+          "code": [
+            "const value = ___(() => ({ user, logout }), [user, logout]);",
+            "return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;"
+          ],
           "blanks": [{ "id": "b1", "accept": ["useMemo"] }],
           "explanation": "An inline object literal is a new identity every render, so every consumer re-renders. useMemo pins the identity to its deps, so consumers re-render only when user or logout actually changes. Stabilize the functions with useCallback too."
         },
@@ -94,7 +109,25 @@
       "snippets": [
         {
           "id": "unrelated-field-rerender",
-          "code": "const Ctx = createContext(null);\n\nfunction Provider({ children }) {\n  const [count, setCount] = useState(0);\n  const [name, setName] = useState(\"Ana\");\n  return (\n    <Ctx.Provider value={{ count, setCount, name, setName }}>\n      {children}\n    </Ctx.Provider>\n  );\n}\n\nfunction CountLabel() {\n  const { count } = useContext(Ctx);\n  console.log(\"CountLabel render\");\n  return <span>{count}</span>;\n}",
+          "code": [
+            "const Ctx = createContext(null);",
+            "",
+            "function Provider({ children }) {",
+            "  const [count, setCount] = useState(0);",
+            "  const [name, setName] = useState(\"Ana\");",
+            "  return (",
+            "    <Ctx.Provider value={{ count, setCount, name, setName }}>",
+            "      {children}",
+            "    </Ctx.Provider>",
+            "  );",
+            "}",
+            "",
+            "function CountLabel() {",
+            "  const { count } = useContext(Ctx);",
+            "  console.log(\"CountLabel render\");",
+            "  return <span>{count}</span>;",
+            "}"
+          ],
           "question": "CountLabel reads only `count`. If you call setName(\"Bob\") (count unchanged), does CountLabel re-render?",
           "answer": "Yes — CountLabel re-renders.",
           "acceptable": ["yes", "it re-renders", "re-renders", "yes it re-renders"],

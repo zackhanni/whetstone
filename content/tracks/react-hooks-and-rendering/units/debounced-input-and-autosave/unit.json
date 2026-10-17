@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "debounced-input-and-autosave",
   "title": "Debounced input & autosave with timers",
   "skills": [
@@ -13,6 +13,19 @@
   ],
   "difficulty": "advanced",
   "estimatedMinutes": 30,
+  "objectives": [
+    "Write a debounce that keeps its setTimeout handle in a ref and cancels it on each keystroke",
+    "Predict the stale value a debounced save sends when it reads state instead of e.target.value",
+    "Write a blur commit that cancels the pending timer and dedupes against a lastCommitted ref",
+    "Explain why unmounting does not cancel timers, and write the empty-deps cleanup that does",
+    "Choose debounce or throttle from a requirement: once after activity stops vs capped rate during it"
+  ],
+  "sources": [
+    { "title": "MDN: setTimeout()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/setTimeout" },
+    { "title": "MDN: clearTimeout()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/clearTimeout" },
+    { "title": "React docs: useRef", "url": "https://react.dev/reference/react/useRef" },
+    { "title": "React docs: Synchronizing with Effects", "url": "https://react.dev/learn/synchronizing-with-effects" }
+  ],
   "blocks": [
     {
       "type": "reading",
@@ -152,7 +165,14 @@
         {
           "id": "schedule-commit",
           "prompt": "Complete the debounce: cancel any pending timer, then schedule a new commit 1s out. Store the handle so the next keystroke can cancel it.",
-          "code": "const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);\n\nconst scheduleCommit = (value: string): void => {\n  if (timer.current) ___(timer.current);\n  timer.___ = ___(() => onCommit(value), 1000);\n};",
+          "code": [
+            "const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);",
+            "",
+            "const scheduleCommit = (value: string): void => {",
+            "  if (timer.current) ___(timer.current);",
+            "  timer.___ = ___(() => onCommit(value), 1000);",
+            "};"
+          ],
           "blanks": [
             {
               "id": "d1",
@@ -185,9 +205,7 @@
             {
               "id": "e1",
               "accept": [
-                "() =>",
-                "()=>",
-                "() => "
+                "() =>"
               ]
             },
             {
@@ -202,7 +220,15 @@
         {
           "id": "blur-flush",
           "prompt": "Commit without ever saving the same value twice. Fill in the dedupe guard and the ref it compares against.",
-          "code": "const lastCommitted = useRef(title);\n\nconst commit = (value: string): void => {\n  if (value ___ lastCommitted.current) return;\n  lastCommitted.___ = value;\n  ___(value);\n};",
+          "code": [
+            "const lastCommitted = useRef(title);",
+            "",
+            "const commit = (value: string): void => {",
+            "  if (value ___ lastCommitted.current) return;",
+            "  lastCommitted.___ = value;",
+            "  ___(value);",
+            "};"
+          ],
           "blanks": [
             {
               "id": "f1",
@@ -234,7 +260,21 @@
       "snippets": [
         {
           "id": "let-handle-resets",
-          "code": "function Title({ onCommit }) {\n  const [text, setText] = useState(\"\");\n  let timer; // NOT a ref\n\n  const schedule = (value) => {\n    clearTimeout(timer);\n    timer = setTimeout(() => onCommit(value), 1000);\n  };\n\n  return <input value={text} onChange={(e) => { setText(e.target.value); schedule(e.target.value); }} />;\n}\n\n// The user types \"hello\" (5 keystrokes) quickly, then waits.",
+          "code": [
+            "function Title({ onCommit }) {",
+            "  const [text, setText] = useState(\"\");",
+            "  let timer; // NOT a ref",
+            "",
+            "  const schedule = (value) => {",
+            "    clearTimeout(timer);",
+            "    timer = setTimeout(() => onCommit(value), 1000);",
+            "  };",
+            "",
+            "  return <input value={text} onChange={(e) => { setText(e.target.value); schedule(e.target.value); }} />;",
+            "}",
+            "",
+            "// The user types \"hello\" (5 keystrokes) quickly, then waits."
+          ],
           "question": "How many times is onCommit called?",
           "answer": "5",
           "acceptable": [
@@ -247,7 +287,16 @@
         },
         {
           "id": "stale-text-in-handler",
-          "code": "const schedule = (/* no argument */) => {\n  clearTimeout(timer.current);\n  timer.current = setTimeout(() => onCommit(text), 1000); // reads state\n};\n\n<input value={text} onChange={(e) => { setText(e.target.value); schedule(); }} />\n\n// The user types \"hello\" quickly and stops.",
+          "code": [
+            "const schedule = (/* no argument */) => {",
+            "  clearTimeout(timer.current);",
+            "  timer.current = setTimeout(() => onCommit(text), 1000); // reads state",
+            "};",
+            "",
+            "<input value={text} onChange={(e) => { setText(e.target.value); schedule(); }} />",
+            "",
+            "// The user types \"hello\" quickly and stops."
+          ],
           "question": "What string does onCommit finally receive?",
           "answer": "hell",
           "acceptable": [
@@ -260,7 +309,11 @@
         },
         {
           "id": "no-unmount-cleanup",
-          "code": "// No cleanup effect. The user types one character into the rename field,\n// then immediately closes the modal (the component unmounts) 200ms later.\ntimer.current = setTimeout(() => onCommit(value), 1000);",
+          "code": [
+            "// No cleanup effect. The user types one character into the rename field,",
+            "// then immediately closes the modal (the component unmounts) 200ms later.",
+            "timer.current = setTimeout(() => onCommit(value), 1000);"
+          ],
           "question": "Does onCommit run, and when?",
           "answer": "yes, ~800ms after unmount",
           "acceptable": [

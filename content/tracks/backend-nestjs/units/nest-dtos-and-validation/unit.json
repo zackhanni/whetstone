@@ -1,10 +1,23 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "nest-dtos-and-validation",
   "title": "DTOs & validation: the contract at the edge",
   "skills": ["backend", "nestjs", "dto", "validation", "pipes", "architecture"],
   "difficulty": "core",
   "estimatedMinutes": 35,
+  "objectives": [
+    "Explain why a DTO class validates nothing until a ValidationPipe runs, and register it globally",
+    "Explain why whitelist blocks mass assignment, and fix a pipe to strip, coerce and report every error",
+    "Coerce path and query strings to numbers with ParseIntPipe or @Type(() => Number) in a query DTO",
+    "Write DTO rules for optional, nested and PATCH fields: @IsOptional, @ValidateNested + @Type, PartialType",
+    "Choose the service (409) for uniqueness checks and a field-by-field mapper to keep secrets out of responses"
+  ],
+  "sources": [
+    { "title": "NestJS docs: Validation", "url": "https://docs.nestjs.com/application/validation" },
+    { "title": "NestJS docs: Pipes", "url": "https://docs.nestjs.com/pipes" },
+    { "title": "class-validator README", "url": "https://github.com/typestack/class-validator" },
+    { "title": "class-transformer README", "url": "https://github.com/typestack/class-transformer" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-dto", "dir": "reading" },
     {
@@ -104,7 +117,11 @@
         {
           "id": "global-pipe",
           "prompt": "Make validation the application-wide default: strip undeclared properties and return DTO instances with coerced types.",
-          "code": "app.useGlobalPipes(\n  new ValidationPipe({ ___: true, ___: true }),\n);",
+          "code": [
+            "app.useGlobalPipes(",
+            "  new ValidationPipe({ ___: true, ___: true }),",
+            ");"
+          ],
           "blanks": [
             { "id": "a1", "accept": ["whitelist"] },
             { "id": "a2", "accept": ["transform"] }
@@ -114,7 +131,12 @@
         {
           "id": "optional-field",
           "prompt": "Allow `note` to be absent, but cap its length when present.",
-          "code": "@___()\n@IsString()\n@___(280)\nnote?: string;",
+          "code": [
+            "@___()",
+            "@IsString()",
+            "@___(280)",
+            "note?: string;"
+          ],
           "blanks": [
             { "id": "b1", "accept": ["IsOptional"] },
             { "id": "b2", "accept": ["MaxLength"] }
@@ -124,7 +146,11 @@
         {
           "id": "nested",
           "prompt": "Validate a nested address object with its own DTO.",
-          "code": "@___()\n@___(() => AddressDto)\naddress: AddressDto;",
+          "code": [
+            "@___()",
+            "@___(() => AddressDto)",
+            "address: AddressDto;"
+          ],
           "blanks": [
             { "id": "c1", "accept": ["ValidateNested"] },
             { "id": "c2", "accept": ["Type"] }
@@ -134,7 +160,15 @@
         {
           "id": "query-number",
           "prompt": "Coerce a query-string page number into an actual number inside a query DTO.",
-          "code": "export class ListOrdersQueryDto {\n  @IsOptional()\n  @___(() => Number)\n  @IsInt()\n  @Min(1)\n  page?: number;\n}",
+          "code": [
+            "export class ListOrdersQueryDto {",
+            "  @IsOptional()",
+            "  @___(() => Number)",
+            "  @IsInt()",
+            "  @Min(1)",
+            "  page?: number;",
+            "}"
+          ],
           "blanks": [{ "id": "d1", "accept": ["Type"] }],
           "explanation": "Query values are always strings, so `@IsInt()` alone would reject `?page=2`. `@Type(() => Number)` converts before validation — explicit, and preferable to `enableImplicitConversion` when you want to know exactly which fields get coerced."
         },

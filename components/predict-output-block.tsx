@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Markdown } from "./markdown";
+import { InlineMarkdown } from "./inline-markdown";
+import { FlagLink } from "./flag-link";
 import { WhetstoneButton } from "./whetstone-button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -52,9 +54,14 @@ function SnippetView({
       <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-sm text-slate-200 ring-1 ring-slate-800">
         {s.code}
       </pre>
-      <Label htmlFor={inputId} className="block font-medium text-slate-100">
-        {s.question}
-      </Label>
+      <div className="flex items-start justify-between gap-3">
+        <Label htmlFor={inputId} className="block font-medium text-slate-100">
+          <span>
+            <InlineMarkdown>{s.question}</InlineMarkdown>
+          </span>
+        </Label>
+        <FlagLink block={blockId} item={s.id} />
+      </div>
       <Textarea
         id={inputId}
         value={val}

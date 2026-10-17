@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeBlankAnswer } from "./grading";
 
 /**
  * The Whetstone content schema — the single source of truth for what a lesson is.
@@ -17,11 +18,33 @@ import { z } from "zod";
  * (see learning/PLAYBOOK.md → "The self-improvement loop"). Adding an optional field is not
  * breaking: every existing file still parses and still means the same thing, so no bump.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const Difficulty = z.enum(["intro", "core", "advanced"]);
 
 const Identified = z.object({ id: z.string().min(1) });
+
+/**
+ * A code snippet. Multi-line code is an array of lines — readable in the JSON and diffed line
+ * by line in review, where one escaped "\n"-joined string shows up as a single changed line.
+ * A one-liner may stay a plain string. Either way the app receives one "\n"-joined string.
+ */
+const Code = z
+  .union([
+    z.string().min(1).refine((s) => !s.includes("\n"), {
+      message: "multi-line code must be an array of lines, not one string with \\n",
+    }),
+    z.array(z.string()).min(2, "a one-line snippet is a plain string, not a 1-item array"),
+  ])
+  .transform((code) => (Array.isArray(code) ? code.join("\n") : code));
+
+/** An official documentation page the unit's claims were checked against. */
+const Source = z
+  .object({
+    title: z.string().min(1), // e.g. "React docs: useEffect"
+    url: z.string().url().startsWith("https://", "use an https:// link"),
+  })
+  .strict();
 
 /**
  * Reading — concept explainer, organized as examples grouped by tier.
@@ -47,9 +70,23 @@ export const QuizQuestion = Identified.extend({
 
 export const FillBlankItem = Identified.extend({
   prompt: z.string().min(1),
-  code: z.string().min(1), // contains `___` tokens, one per blank, in order
+  code: Code, // contains `___` tokens, one per blank, in order
   blanks: z
-    .array(z.object({ id: z.string().min(1), accept: z.array(z.string()).min(1) }).strict())
+    .array(
+      z
+        .object({
+          id: z.string().min(1),
+          // Compared after normalizeBlankAnswer (case, whitespace and quote style ignored).
+          accept: z
+            .array(
+              z.string().refine((a) => normalizeBlankAnswer(a) !== "", {
+                message: "an accepted answer can't be blank",
+              }),
+            )
+            .min(1),
+        })
+        .strict(),
+    )
     .min(1),
   explanation: z.string().min(1),
 }).strict();
@@ -59,7 +96,7 @@ export const FillBlankItem = Identified.extend({
  * `acceptable` phrasings, shown alongside it) and marks themselves right or wrong.
  */
 export const PredictItem = Identified.extend({
-  code: z.string().min(1),
+  code: Code,
   question: z.string().min(1),
   answer: z.string().min(1),
   acceptable: z.array(z.string()).optional(), // other phrasings that also count as correct
@@ -112,6 +149,9 @@ export const Unit = z
     skills: z.array(z.string()).min(1), // the source of truth for tags; tracks derive theirs
     difficulty: Difficulty,
     estimatedMinutes: z.number().int().positive(),
+    // "After this unit you can…" — each one a concrete, assessed skill (PLAYBOOK → Objectives).
+    objectives: z.array(z.string().min(1)).min(2).max(5),
+    sources: z.array(Source).min(1), // shown as "Further reading"; see PLAYBOOK → Sources
     blocks: z.array(Block).min(1), // ordered; difficulty escalates down the array
   })
   .strict()
@@ -128,6 +168,12 @@ export const Unit = z
     };
 
     uniqueIds(unit.blocks, ["blocks"], "block");
+
+    const urls = new Set<string>();
+    unit.sources.forEach((src, i) => {
+      if (urls.has(src.url)) issue(["sources", i, "url"], `source ${src.url} is listed twice`);
+      urls.add(src.url);
+    });
 
     // Rule 3, the part a machine can check: readings open the unit and challenges close it.
     // (Whether each assessment is harder than the last is still the author's judgment.)
@@ -161,6 +207,20 @@ export const Unit = z
         uniqueIds(b.prompts, ["blocks", i, "prompts"], "prompt");
         b.prompts.forEach((p, j) => {
           uniqueIds(p.blanks, ["blocks", i, "prompts", j, "blanks"], "blank");
+          // Two entries that normalize alike are one answer written twice.
+          p.blanks.forEach((blank, k) => {
+            const seen = new Map<string, string>();
+            for (const a of blank.accept) {
+              const key = normalizeBlankAnswer(a);
+              const first = seen.get(key);
+              if (first !== undefined)
+                issue(
+                  ["blocks", i, "prompts", j, "blanks", k, "accept"],
+                  `"${a}" duplicates "${first}" (case, whitespace and quote style are ignored)`,
+                );
+              else seen.set(key, a);
+            }
+          });
           const tokens = p.code.split("___").length - 1;
           if (tokens !== p.blanks.length) {
             issue(
@@ -192,8 +252,7 @@ export const Challenge = z
   .object({
     schemaVersion: z.literal(SCHEMA_VERSION),
     slug: z.string().min(1),
-    title: z.string().min(1),
-    prompt: z.string().min(1), // short; the long form lives in README.md
+    title: z.string().min(1), // shown as the challenge heading; README.md must not repeat it
     skills: z.array(z.string()).min(1),
     difficulty: Difficulty,
     estimatedMinutes: z.number().int().positive(),
@@ -214,6 +273,8 @@ export const Challenge = z
         z.string().regex(/^\d+\.\d+\.\d+$/, "pin an exact version, e.g. 5.62.0"),
       )
       .optional(),
+    // Shown as the "Your task" checklist; README.md must not repeat it. Each one is asserted by
+    // a test in the grader (PLAYBOOK → quality checklist).
     acceptanceCriteria: z.array(z.string()).min(1),
   })
   .strict()
@@ -227,7 +288,20 @@ export const Challenge = z
     }
   });
 
+/**
+ * content/catalog.json — the order tracks appear in on the home page. Like `track.units` for
+ * units, it is the only thing that makes a track visible: a track folder missing from it fails
+ * `pnpm validate`.
+ */
+export const Catalog = z
+  .object({
+    schemaVersion: z.literal(SCHEMA_VERSION),
+    tracks: z.array(z.string()).min(1),
+  })
+  .strict();
+
 export type Track = z.infer<typeof Track>;
 export type Unit = z.infer<typeof Unit>;
 export type Block = z.infer<typeof Block>;
 export type Challenge = z.infer<typeof Challenge>;
+export type Catalog = z.infer<typeof Catalog>;

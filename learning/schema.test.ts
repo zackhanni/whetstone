@@ -16,6 +16,8 @@ function unit() {
     skills: ["react"],
     difficulty: "core",
     estimatedMinutes: 10,
+    objectives: ["Explain one thing", "Fix another thing"],
+    sources: [{ title: "React docs", url: "https://react.dev/" }] as { title: string; url: string }[],
     blocks: [
       { type: "reading", id: "read" },
       {
@@ -121,6 +123,41 @@ describe("Unit schema", () => {
       u.blocks.splice(1, 0, u.blocks.pop()!); // challenge right after the reading
     });
     expect(issues.some((m) => m.includes("comes after a challenge"))).toBe(true);
+  });
+
+  it("joins an array of code lines into one string", () => {
+    const u = unit();
+    (u.blocks[2] as { prompts: { code: unknown }[] }).prompts[0].code = ["___ and", "___"];
+    const parsed = Unit.parse(u);
+    const fill = parsed.blocks[2] as { prompts: { code: string }[] };
+    expect(fill.prompts[0].code).toBe("___ and\n___");
+  });
+
+  it("rejects multi-line code written as one string", () => {
+    const issues = issuesAfter((u) => {
+      (u.blocks[2] as { prompts: { code: string }[] }).prompts[0].code = "___ and\n___";
+    });
+    expect(issues.some((m) => m.includes("must be an array of lines"))).toBe(true);
+  });
+
+  it("rejects accepted answers that differ only in whitespace, case or quotes", () => {
+    const issues = issuesAfter((u) => {
+      fillOf(u).prompts[0].blanks[0].accept = ["() =>", "()=>"];
+    });
+    expect(issues.some((m) => m.includes('"()=>" duplicates "() =>"'))).toBe(true);
+  });
+
+  it("requires 2 to 5 objectives", () => {
+    expect(issuesAfter((u) => (u.objectives = ["only one"])).length).toBeGreaterThan(0);
+    expect(issuesAfter((u) => (u.objectives = ["a", "b", "c", "d", "e", "f"])).length).toBeGreaterThan(0);
+  });
+
+  it("requires https sources, each listed once", () => {
+    expect(issuesAfter((u) => (u.sources = [])).length).toBeGreaterThan(0);
+    expect(issuesAfter((u) => (u.sources[0].url = "http://react.dev/"))).toContain("use an https:// link");
+    expect(issuesAfter((u) => u.sources.push({ ...u.sources[0] }))).toContain(
+      "source https://react.dev/ is listed twice",
+    );
   });
 
   it("rejects the v1 challenge `mode` field", () => {

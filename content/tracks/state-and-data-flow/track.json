@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "state-and-data-flow",
   "title": "State & Data Flow",
   "description": "Deciding where state should live and which tool should own it: local state, lifting, React Context, client stores (Zustand), server-state libraries (TanStack Query), and the URL — plus the re-render, SSR, and persistence trade-offs that decide between them.",

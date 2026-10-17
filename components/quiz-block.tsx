@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { Markdown } from "./markdown";
+import { InlineMarkdown } from "./inline-markdown";
+import { FlagLink } from "./flag-link";
 import { WhetstoneButton } from "./whetstone-button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -96,7 +98,9 @@ function QuestionView({
         ) : (
           <RadioGroupItem id={id} value={o.id} />
         )}
-        <span>{o.text}</span>
+        <span>
+          <InlineMarkdown>{o.text}</InlineMarkdown>
+        </span>
         {marker(sel, isAns)}
       </Label>
     );
@@ -104,7 +108,12 @@ function QuestionView({
 
   return (
     <div className="space-y-3">
-      <p className="font-medium text-slate-100">{q.prompt}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-medium text-slate-100">
+          <InlineMarkdown>{q.prompt}</InlineMarkdown>
+        </p>
+        <FlagLink block={blockId} item={q.id} />
+      </div>
 
       {multi ? (
         <div className="grid gap-2">

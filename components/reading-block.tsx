@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Markdown } from "./markdown";
 import { Accordion } from "./accordion";
+import { FlagLink } from "./flag-link";
 import type { ReadingExample, Tier } from "@/lib/content";
 
 const TIER_META: Record<Tier, { label: string; color: string }> = {
@@ -11,13 +12,16 @@ const TIER_META: Record<Tier, { label: string; color: string }> = {
   complex: { label: "Complex", color: "text-rose-400" },
 };
 
-function ExampleCard({ ex }: { ex: ReadingExample }) {
+function ExampleCard({ ex, blockId }: { ex: ReadingExample; blockId: string }) {
   // Content after a <!--more--> marker becomes optional "go deeper" reading.
   const [main, ...rest] = ex.body.split("<!--more-->");
   const more = rest.join("<!--more-->").trim();
   return (
     <div className="space-y-3">
-      <h4 className="font-semibold text-slate-100">{ex.title}</h4>
+      <div className="flex items-start justify-between gap-3">
+        <h4 className="font-semibold text-slate-100">{ex.title}</h4>
+        <FlagLink block={blockId} item={ex.id} />
+      </div>
       <Markdown>{main.trim()}</Markdown>
       {more && (
         <Accordion title="Go deeper (optional)">
@@ -28,7 +32,15 @@ function ExampleCard({ ex }: { ex: ReadingExample }) {
   );
 }
 
-function TierSection({ tier, examples }: { tier: Tier; examples: ReadingExample[] }) {
+function TierSection({
+  tier,
+  examples,
+  blockId,
+}: {
+  tier: Tier;
+  examples: ReadingExample[];
+  blockId: string;
+}) {
   const [idx, setIdx] = useState(0);
   if (!examples || examples.length === 0) return null;
   const meta = TIER_META[tier];
@@ -65,16 +77,22 @@ function TierSection({ tier, examples }: { tier: Tier; examples: ReadingExample[
           </div>
         )}
       </div>
-      <ExampleCard ex={examples[i]} />
+      <ExampleCard ex={examples[i]} blockId={blockId} />
     </div>
   );
 }
 
-export function ReadingBlock({ readings }: { readings: Record<Tier, ReadingExample[]> }) {
+export function ReadingBlock({
+  blockId,
+  readings,
+}: {
+  blockId: string;
+  readings: Record<Tier, ReadingExample[]>;
+}) {
   return (
     <div className="space-y-4">
       {(["simple", "medium", "complex"] as Tier[]).map((t) => (
-        <TierSection key={t} tier={t} examples={readings[t]} />
+        <TierSection key={t} tier={t} examples={readings[t]} blockId={blockId} />
       ))}
     </div>
   );

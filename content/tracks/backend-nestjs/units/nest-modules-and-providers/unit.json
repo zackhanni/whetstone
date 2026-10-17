@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "nest-modules-and-providers",
   "title": "Modules, providers & the injector",
   "skills": [
@@ -12,6 +12,18 @@
   ],
   "difficulty": "intro",
   "estimatedMinutes": 25,
+  "objectives": [
+    "Fix a 'Nest can't resolve dependencies' error with exports and imports, and say what @Global() costs",
+    "Predict instance sharing: one singleton for all consumers and requests, two from duplicate providers",
+    "Inject an interface-typed dependency with a Symbol token and @Inject, and swap in a fake for tests",
+    "Choose useFactory with inject for async setup, and keep connection work out of constructors"
+  ],
+  "sources": [
+    { "title": "NestJS docs: Modules", "url": "https://docs.nestjs.com/modules" },
+    { "title": "NestJS docs: Custom providers", "url": "https://docs.nestjs.com/fundamentals/custom-providers" },
+    { "title": "NestJS docs: Injection scopes", "url": "https://docs.nestjs.com/fundamentals/injection-scopes" },
+    { "title": "NestJS docs: Lifecycle events", "url": "https://docs.nestjs.com/fundamentals/lifecycle-events" }
+  ],
   "blocks": [
     {
       "type": "reading",
@@ -175,7 +187,15 @@
         {
           "id": "export-provider",
           "prompt": "Let another module inject `OrdersService` while keeping `OrdersRepository` private to this module.",
-          "code": "@Module({\n  imports: [DatabaseModule],\n  controllers: [OrdersController],\n  providers: [OrdersService, OrdersRepository],\n  ___: [OrdersService],\n})\nexport class OrdersModule {}",
+          "code": [
+            "@Module({",
+            "  imports: [DatabaseModule],",
+            "  controllers: [OrdersController],",
+            "  providers: [OrdersService, OrdersRepository],",
+            "  ___: [OrdersService],",
+            "})",
+            "export class OrdersModule {}"
+          ],
           "blanks": [
             {
               "id": "a1",
@@ -189,7 +209,14 @@
         {
           "id": "custom-token",
           "prompt": "Inject an implementation behind an interface, using an explicit symbol token.",
-          "code": "export const MAILER = Symbol(\"MAILER\");\n\n@Injectable()\nexport class SignupService {\n  constructor(@___(MAILER) private readonly mailer: Mailer) {}\n}",
+          "code": [
+            "export const MAILER = Symbol(\"MAILER\");",
+            "",
+            "@Injectable()",
+            "export class SignupService {",
+            "  constructor(@___(MAILER) private readonly mailer: Mailer) {}",
+            "}"
+          ],
           "blanks": [
             {
               "id": "b1",
@@ -203,7 +230,17 @@
         {
           "id": "factory-inject",
           "prompt": "Build a provider asynchronously from another provider.",
-          "code": "{\n  provide: \"REDIS\",\n  ___: async (config: ConfigService) => {\n    const client = createClient({ url: config.get(\"REDIS_URL\") });\n    await client.connect();\n    return client;\n  },\n  ___: [ConfigService],\n}",
+          "code": [
+            "{",
+            "  provide: \"REDIS\",",
+            "  ___: async (config: ConfigService) => {",
+            "    const client = createClient({ url: config.get(\"REDIS_URL\") });",
+            "    await client.connect();",
+            "    return client;",
+            "  },",
+            "  ___: [ConfigService],",
+            "}"
+          ],
           "blanks": [
             {
               "id": "c1",
@@ -223,7 +260,14 @@
         {
           "id": "override-in-test",
           "prompt": "Replace a real dependency with a fake in a unit test, using the same token the injector uses.",
-          "code": "const moduleRef = await Test.createTestingModule({\n  providers: [\n    OrdersService,\n    { ___: PricingService, ___: { quote: () => 100 } },\n  ],\n}).compile();",
+          "code": [
+            "const moduleRef = await Test.createTestingModule({",
+            "  providers: [",
+            "    OrdersService,",
+            "    { ___: PricingService, ___: { quote: () => 100 } },",
+            "  ],",
+            "}).compile();"
+          ],
           "blanks": [
             {
               "id": "d1",
@@ -248,7 +292,18 @@
       "snippets": [
         {
           "id": "singleton-shared",
-          "code": "@Injectable()\nclass CounterService {\n  private hits = 0;\n  bump() { return ++this.hits; }\n}\n\n// CounterService is in ONE module's providers; two controllers inject it.\n// Request 1 hits ControllerA -> counter.bump()\n// Request 2 hits ControllerB -> counter.bump()\n// Request 3 hits ControllerA -> counter.bump()",
+          "code": [
+            "@Injectable()",
+            "class CounterService {",
+            "  private hits = 0;",
+            "  bump() { return ++this.hits; }",
+            "}",
+            "",
+            "// CounterService is in ONE module's providers; two controllers inject it.",
+            "// Request 1 hits ControllerA -> counter.bump()",
+            "// Request 2 hits ControllerB -> counter.bump()",
+            "// Request 3 hits ControllerA -> counter.bump()"
+          ],
           "question": "What do the three calls return?",
           "answer": "1, 2, 3",
           "acceptable": [
@@ -259,7 +314,21 @@
         },
         {
           "id": "duplicate-registration",
-          "code": "@Injectable()\nclass CacheService {\n  store = new Map<string, string>();\n}\n\n@Module({ providers: [CacheService, AService], exports: [AService] })\nclass AModule {}\n\n@Module({ providers: [CacheService, BService], exports: [BService] })\nclass BModule {}\n\n// AService: this.cache.store.set(\"k\", \"v\")\n// then BService: this.cache.store.get(\"k\")",
+          "code": [
+            "@Injectable()",
+            "class CacheService {",
+            "  store = new Map<string, string>();",
+            "}",
+            "",
+            "@Module({ providers: [CacheService, AService], exports: [AService] })",
+            "class AModule {}",
+            "",
+            "@Module({ providers: [CacheService, BService], exports: [BService] })",
+            "class BModule {}",
+            "",
+            "// AService: this.cache.store.set(\"k\", \"v\")",
+            "// then BService: this.cache.store.get(\"k\")"
+          ],
           "question": "What does BService read back?",
           "answer": "undefined",
           "acceptable": [
@@ -269,7 +338,17 @@
         },
         {
           "id": "constructor-vs-oninit",
-          "code": "@Injectable()\nclass DbService implements OnModuleInit {\n  ready = false;\n  constructor() { this.connect(); }          // async, not awaited\n  async connect() { await sleep(50); this.ready = true; }\n  async onModuleInit() { console.log(\"init:\", this.ready); }\n}\n\n// A controller handles a request immediately after boot and logs `db.ready`.",
+          "code": [
+            "@Injectable()",
+            "class DbService implements OnModuleInit {",
+            "  ready = false;",
+            "  constructor() { this.connect(); }          // async, not awaited",
+            "  async connect() { await sleep(50); this.ready = true; }",
+            "  async onModuleInit() { console.log(\"init:\", this.ready); }",
+            "}",
+            "",
+            "// A controller handles a request immediately after boot and logs `db.ready`."
+          ],
           "question": "What does onModuleInit log, and why is the constructor version unsafe?",
           "answer": "init: false",
           "acceptable": [

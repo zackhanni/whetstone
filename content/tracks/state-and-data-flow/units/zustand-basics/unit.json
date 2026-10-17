@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "zustand-basics",
   "title": "Zustand basics: create, selectors, set, persist",
   "skills": [
@@ -12,6 +12,19 @@
   ],
   "difficulty": "core",
   "estimatedMinutes": 30,
+  "objectives": [
+    "Create a store with create() and use getState/setState outside React, including resets between tests",
+    "Predict selector re-renders: a primitive compares by Object.is, while a fresh object needs useShallow",
+    "Predict set()'s one-level merge, and use functional set when the next value depends on the current one",
+    "Configure persist with name and partialize, and render persisted values only after mount under SSR",
+    "Write a store hook on useSyncExternalStore that re-renders only when the selected slice changes"
+  ],
+  "sources": [
+    { "title": "Zustand docs: create", "url": "https://zustand.docs.pmnd.rs/reference/apis/create" },
+    { "title": "Zustand docs: Prevent rerenders with useShallow", "url": "https://zustand.docs.pmnd.rs/learn/guides/prevent-rerenders-with-use-shallow" },
+    { "title": "Zustand docs: Persisting store data", "url": "https://zustand.docs.pmnd.rs/reference/integrations/persisting-store-data" },
+    { "title": "React docs: useSyncExternalStore", "url": "https://react.dev/reference/react/useSyncExternalStore" }
+  ],
   "blocks": [
     {
       "type": "reading",
@@ -199,7 +212,12 @@
         {
           "id": "create-store",
           "prompt": "Create a counter store whose increment reads the previous value.",
-          "code": "export const useCounter = ___<CounterState>((set) => ({\n  count: 0,\n  inc: () => ___((s) => ({ count: s.count + 1 })),\n}));",
+          "code": [
+            "export const useCounter = ___<CounterState>((set) => ({",
+            "  count: 0,",
+            "  inc: () => ___((s) => ({ count: s.count + 1 })),",
+            "}));"
+          ],
           "blanks": [
             {
               "id": "z1",
@@ -233,7 +251,10 @@
         {
           "id": "outside-react",
           "prompt": "Read and write the store from plain, non-React code (a test, an event handler in a module).",
-          "code": "useCounter.___().inc();\nuseCounter.___({ count: 0 });",
+          "code": [
+            "useCounter.___().inc();",
+            "useCounter.___({ count: 0 });"
+          ],
           "blanks": [
             {
               "id": "z4",
@@ -253,7 +274,14 @@
         {
           "id": "persist-config",
           "prompt": "Persist only the theme under a named storage key.",
-          "code": "create<Settings>()(\n  ___(\n    (set) => ({ theme: \"system\", setTheme: (t) => set({ theme: t }) }),\n    { name: \"whetstone-settings\", ___: (s) => ({ theme: s.theme }) },\n  ),\n);",
+          "code": [
+            "create<Settings>()(",
+            "  ___(",
+            "    (set) => ({ theme: \"system\", setTheme: (t) => set({ theme: t }) }),",
+            "    { name: \"whetstone-settings\", ___: (s) => ({ theme: s.theme }) },",
+            "  ),",
+            ");"
+          ],
           "blanks": [
             {
               "id": "z6",
@@ -278,7 +306,17 @@
       "snippets": [
         {
           "id": "object-selector-rerender",
-          "code": "const useStore = create((set) => ({ count: 0, name: \"Ana\", setName: (name) => set({ name }) }));\n\nfunction CountLabel() {\n  const { count } = useStore((s) => ({ count: s.count }));\n  console.log(\"CountLabel render\");\n  return <span>{count}</span>;\n}\n\n// Somewhere else: setName(\"Bob\") — count never changes.",
+          "code": [
+            "const useStore = create((set) => ({ count: 0, name: \"Ana\", setName: (name) => set({ name }) }));",
+            "",
+            "function CountLabel() {",
+            "  const { count } = useStore((s) => ({ count: s.count }));",
+            "  console.log(\"CountLabel render\");",
+            "  return <span>{count}</span>;",
+            "}",
+            "",
+            "// Somewhere else: setName(\"Bob\") — count never changes."
+          ],
           "question": "Does CountLabel re-render?",
           "answer": "yes",
           "acceptable": [
@@ -291,7 +329,15 @@
         },
         {
           "id": "nested-set-clobbers",
-          "code": "const useStore = create((set) => ({\n  filters: { status: \"open\", page: 2 },\n  setStatus: (status) => set({ filters: { status } }),\n}));\n\nuseStore.getState().setStatus(\"closed\");\nconsole.log(useStore.getState().filters);",
+          "code": [
+            "const useStore = create((set) => ({",
+            "  filters: { status: \"open\", page: 2 },",
+            "  setStatus: (status) => set({ filters: { status } }),",
+            "}));",
+            "",
+            "useStore.getState().setStatus(\"closed\");",
+            "console.log(useStore.getState().filters);"
+          ],
           "question": "What is logged?",
           "answer": "{ status: 'closed' }",
           "acceptable": [
@@ -304,7 +350,14 @@
         },
         {
           "id": "stale-set-object",
-          "code": "const inc = () => {\n  const { count } = useCounter.getState();\n  useCounter.setState({ count: count + 1 });\n};\n\n// count is 0. Two clicks fire inc() back to back, both reading before either writes.",
+          "code": [
+            "const inc = () => {",
+            "  const { count } = useCounter.getState();",
+            "  useCounter.setState({ count: count + 1 });",
+            "};",
+            "",
+            "// count is 0. Two clicks fire inc() back to back, both reading before either writes."
+          ],
           "question": "What is count afterwards, and what would the functional form give?",
           "answer": "1 (functional form gives 2)",
           "acceptable": [

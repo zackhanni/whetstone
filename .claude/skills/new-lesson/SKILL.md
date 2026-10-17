@@ -19,11 +19,16 @@ then replace the substance. Don't re-derive the conventions from the schema.
 0. **Place it, and check it isn't already taught.** Pick the track (see `content/tracks/`).
    **New track:** before writing any unit, outline every planned unit in `docs/ROADMAP.md`, one
    line each saying what it teaches that its neighbours don't, then create `track.json` (it has no
-   `skills` — a track's tags are its units'). Add the unit slug to the track's ordered `units`
-   array; unit slugs must be unique across all tracks. **Read the sibling units' `unit.json`** —
-   skim their quiz `id`s and reading titles so the new unit sharpens a distinct skill instead of
-   restating a neighbour. State the one sentence of "what this unit does that the others don't"
-   before writing.
+   `skills` — a track's tags are its units') and add the track to `content/catalog.json` where it
+   belongs in the learning order. Add the unit slug to the track's ordered `units` array; unit
+   slugs must be unique across all tracks.
+   **Objectives first.** Read the sibling units' `objectives`, then write this unit's 2–5
+   ("After this unit you can…", each starting with a concrete verb). They must not restate a
+   neighbour's, and everything you write next exists to teach or test one of them.
+   **Sources next.** Find the official docs pages the unit will be checked against (react.dev,
+   MDN, docs.nestjs.com, the library's own docs; no blogs) and confirm each URL loads. Keep them
+   open while writing: check every claim against them, and name the version wherever behaviour
+   depends on it.
    **Tags first, in the same step.** Every `skills` value must exist in `learning/taxonomy.ts`
    or `pnpm validate` fails. Add missing tags with real `parents` (kebab-case, except an API name
    such as `useEffect`; place new roots per `docs/tags-design.md` → "Planned dimensions"). If that
@@ -36,7 +41,9 @@ then replace the substance. Don't re-derive the conventions from the schema.
    code. Put an optional aside after a `<!--more-->` line ("Go deeper").
 2. **Recognition + recall.** Add a `quiz` block (a list of questions; distractors = real
    misconceptions) and a `fill-blank` block (a list of prompts; one concept per blank).
-   Every item gets a stable `id` and a teaching `explanation`.
+   Every item gets a stable `id` and a teaching `explanation`, and tests one of the objectives.
+   Multi-line `code` is an array of lines. Fill-blank answers are matched ignoring case,
+   whitespace and quote style, so list only genuinely different answers.
 3. **Surprise.** Add a `predict-output` block (a list of snippets) only where runtime
    behavior defies intuition (stale closures, batching, ordering). Skip it if the topic has
    no such trap — a judgment/decision unit that ends at `fill-blank` is a complete unit. It is
@@ -46,7 +53,10 @@ then replace the substance. Don't re-derive the conventions from the schema.
    gate below. Otherwise author the `challenge` under `content/challenges/<slug>/` following
    the **In-browser challenge contract** in `learning/PLAYBOOK.md` (read it — the Sandpack
    conventions are specific). In short: `meta.json` (`runner: "in-browser"`,
-   `entry: "<Component>.tsx"`), `README.md`, the editable buggy `<Component>.tsx`, `App.tsx`
+   `entry: "<Component>.tsx"`, the learner-facing `title` and `acceptanceCriteria`),
+   `README.md` (the problem, then an optional `## Hints` section — no title, checklist, "Your
+   task" or "Running" section; the app renders those from meta.json), the editable buggy
+   `<Component>.tsx`, `App.tsx`
    (preview root), `<Component>.test.tsx` (**jest-style** — no `vitest` import, plain matchers,
    DOM via `data-testid`), and `solution.tsx` (same export, fixed; that exact filename even
    when the entry is `.ts`). Four traps worth pre-empting: the sandbox provides **only React

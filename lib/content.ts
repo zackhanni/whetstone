@@ -1,7 +1,14 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { cache } from "react";
-import { Track as TrackSchema, Unit as UnitSchema, Challenge as ChallengeSchema, type Unit, type Challenge } from "@/learning/schema";
+import {
+  Catalog as CatalogSchema,
+  Track as TrackSchema,
+  Unit as UnitSchema,
+  Challenge as ChallengeSchema,
+  type Unit,
+  type Challenge,
+} from "@/learning/schema";
 import { parseFrontmatter } from "./frontmatter";
 
 const ROOT = process.cwd();
@@ -155,24 +162,13 @@ export async function listUnits(): Promise<{ track: string; unit: string }[]> {
 }
 
 /**
- * Track slugs (directory names) only — no `track.json` parse. For callers that just need to
- * enumerate tracks (home index, static params); pair with `loadTrack` for the detail. Filters
- * to directories so a stray file under content/tracks/ isn't treated as a track.
+ * Track slugs in display order, from content/catalog.json — no `track.json` parse. For callers
+ * that just need to enumerate tracks (home index, static params); pair with `loadTrack` for the
+ * detail. `pnpm validate` guarantees every listed track has a folder and every folder is listed.
  */
 export async function listTrackSlugs(): Promise<string[]> {
-  const tracksDir = path.join(ROOT, "content", "tracks");
-  try {
-    const entries = await fs.readdir(tracksDir, { withFileTypes: true });
-    return entries
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
-      .sort();
-  } catch (e) {
-    // Only a missing tracks/ dir means "no tracks"; surface permission/transient errors so a
-    // broken build fails loudly instead of silently emptying the catalog (matches loadReadingTiers).
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    return [];
-  }
+  const catalog = CatalogSchema.parse(await readJson(path.join(ROOT, "content", "catalog.json")));
+  return catalog.tracks;
 }
 
 export type UnitSummary = {

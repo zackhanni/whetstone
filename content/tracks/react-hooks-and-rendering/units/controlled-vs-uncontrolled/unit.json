@@ -1,10 +1,21 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "controlled-vs-uncontrolled",
   "title": "Controlled vs uncontrolled inputs",
   "skills": ["react", "forms", "controlled-components", "refs", "state"],
   "difficulty": "core",
   "estimatedMinutes": 25,
+  "objectives": [
+    "Wire a controlled input by pairing value from state with an onChange that writes e.target.value",
+    "Predict what an input with value but no onChange does: a frozen field plus a React warning",
+    "Choose an uncontrolled input (defaultValue plus a ref) when you only need the value on submit",
+    "Spot the uncontrolled-to-controlled warning and fix it by keeping value defined from the first render"
+  ],
+  "sources": [
+    { "title": "React docs: <input>", "url": "https://react.dev/reference/react-dom/components/input" },
+    { "title": "React docs: Manipulating the DOM with Refs", "url": "https://react.dev/learn/manipulating-the-dom-with-refs" },
+    { "title": "React docs: useState", "url": "https://react.dev/reference/react/useState" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
     {
@@ -80,7 +91,13 @@
       "snippets": [
         {
           "id": "undefined-flip",
-          "code": "function NameField({ user }) {\n  // user starts as {} then updates to { name: \"Ada\" } after a fetch\n  const [name, setName] = useState(user.name);\n  return <input value={name} onChange={(e) => setName(e.target.value)} />;\n}",
+          "code": [
+            "function NameField({ user }) {",
+            "  // user starts as {} then updates to { name: \"Ada\" } after a fetch",
+            "  const [name, setName] = useState(user.name);",
+            "  return <input value={name} onChange={(e) => setName(e.target.value)} />;",
+            "}"
+          ],
           "question": "What warning does React log when `user.name` goes from undefined to a string?",
           "answer": "A component is changing an uncontrolled input to be controlled.",
           "acceptable": [
