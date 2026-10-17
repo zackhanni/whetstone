@@ -1,0 +1,41 @@
+---
+id: an-allow-list-the-browser-enforces
+title: CSP is an allow-list the browser enforces
+---
+
+The `xss` unit was about keeping attacker text out of HTML and script sinks. Content-Security-Policy
+(CSP) is the **second line**: a response header that tells the browser which scripts, styles,
+images and connections this page is allowed to use. If an injected payload slips through, the
+browser refuses to run it. MDN calls it "a backup in case the other defenses fail" — the server
+still sends the bad HTML; the browser just won't execute what the policy doesn't allow.
+
+A policy is a list of **directives** separated by semicolons. Each directive is a name followed by
+the sources it allows:
+
+```http
+Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-r4nd0m' https://js.stripe.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+```
+
+| Directive | Reads as |
+| --- | --- |
+| `default-src 'self'` | images, styles, fonts, connections and other fetches not listed below may come only from this page's own origin |
+| `script-src 'self' 'nonce-r4nd0m' https://js.stripe.com` | scripts from our origin, inline scripts carrying `nonce="r4nd0m"`, and scripts from Stripe |
+| `object-src 'none'` | no `<object>` or `<embed>` at all |
+| `base-uri 'none'` | the page may not use a `<base>` element |
+| `frame-ancestors 'none'` | no page, not even one of ours, may put this one in a frame |
+
+Two spelling rules: **keywords are quoted** (`'self'`, `'none'`, `'nonce-…'`), and **hosts and
+schemes are not** (`https://js.stripe.com`, `https:`). `self` without quotes would mean a host
+called "self".
+
+What this buys you against XSS: once a policy has `script-src` (or `default-src`) without
+`'unsafe-inline'`, the browser blocks inline `<script>` blocks that don't carry the nonce, inline
+event handlers like `onerror="…"` and `onclick="…"`, and `javascript:` URLs; `eval()` and its
+relatives are blocked too. The `<img src=x onerror=…>` payload from the previous unit lands in the
+page and does nothing.
+
+<!--more-->
+
+CSP should be sent on every response, not just the HTML document (MDN). The header is the normal
+delivery; a `<meta http-equiv="Content-Security-Policy">` tag works for some directives but not
+all of them — the complex tier covers which.

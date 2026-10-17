@@ -1,0 +1,48 @@
+---
+id: rolling-it-out
+title: Rolling a policy out without breaking production
+---
+
+An enforced policy that's wrong breaks the site: a blocked analytics loader, a payment iframe that
+never appears, a chunk that won't load. The way in is to **report first, enforce second**.
+
+**Report-Only.** The same policy sent under a different header name is evaluated but not enforced
+— MDN: "The policy is not enforced, but any violations are sent to the reporting endpoint
+specified in the policy."
+
+```http
+Reporting-Endpoints: csp-endpoint="https://example.com/csp-reports"
+Content-Security-Policy-Report-Only: script-src 'nonce-R' 'strict-dynamic'; object-src 'none'; base-uri 'none'; report-to csp-endpoint
+```
+
+`Reporting-Endpoints` names an endpoint; `report-to` in the policy points at it. Browsers `POST`
+reports as `application/reports+json` with `"type": "csp-violation"`. The older `report-uri`
+directive is deprecated, but MDN advises declaring both until `report-to` works everywhere —
+browsers that support `report-to` ignore `report-uri`. (MDN's compat data lists `report-to` support
+in Firefox only from version 149.)
+
+Both headers can be sent at once, and both are honoured: keep enforcing the policy you trust while
+the stricter one only reports. Fix or allow each legitimate violation the reports show; when only
+violations you intend to block are left, move the strict policy to the enforcing header.
+
+**More than one policy only ever tightens.** If a response carries two enforced CSP headers, a
+resource must pass **both**. MDN: adding policies "can only further restrict the capabilities of
+the protected resource". A CDN or platform that adds its own CSP header on top of yours can block
+what your policy allows.
+
+**The `<meta>` tag is a partial substitute.** The CSP spec: Report-Only isn't supported in a meta
+element, and "Neither are the `report-uri`, `frame-ancestors`, and `sandbox` directives". A
+`frame-ancestors 'none'` in a meta tag protects against nothing.
+
+**Test the policy where it actually runs.** The most common way to ship a broken policy is to set it
+only in production:
+
+```ts
+if (process.env.NODE_ENV === "production") res.setHeader("Content-Security-Policy", csp);
+```
+
+Every page then works in development, because no policy exists there; the inline script someone
+added last week is only blocked for real users. Frameworks also differ between modes — Next.js's
+development server needs `'unsafe-eval'` (React uses `eval` for debugging information) while its
+production build doesn't. Run the policy in development too (adding only what dev genuinely
+needs), and click through a local production build with the policy on before you ship it.

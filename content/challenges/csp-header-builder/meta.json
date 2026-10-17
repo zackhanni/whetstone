@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "csp-header-builder",
+  "title": "Fix the per-request CSP builder",
+  "skills": ["security", "csp", "xss"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "csp.ts",
+  "acceptanceCriteria": [
+    "`script-src` allows inline script only through `'nonce-…'` with this response's nonce, and contains no `'unsafe-inline'`",
+    "Two calls to `cspForRequest` return two different nonces",
+    "The policy has `object-src 'none'` and an explicit `base-uri` (`'none'` or `'self'`)",
+    "`'unsafe-eval'` is in `script-src` only when `dev` is `true`",
+    "The configured script and connect origins, `frame-ancestors 'none'` and `report-to` are still there",
+    "Nonces are base64 and carry at least 128 bits"
+  ]
+}

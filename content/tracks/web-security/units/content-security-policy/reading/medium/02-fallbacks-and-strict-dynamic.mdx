@@ -1,0 +1,53 @@
+---
+id: fallbacks-and-strict-dynamic
+title: What falls back to default-src, and what 'strict-dynamic' switches off
+---
+
+Two rules explain most "why is this blocked?" and "why is this *allowed*?" surprises.
+
+**1. A specific directive replaces `default-src`; it doesn't add to it.** `default-src` is the
+fallback for the *fetch* directives (`script-src`, `style-src`, `img-src`, `connect-src`,
+`font-src`, `object-src`, `frame-src`, …) — but only when they're absent. MDN: "If there are other
+directives specified, `default-src` does not influence them." So:
+
+```http
+Content-Security-Policy: default-src 'self'; script-src https://js.stripe.com
+```
+
+allows Stripe's script and **blocks your own `/app.js`**: `script-src` has no `'self'`, and
+`default-src 'self'` doesn't reach scripts any more. Each directive you write must list everything
+that kind of resource needs.
+
+The other half of the rule: directives that aren't fetch directives **don't fall back at all**.
+`base-uri`, `form-action` and `frame-ancestors` are unrestricted unless you state them — MDN's
+`frame-ancestors` page points out that even `default-src 'none'` "still allows the resource to be
+embedded by anyone".
+
+**2. `'strict-dynamic'` trades host lists for trust propagation.** With it in `script-src`, the
+spec says two things change:
+
+- scripts that a trusted (nonced or hashed) script creates with `createElement("script")` are
+  allowed, wherever they come from;
+- **host sources, scheme sources, `'self'` and `'unsafe-inline'` are ignored** for scripts.
+
+So in
+
+```http
+Content-Security-Policy: script-src 'nonce-R' 'strict-dynamic' https://js.stripe.com
+```
+
+`https://js.stripe.com` does nothing in a browser that supports `'strict-dynamic'`. A bare
+`<script src="https://js.stripe.com/v3/">` with no nonce is blocked; give that tag the nonce, or let
+an already-trusted script create it. Policies list those hosts anyway as the fallback for browsers
+without `'strict-dynamic'` — the spec's own example pairs it with `'unsafe-inline' https:` for that
+reason.
+
+The catch MDN and the spec both flag: trust now flows to whatever your trusted scripts load. If
+your code builds a script URL from something an attacker controls, `'strict-dynamic'` will let it
+run. The spec says to audit "uses of non-parser-inserted APIs" for exactly that.
+
+| Policy fragment | Your `/app.js` (no nonce) | Your inline script with `nonce="R"` | Injected inline `<script>` | Script a trusted script adds with `createElement` |
+| --- | --- | --- | --- | --- |
+| `script-src 'self'` | runs | blocked | blocked | only if its URL is on your origin |
+| `script-src 'self' 'unsafe-inline'` | runs | runs | **runs** | only if its URL is on your origin |
+| `script-src 'nonce-R' 'strict-dynamic'` | blocked (give it the nonce) | runs | blocked | runs, from any host |
