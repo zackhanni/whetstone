@@ -1,0 +1,76 @@
+---
+id: graphs-cte-first
+title: Graph questions — a recursive CTE first, a graph database when traversal is the product
+---
+
+Relationship questions of *known, shallow* depth are joins. Questions of *unknown* depth —
+"everyone in Ada's reporting line", "everything that depends on this package" — need recursion.
+PostgreSQL has it.
+
+## A tree: the org chart
+
+```sql
+-- employees(id, name, manager_id REFERENCES employees(id))
+WITH RECURSIVE reports AS (
+  SELECT id, name, 1 AS depth FROM employees WHERE manager_id = 1     -- start: Ada's direct reports
+  UNION ALL
+  SELECT e.id, e.name, r.depth + 1
+  FROM employees e JOIN reports r ON e.manager_id = r.id              -- step: their reports
+)
+SELECT name, depth FROM reports;
+-- Grace 1, Linus 1, Margaret 2, Ken 3
+```
+
+The non-recursive term seeds a working table; the recursive term is re-run against the rows found
+in the previous round until a round finds nothing. With an index on `manager_id`, each round can be
+a handful of index lookups.
+
+## A graph with cycles: who can Ada reach?
+
+```sql
+-- follows(follower, followee): 1→2, 2→3, 3→1, 3→4, 4→5
+WITH RECURSIVE reach AS (
+  SELECT followee AS person, 1 AS hops FROM follows WHERE follower = 1
+  UNION ALL
+  SELECT f.followee, r.hops + 1
+  FROM follows f JOIN reach r ON f.follower = r.person
+  WHERE r.hops < 3                                                     -- bound the depth
+) CYCLE person SET is_cycle USING path                                 -- PostgreSQL 14+
+SELECT DISTINCT person FROM reach WHERE person <> 1;                   -- 2, 3, 4
+```
+
+Real social graphs have cycles (1 → 2 → 3 → 1), and without a guard the recursion never ends. The
+`CYCLE` clause (added in PostgreSQL 14) tracks the path and stops a branch that revisits a node; a
+depth bound does the rest. The path starts at Ada's first follow, not at Ada, so the walk back to
+her (3 → 1) isn't flagged as a cycle — that's what `person <> 1` filters out.
+
+## Where recursion in SQL stops being enough
+
+Each round of recursion multiplies the rows by the average number of edges: with 200 follows per
+person, that's 200 rows at one hop, up to 40,000 at two and 8 million at three (paths, before
+`DISTINCT` collapses them). That fan-out is a property of the graph, not of SQL — any system that
+enumerates those paths faces it. What SQL adds is the cost per hop: each one is an index lookup and a
+join. The CTE is fine for trees (one parent each), dependency chains and bounded neighbourhoods. It
+gets painful when the *product* is traversal: recommendations from friends-of-friends, fraud rings
+linked through shared devices and cards, shortest paths through a network.
+
+That's what graph databases are built for. Neo4j stores relationships natively alongside nodes, so
+following one is a step along stored data rather than a join — each hop is cheaper, though the
+number of paths grows just the same. Cypher (as documented in the current Cypher manual) writes the
+traversal as a pattern:
+
+```text
+MATCH (ada:Person {name: 'Ada'})-[:FOLLOWS]->{1,3}(p:Person)
+WHERE p <> ada
+RETURN DISTINCT p.name
+```
+
+`{1,3}` is a quantified relationship — one to three hops — and Cypher has path-finding built in
+(`ALL SHORTEST` finds all shortest paths by hop count).
+
+## The cost of adding one
+
+A graph database is a second system: a second copy of the data to keep in sync with your main
+database, no shared transaction across the two, another thing to operate and back up. Reach for it
+when traversals of unknown depth are central and measured to hurt in SQL — not merely because the
+data has relationships. Foreign keys and joins handle relationships of known depth well.
