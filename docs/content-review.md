@@ -9,50 +9,6 @@ unit's sources before changing anything (the finder was an AI reading the docs, 
 wrong too), and delete the entry when its fix lands; the changelog line is the record. Paths are
 relative to the unit folder unless they start with `content/`.
 
-## react-hooks-and-rendering
-
-### use-state-and-functional-updates
-
-- `unit.json quiz-state/three-updates explanation`: says the result is 1 because 'React batches them'; per react.dev (State as a Snapshot) the 1 comes from every call reading the same snapshot, and batching only explains the single re-render (same conflation in reading/medium/01-batching.mdx and the use-state-fix-counter README)
-
-### use-effect
-
-- `unit.json predict-effects/effect-after-render explanation`: says effects 'fire AFTER paint'; react.dev useEffect caveats say an effect caused by an interaction (the click here) may run before the browser paints
-- `unit.json predict-effects/effect-after-render answer`: assumes no StrictMode; under StrictMode in development (React 18+) the first mount runs the effect twice
-- `reading/simple/01-derived-state.mdx`: 'React paints once with the old value' is stated as certain; react.dev only says it renders with the stale value, and whether that pass is painted depends on the trigger
-- `reading/complex/01-fetch-race.mdx`: calls setting state after unmount a 'leak'; React 18 removed that warning because it is usually harmless (the real leak is the uncancelled request)
-- `reading/complex/01-fetch-race.mdx`: 'In React Strict Mode (dev only), effects run twice on mount' does not name a version (React 18+)
-- `reading/complex/01-fetch-race.mdx`: rethrowing inside .catch to 'surface real errors' produces an unhandled promise rejection; it does not reach React or an error boundary
-
-### use-ref
-
-- `reading/simple/01-mutable-ref.mdx`: the Timer example does renders.current += 1 in the render body; react.dev says not to write ref.current during rendering, and StrictMode's double render makes the count unreliable
-- `reading/simple/02-dom-ref.mdx`: lists .focus() among things 'React has no declarative prop for'; `<input autoFocus>` focuses on mount
-- content/challenges/use-ref-focus-input: README says you can't focus declaratively, and the tests only check document.activeElement, so `<input autoFocus>` passes without a ref or effect
-- `reading/complex/01-latest-value-ref.mdx`: React 19.2 made useEffectEvent stable for exactly this case (the repo runs 19.2); the reading presents the ref as the fix without mentioning it
-
-### memoization
-
-- `reading/complex/01-usecallback-and-caveat.mdx + quiz-memoization/when-not-to-memo`: react.dev's memo/useMemo/useCallback pages now open with React Compiler (automatic memoization); the unit never mentions it
-- `reading/simple/01-usememo-expensive.mdx`: 'runs the factory once, caches the result' overstates the guarantee; React may discard the cache and StrictMode calls it twice in development
-- `content/challenges/memoization-stop-rerender/Child.tsx`: counts renders with renders.current += 1 during render; StrictMode (the Sandpack preview wraps App in it) can make the on-screen count disagree with the tests
-
-### controlled-vs-uncontrolled
-
-- `unit.json predict-warning/undefined-flip`: says the warning fires when user.name goes from undefined to a string after a fetch, but useState ignores initialState after the first render, so name stays undefined; the warning fires on the first keystroke instead
-- `reading/complex/01-controlled-uncontrolled-warning.mdx`: same error; 'value={undefined} on render 1 -> value="Ada" on render 2' cannot happen with useState(user.name), and the useState(user.name ?? "") fix silences the warning but the loaded name never appears (same in fill-controlled/keep-value-defined)
-
-### debounced-input-and-autosave
-
-- `reading/complex/01-flush-race-and-throttle.mdx`: latest.current = { text, commit } is written during render (react.dev says not to), and calls it 'the same pattern you saw in the useRef unit', which refreshes the ref inside an effect
-- `unit.json quiz-debounce/unmount-cleanup + predict-debounce/no-unmount-cleanup`: 'React no longer warns' does not name the version (React 18)
-
-### untangling-effects
-
-- `reading/complex/01-dep-arrays-strict-mode-and-extraction.mdx`: latest.current = onCommit is written during render (react.dev says not to); React 19.2's stable useEffectEvent is the documented tool here
-- `unit.json quiz-untangle/stale-closure-deps`: presents a ref 'refreshed on every render' as correct without saying where to refresh it or mentioning useEffectEvent
-- `unit.json predict-untangle/listener-accumulates`: answer 3 assumes no StrictMode; under StrictMode in development the uncleaned effect runs twice and the span shows 5
-
 ## backend-nestjs
 
 ### nest-vocabulary
