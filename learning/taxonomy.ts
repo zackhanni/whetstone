@@ -332,6 +332,17 @@ export const TAXONOMY: TagNode[] = [
   { slug: "jsonb", label: "jsonb", parents: ["postgres", "data-modeling"] },
   { slug: "document-databases", label: "Document Databases", parents: ["data-modeling"] },
   { slug: "graph-databases", label: "Graph Databases", parents: ["data-modeling"] },
+
+  // ── testing-and-quality ──
+  { slug: "testing", label: "Testing", parents: [] },
+  { slug: "test-strategy", label: "Test Strategy", parents: ["testing"] },
+  { slug: "assertions", label: "Assertions & Matchers", parents: ["testing"] },
+  { slug: "test-doubles", label: "Test Doubles", parents: ["testing"] },
+  { slug: "testability", label: "Testability", parents: ["testing", "architecture"] },
+  { slug: "vitest", label: "Vitest", parents: ["testing"] },
+  { slug: "coverage", label: "Code Coverage", parents: ["testing"] },
+  { slug: "e2e-testing", label: "End-to-End Testing", parents: ["testing"] },
+  { slug: "playwright", label: "Playwright", parents: ["e2e-testing"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
