@@ -1,0 +1,54 @@
+---
+id: maps-at-the-edges
+title: Maps at the edges — JSON, identity keys, WeakMap
+---
+
+## A Map doesn't survive JSON
+
+`JSON.stringify` only visits an object's own enumerable properties, and a `Map` keeps its entries
+somewhere else. So a `Map` (or a `Set`) serialises to `{}` — no error, no warning:
+
+```js
+JSON.stringify({ totals: new Map([["a", 1]]) }); // '{"totals":{}}'
+```
+
+This bites wherever data crosses a JSON boundary: `localStorage`, a `fetch` body, an API response,
+a cache. Send the pairs instead and rebuild on the other side:
+
+```js
+const json = JSON.stringify([...customersById]);  // '[[7,{"id":7,"name":"Ada"}]]'
+const restored = new Map(JSON.parse(json));       // keys are numbers again
+restored.get(7);                                  // { id: 7, name: "Ada" }
+```
+
+The tempting round trip through an object loses the key types: save
+`JSON.stringify(Object.fromEntries(customersById))`, load with
+`new Map(Object.entries(JSON.parse(saved)))`, and `get(7)` is `undefined` while `get("7")` works —
+object keys are strings. Arrays of pairs keep numbers as numbers.
+
+## Object keys need the same object
+
+`Map.groupBy(orders, (o) => o.customer)` groups by customer *object* — and to read a group back
+you need that same object reference. Refetch the customers, or `structuredClone` them, and every
+`get` misses even though the data is identical. Key by the `id` unless you genuinely hold the
+reference (DOM nodes, class instances, objects you created).
+
+## WeakMap, in one line
+
+A `WeakMap` takes only objects (or non-registered symbols) as keys, doesn't keep a key alive, and
+can't be iterated or counted — use it to hang cached data off an object you don't own, so the cache
+entry disappears when the object is garbage-collected.
+
+<!--more-->
+
+## Newer APIs, and their versions
+
+- **Set methods** — `a.union(b)`, `intersection`, `difference`, `symmetricDifference`,
+  `isSubsetOf`, `isSupersetOf`, `isDisjointFrom`: ES2025, Baseline since June 2024, Node 22+.
+- **`Object.groupBy` / `Map.groupBy`** — ES2024. TypeScript has declared them since TS 5.4 under
+  `lib: esnext`, and since TS 5.7 under `lib: es2024`. With a `lib` that stops at ES2022 you get
+  `Property 'groupBy' does not exist on type 'ObjectConstructor'` — the runtime has it, the
+  compiler's library file doesn't.
+- **`map.getOrInsertComputed(key, fn)`** — read-or-create in one call. Baseline only since
+  February 2026 and new in Node 26, so `map.set(k, (map.get(k) ?? 0) + 1)` stays the portable
+  counter for now.

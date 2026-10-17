@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "index-orders-with-maps",
+  "title": "Pick the right collection for the orders screen",
+  "skills": ["javascript", "collections"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "orders.ts",
+  "acceptanceCriteria": [
+    "`attachCustomers` attaches each order's customer name, and `\"(unknown)\"` when the customer is missing",
+    "`attachCustomers` reads each customer about once in total, not once per order",
+    "`dedupeOrders` keeps one order per `id` (first-seen order) when two copies are separate objects",
+    "`countTags` counts every tag correctly, including `\"constructor\"`, `\"toString\"` and `\"__proto__\"`",
+    "A saved index loads back with every entry, and `get(7)` still finds customer 7"
+  ]
+}

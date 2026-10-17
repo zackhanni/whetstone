@@ -1,0 +1,38 @@
+---
+id: four-containers
+title: Four containers, four questions
+---
+
+Each built-in collection is good at answering one question:
+
+| The question you keep asking | Reach for | The call |
+| --- | --- | --- |
+| "What's at position 3? What comes next?" | array | `list[3]`, `for…of`, `.map()` |
+| "Is X in here?" | `Set` | `set.has(x)` |
+| "What's stored under key K?" | `Map` | `map.get(k)` |
+| "What is this record's `name`?" (fields known up front) | object | `user.name` |
+
+The difference that bites first is **cost**. `array.includes(x)` and `array.find(…)` walk the
+array from the front until something matches — and on a miss they check every element.
+`set.has(x)` and `map.get(k)` go straight to the entry: the ECMAScript spec requires access times
+that are, on average, "sublinear on the number of elements", and engines use hash tables, so on average a
+lookup doesn't slow down as the collection grows.
+
+```ts
+// 10,000 events × up to 5,000 comparisons each
+events.filter((e) => !blockedIds.includes(e.userId));
+
+// Build the Set once (one pass), then 10,000 events × 1 lookup each
+const blocked = new Set(blockedIds);
+events.filter((e) => !blocked.has(e.userId));
+```
+
+One `includes` on a short array is fine. The bug is the **loop around it**: a scan inside a loop
+is n × m work, so doubling both lists quadruples the time. When you see `includes`, `find` or
+`indexOf` inside `map`, `filter` or a `for`, build a `Set` or `Map` once, outside the loop.
+
+<!--more-->
+
+Building the `Set` is itself a pass over the array, so it pays only when you look things up more
+than a handful of times. For one membership check, `includes` is the right call. The same goes for
+`Map` vs `find`: one lookup → `find`; a lookup per item of another list → index first.

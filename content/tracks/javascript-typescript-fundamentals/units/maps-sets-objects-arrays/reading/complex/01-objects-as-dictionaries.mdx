@@ -1,0 +1,62 @@
+---
+id: objects-as-dictionaries
+title: When a plain object is the wrong dictionary
+---
+
+A plain object works as a lookup table until the keys stop being yours. Three traps, all real.
+
+## 1. Every object already has keys
+
+`{}` inherits from `Object.prototype`, so it already "contains" `constructor`, `toString`,
+`hasOwnProperty` and friends. Count words from user text with an object and one of them will
+eventually be `"constructor"`:
+
+```js
+const counts = {};
+for (const w of ["to", "constructor", "to"]) {
+  counts[w] = (counts[w] || 0) + 1;
+}
+counts.to;          // 2
+counts.constructor; // "function Object() { [native code] }1"
+```
+
+`counts["constructor"]` was the inherited `Object` function — truthy — so `|| 0` never kicked in,
+and function + 1 is string concatenation. Switching to `?? 0` doesn't help (a function isn't
+nullish), and neither does `w in counts`, which also sees inherited keys.
+
+`"__proto__"` is worse: assigning to it calls a setter that swaps the object's prototype (or
+silently ignores a non-object value), and with keys an attacker controls this is the doorway to
+**prototype pollution**. MDN's Map page lists it as the security difference: a `Map` is safe with
+user-provided keys.
+
+Fixes, best first: use a `Map`; or create the object with `Object.create(null)` (no prototype, no
+inherited keys — this is what `Object.groupBy` returns); or check `Object.hasOwn(obj, key)`
+(ES2022) before reading. `hasOwn` alone still can't store a `"__proto__"` key.
+
+## 2. Integer-like keys jump the queue
+
+An object's keys are ordered, but not simply. Keys that look like array indexes come first, in
+ascending numeric order; other strings follow in the order they were added:
+
+```js
+Object.keys({ high: 3, 10: "x", low: 1, 2: "y" }); // ["2", "10", "high", "low"]
+```
+
+An object keyed by numeric id therefore iterates in **id order**, not the order you inserted —
+sort by date, index by id, and the dates come back scrambled. `Map` iterates in insertion order,
+always. MDN's advice for objects is not to rely on property order at all.
+
+## 3. The keys come back as strings
+
+`Object.keys`, `Object.entries`, `for…in` and `Object.groupBy` all hand you string keys, even if
+you wrote numbers. TypeScript knows: `Object.keys` returns `string[]`, so
+`Object.keys(byId).includes(7)` is a compile error, and the honest conversion is
+`Object.keys(byId).map(Number)`. A plain `as number[]` is rejected (the types don't overlap);
+`as unknown as number[]` compiles, and is wrong at runtime.
+
+<!--more-->
+
+Where an object is still right: a record with known fields (`{ id, name, email }`), and
+string-keyed config you wrote yourself — it serialises to JSON for free, which a `Map` doesn't.
+For a table that grows and shrinks, MDN's comparison table notes that `Map` is the one built for
+frequent additions and removals.
