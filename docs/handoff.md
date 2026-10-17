@@ -5,7 +5,7 @@ in `AGENTS.md` → "Working with this repo".
 
 ## Status (2026-10-17)
 
-- Deployed on Vercel. 3 tracks, 14 units, 10 challenges: React Hooks & Rendering (7 units),
+- Deployed on Vercel (as of `main`). 3 tracks, 14 units, 10 challenges: React Hooks & Rendering (7 units),
   State & Data Flow (3), Backend with NestJS (4). `main` is at PR #14 (schema v3, `cards`
   block, derived depth, `vercel.json` gate).
 - **Content phase in progress, as a PR stack.** Each PR targets the one below it; merge
@@ -26,7 +26,9 @@ in `AGENTS.md` → "Working with this repo".
     (PR #21).
   - New track **HTTP & APIs in Practice** (6 units, 4 challenges) (PR #22).
   - New track **Next.js & the Network** (4 units, 2 challenges), written for Next 16 (checked
-    against 16.2.9, which the repo runs, and 16.4.2, npm `latest`).
+    against 16.2.9, which the repo runs, and 16.4.2, npm `latest`) (PR #23).
+  - Backend with NestJS gains 3 units (controllers & routing, Redis caching & rate limits,
+    microservices & messaging) and 2 challenges — 7 units in all.
 - Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
   Vercel build runs both.
 
