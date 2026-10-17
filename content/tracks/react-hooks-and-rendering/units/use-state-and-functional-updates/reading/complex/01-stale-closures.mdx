@@ -3,30 +3,35 @@ id: stale-closures
 title: Stale state in async callbacks
 ---
 
-A callback captures the state value from the render that created it. If it runs
-later — a timeout, an interval, a resolved promise — it may use a stale value.
+A function created during a render sees that render's state, for as long as it lives. If it
+runs later — after an `await`, in a timeout, from a subscription — the value it reads may be
+several updates old.
 
 ```jsx
-function Counter() {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => {
-      setCount(count + 1); // ❌ count is frozen at 0 for this closure
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
-  return <h1>{count}</h1>;
+function SaveButton() {
+  const [saves, setSaves] = useState(0);
+
+  async function handleSave() {
+    await api.save();
+    setSaves(saves + 1); // ❌ `saves` is from the render that handled the click
+  }
+
+  return <button onClick={handleSave}>Saved {saves} times</button>;
 }
 ```
 
-The interval's closure captured `count = 0`, so it sets 1 forever. The functional
-updater sidesteps the closure entirely — it always reads React's current value:
+Click twice before the first save returns. Nothing has re-rendered between the clicks, so both
+run the same handler from the same render, both read `saves = 0`, and both set 1. Two saves,
+and the counter says 1.
+
+The updater form doesn't read the closure at all. React calls it with the latest queued value:
 
 ```jsx
-setCount((c) => c + 1); // ✅ climbs 1, 2, 3, …
+setSaves((s) => s + 1); // ✅ 0 → 1 → 2
 ```
 
 <!--more-->
 
-This is the same trap the `useEffect` unit's counter falls into — which is why
-`setX((prev) => ...)` is the default whenever a setter runs inside an async callback.
+This is why `setX((prev) => ...)` is the default whenever a setter runs after an `await` or
+inside a timer, interval or subscription callback. The `useEffect` unit shows the same trap
+inside an interval.

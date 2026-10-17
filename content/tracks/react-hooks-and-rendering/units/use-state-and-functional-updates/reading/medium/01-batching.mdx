@@ -1,23 +1,37 @@
 ---
 id: batching
-title: State is a snapshot — updates batch
+title: State is a snapshot; batching only decides how many renders
 ---
 
-Inside a single event handler, `count` is a fixed snapshot for that render. Calling
-the setter doesn't change the variable; it schedules a re-render.
+Inside an event handler, `count` is the value from the render that created the handler — a
+snapshot. Calling the setter doesn't change that variable; it queues an update for the next
+render.
 
 ```jsx
 function handleClick() {
-  setCount(count + 1); // count is 0 here...
-  setCount(count + 1); // ...and still 0 here
+  setCount(count + 1); // count is 0 here: queues "replace with 1"
+  setCount(count + 1); // ...and still 0 here: queues "replace with 1" again
 }
-// → re-renders once with count = 1, not 2
+// next render: count = 1, not 2
 ```
 
-React batches these updates. To make them compound, hand each one the latest value
-with the functional updater:
+The 1 comes from the **snapshot**: both calls computed `0 + 1`. **Batching** is a separate
+fact. React waits until the handler has finished and then applies every queued update in a
+single re-render (since React 18, updates in timeouts, promises and native event listeners
+are batched too, not just React event handlers). Batching decides how many times React
+renders, not which value wins.
+
+To make updates compound, queue a function instead of a value. React calls each one with the
+result of the update before it:
 
 ```jsx
-setCount((c) => c + 1);
-setCount((c) => c + 1); // → 2
+setCount((c) => c + 1); // 0 → 1
+setCount((c) => c + 1); // 1 → 2
 ```
+
+<!--more-->
+
+Values and functions share one queue, processed in order on the next render. A plain value
+means "replace with this", so it discards whatever was queued before it. A function means
+"compute from whatever came before", so it builds on it. That's why the two forms can be mixed
+in one handler, and why the order you write them in matters.
