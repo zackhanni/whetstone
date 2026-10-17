@@ -7,32 +7,41 @@ title: Dependency arrays, StrictMode, and extracting the effect
 
 ```jsx
 useEffect(fn);          // after EVERY render — almost always a mistake
-useEffect(fn, []);      // once on mount (cleanup on unmount)
+useEffect(fn, []);      // on mount (cleanup on unmount); StrictMode adds a dev-only extra cycle
 useEffect(fn, [a, b]);  // when a or b changes (by Object.is)
 ```
 
 `[a, b]` compares by identity, so an object/array/function literal created during render
-is a *new* dependency every time and the effect re-runs forever. That's the same
-referential-identity problem as `React.memo` — see the memoization unit. Fixes, in order
+is a *new* dependency every time: the effect re-runs after every render (and can loop
+forever if it also sets state to a new value). That's the same referential-identity problem
+as `React.memo` — see the memoization unit. Fixes, in order
 of preference: depend on a primitive (`user.id`, not `user`), move the object creation
 inside the effect, or `useCallback`/`useMemo` the dependency at its source.
 
 Never "fix" a loop by deleting a dependency the effect actually reads. That doesn't remove
 the bug, it hides it behind a stale closure — the effect keeps using values from the
-render that created it. If a value should be read but not *reacted to*, keep it in a ref
-that you refresh on every render:
+render that created it. If a value should be read but not *reacted to*, that's what an
+Effect Event is for (`useEffectEvent`, stable since React 19.2):
 
 ```jsx
-const latest = useRef(onCommit);
-latest.current = onCommit;                 // fresh every render, no re-subscribe
-useEffect(() => { const id = setTimeout(() => latest.current(text), 1000); … }, [text]);
+const save = useEffectEvent((value) => onCommit(value)); // always the latest onCommit
+useEffect(() => {
+  const id = setTimeout(() => save(text), 1000);
+  return () => clearTimeout(id);
+}, [text]); // ✅ re-runs for new text, not for a new onCommit identity
 ```
+
+Only use it for the part that genuinely shouldn't trigger the effect — react.dev warns
+against wrapping code in an Effect Event just to silence the dependency linter. Before
+19.2, the same job took a ref refreshed in an effect (`useEffect(() => { latest.current =
+onCommit; })`), never assigned in the render body.
 
 ## StrictMode double-invokes effects on purpose
 
-In development, React 18+ mounts, unmounts, and remounts each component once. An effect
-without a correct cleanup shows up immediately as a doubled subscription, a doubled fetch,
-or a doubled interval. That noise is the point: **an effect you can safely run twice is an
+In development, React 18+ StrictMode simulates an unmount and remount right after each
+component mounts: setup, cleanup, setup again, with state kept. An effect without a correct
+cleanup shows up immediately as a doubled subscription, a doubled fetch, or a doubled
+interval. That noise is the point: **an effect you can safely run twice is an
 effect you wrote correctly.** Don't add a `didRun` ref to silence it — write the cleanup.
 
 ## Extract the effect once it has a name

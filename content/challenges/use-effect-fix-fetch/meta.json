@@ -10,6 +10,7 @@
   "acceptanceCriteria": [
     "Typing a query shows that query's results",
     "A slow earlier response never overwrites a newer query's results",
-    "The in-flight request is aborted when the query changes or the component unmounts"
+    "The in-flight request is aborted when the query changes or the component unmounts",
+    "A failed search shows an error in a `role=\"alert\"` element; a request you cancelled doesn't"
   ]
 }

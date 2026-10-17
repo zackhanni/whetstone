@@ -16,19 +16,35 @@ findOne(
 ) {}
 ```
 
-Params and query strings are **always strings** on the wire. `@Query("page") page: number`
-gives you the string `"2"` typed as `number` — a lie your code will happily do arithmetic on.
-Either use a DTO with `@Type(() => Number)`, or a built-in pipe (`ParseIntPipe`).
+Params and query strings are **always strings** on the wire, and a `number` annotation alone
+converts nothing. What `@Query("page") page: number` holds depends on the pipe:
 
-Pipes can be applied at four levels, narrowest wins where they overlap:
+| Setup | `?page=2` | `?page=abc` |
+| --- | --- | --- |
+| No pipe, or `ValidationPipe` without `transform` | `"2"` — a string typed as `number` | `"abc"` |
+| Global `ValidationPipe({ transform: true })` | `2` | `NaN` — and no error |
+| `@Query("page", ParseIntPipe)` | `2` | 400 |
+
+`transform: true` converts a *named* param declared `number` or `boolean` with a plain cast —
+conversion, not validation. When the value must actually be a number, use `ParseIntPipe` or a
+query DTO with `@Type(() => Number)` and `@IsInt()`.
+
+Pipes can be bound at four levels, and **every bound pipe runs** — global first, then
+controller, then route, then parameter, each one receiving what the previous one returned:
 
 | Level | How | Use for |
 | --- | --- | --- |
-| Parameter | `@Param("id", ParseUUIDPipe)` | one argument |
-| Handler | `@UsePipes(new ValidationPipe({ groups: … }))` | one route's special case |
-| Controller | `@UsePipes(…)` on the class | a controller-wide rule |
 | Global | `app.useGlobalPipes(…)` in `main.ts` | **the default — set it once** |
+| Controller | `@UsePipes(…)` on the class | a controller-wide addition |
+| Route | `@UsePipes(…)` on the method | one route's extra check |
+| Parameter | `@Param("id", ParseUUIDPipe)` | one argument |
+
+A narrower pipe adds to the global one; it never replaces it. For each handler argument, Nest
+runs the global, controller, route and parameter pipes in that order, and the first one that
+throws stops the rest. So a route-level `ValidationPipe({ groups: ["admin"] })` runs *after* the
+global `ValidationPipe`, which has already validated (and, with `whitelist`, stripped) the body
+by its own rules.
 
 The mistake worth avoiding is *not* registering it globally: a per-controller `@UsePipes` means
-the next controller someone adds is unvalidated by default. Make validation the default and
-opt out deliberately.
+the next controller someone adds is unvalidated by default. Make validation the default, and
+let the routes that need more add to it.

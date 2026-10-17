@@ -1,13 +1,18 @@
-`SearchForm` renders a search box that **should be focused the instant the form
-mounts**, so the user can start typing right away. Right now nothing focuses it —
-`document.activeElement` is the page body, not the input.
+`SearchForm` has a search box and a **Clear** button. Clear empties the box, but focus
+stays on the button: the user has to click back into the input before typing the next
+search.
 
-You can't focus a DOM node declaratively; you need to reach the real element and call
-`.focus()` on it. That's a job for `useRef`.
+React's one declarative focus prop, `autoFocus`, focuses an element when it **mounts**.
+This input is already mounted when Clear is clicked, so moving focus in response to an
+action means calling `.focus()` on the real DOM node — and reaching a component's own DOM
+node is what a ref is for.
 
 ## Hints
 
-Declare `const inputRef = useRef<HTMLInputElement>(null)`, put
-`ref={inputRef}` on the `<input>`, then call `inputRef.current?.focus()` inside a
-`useEffect(() => { … }, [])`. The effect runs after React commits the node, so
-`inputRef.current` is the real element by then (in the render body it's still `null`).
+- Each `SearchForm` needs its own handle on its own `<input>`. Hand a ref to the input's
+  `ref` attribute and React fills it with the DOM node when it commits.
+- Focus is a response to the click, so it belongs in the Clear handler, not in an effect
+  that watches the query. By the time anyone can click, React has committed the input, so
+  the ref already holds the node.
+- A document-wide lookup such as `document.querySelector` finds the first matching input
+  on the page, which is the wrong one as soon as two forms render.

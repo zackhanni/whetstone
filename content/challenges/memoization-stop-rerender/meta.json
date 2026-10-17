@@ -10,6 +10,6 @@
   "acceptanceCriteria": [
     "The child renders once on mount (render count shows **1**)",
     "Clicking **Tick** does **not** re-render the child (render count stays **1**)",
-    "The child's own **Child action** button still fires its callback"
+    "The child's own **Child action** button still fires its callback, and that doesn't re-render the child either"
   ]
 }

@@ -31,13 +31,11 @@ Middleware is the Express-style `(req, res, next)` function — it runs before N
 and knows nothing about which handler will eventually run. You attach it by implementing
 `configure` on the module, and the object you're handed is the **`MiddlewareConsumer`**. Odd
 name, boring meaning: it's the little builder API for saying *which routes get this middleware*.
-(`"{*splat}"` is the "every route" pattern — Nest 11 runs on Express 5, where a wildcard has to
-be named. `"*"` still works, but the named form is what current docs use.)
 
 ```ts
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestIdMiddleware).forRoutes("{*splat}");   // "consume" this middleware, for these routes
+    consumer.apply(RequestIdMiddleware).forRoutes("*");   // "consume" this middleware, for every route
   }
 }
 ```
@@ -84,3 +82,11 @@ message — so before you can touch `request`, you have to say which world you'r
 
 You don't need to be able to write these yet. You need to be able to *read* a codebase and say
 "that's a guard, so it's about permission" — the units after this one build each one properly.
+
+<!--more-->
+
+**Wildcards in `forRoutes`.** A bare `"*"` is what the Nest 12 docs write for "every route".
+Under the hood, the Express adapter has run on Express 5 since Nest 11, and Express 5 only
+accepts *named* wildcards such as `{*splat}` — Nest converts a bare `"*"` for you, silently. A
+wildcard after a prefix is different: `"users/*"` still works but logs an "Unsupported route
+path" warning at boot, so write `"users/{*splat}"`.

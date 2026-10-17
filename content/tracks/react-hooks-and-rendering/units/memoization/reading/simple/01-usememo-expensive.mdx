@@ -7,8 +7,9 @@ A component re-renders often. If it recomputes something expensive every time �
 sorting a big list, filtering, a heavy calculation — you pay that cost on every
 render, even when the inputs didn't change.
 
-`useMemo(factory, deps)` runs the factory once, caches the result, and only
-recomputes when a value in `deps` changes.
+`useMemo(factory, deps)` runs the factory on the first render and caches the result.
+On later renders it hands back the cached value, and runs the factory again only when
+a value in `deps` has changed (compared with `Object.is`).
 
 ```jsx
 function Report({ rows, query }) {
@@ -24,3 +25,15 @@ function Report({ rows, query }) {
 
 Rule of thumb: reach for `useMemo` when the computation is genuinely expensive —
 or when you need the result to keep a **stable reference** across renders.
+
+<!--more-->
+
+The cache is a performance hint, not a promise. react.dev says React may throw it away
+for a specific reason — when you edit the component's file in development, or when a
+component suspends during its first mount — and StrictMode calls the factory twice in
+development (keeping one result). So the factory must be pure, and your code must still be
+correct if it runs again. If you need a value that React won't throw away between renders, keep
+it in state (with a lazy initializer) or in a ref you fill on first use
+(`if (ref.current === null) ref.current = create()`). Neither promises the creation runs exactly
+once — StrictMode calls a `useState` initializer twice in development too, and
+`useRef(create())` calls `create()` on every render — so creation still has to be pure.

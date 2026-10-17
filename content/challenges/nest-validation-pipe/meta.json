@@ -10,9 +10,10 @@
   "acceptanceCriteria": [
     "A valid body is accepted, and `value` holds the parsed fields",
     "Keys not declared in the schema are absent from `value`",
-    "`\"3\"` → `3` for an `int` field, `\"true\"` → `true` for a `boolean` field",
+    "`\"3\"` → `3` for an `int` field, and `\"true\"` / `\"false\"` → `true` / `false` for a `boolean` field",
     "A body with three bad fields reports three errors",
     "A missing non-optional field fails with `status: 400` and names the field",
-    "An absent optional field stays absent (no `undefined`/`null` key)"
+    "An absent optional field stays absent (no `undefined`/`null` key)",
+    "A string that doesn't convert cleanly (`\"two\"`, `\"3abc\"`, `\"yes\"` for a boolean) fails and names the field"
   ]
 }

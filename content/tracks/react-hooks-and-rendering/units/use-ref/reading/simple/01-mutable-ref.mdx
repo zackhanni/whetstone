@@ -8,17 +8,32 @@ title: A ref is a box whose .current survives re-renders
 value — and **changing it does not trigger a re-render.**
 
 ```jsx
-function Timer() {
-  const renders = useRef(0);
-  renders.current += 1; // mutate freely — no re-render
-  return <p>This component has rendered {renders.current} times</p>;
+function LikeButton() {
+  const clicks = useRef(0);
+
+  function handleClick() {
+    clicks.current += 1; // ✅ written in an event handler: no re-render
+    sendAnalytics("like", clicks.current);
+  }
+
+  return <button onClick={handleClick}>Like</button>;
 }
 ```
 
-Contrast with a normal `let count = 0` inside the component: that resets to `0` on
+Contrast with a normal `let clicks = 0` inside the component: that resets to `0` on
 every render. `ref.current` persists. Contrast with `useState`: state also persists,
 but writing to it *schedules a render*. A ref writes silently.
 
 Reach for a ref when you need to remember something between renders but the UI
 doesn't need to react to it — a timer id, a previous value, a "did this already run"
 flag.
+
+<!--more-->
+
+**Read and write `.current` in event handlers and effects, not while rendering.** React
+expects a component body to return the same output for the same props, state and context.
+A ref changes without React knowing, so a render that reads it shows whatever it held at
+that moment, and a render that writes it (`renders.current += 1` in the body) counts how
+often React *called* the component, not anything real. In development StrictMode calls each
+component twice, which makes such a count wrong straight away. The one exception react.dev
+allows is lazy initialization: `if (ref.current === null) ref.current = new Player();`.

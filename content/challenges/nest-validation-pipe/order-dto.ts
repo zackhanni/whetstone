@@ -19,7 +19,11 @@ export type ValidationResult<T> =
   | { ok: true; value: T }
   | { ok: false; status: number; errors: string[] };
 
-/** class CreateOrderDto { @IsString() customerId; @IsInt() @Min(1) @Max(100) quantity; … } */
+/**
+ * class CreateOrderDto { @IsString() customerId; @Type(() => Number) @IsInt() @Min(1) @Max(100) quantity; … }
+ * `int` and `boolean` here include the field's conversion from a string: in Nest,
+ * `transform: true` alone never converts a body DTO's properties.
+ */
 export const createOrderSchema: Schema = {
   customerId: { type: "string" },
   quantity: { type: "int", min: 1, max: 100 },

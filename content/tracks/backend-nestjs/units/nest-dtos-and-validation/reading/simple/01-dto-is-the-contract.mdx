@@ -30,8 +30,9 @@ create(@Body() dto: CreateOrderDto) {
 ```
 
 The critical thing to understand: **`@Body() dto: CreateOrderDto` alone validates nothing.**
-TypeScript types vanish at compile time. What enforces the contract is a runtime **pipe**
-reading the decorators:
+TypeScript checks nothing at runtime — the annotation survives only as metadata naming the
+class. What enforces the contract is a runtime **pipe** reading that metadata and the
+decorators:
 
 ```ts
 // main.ts
@@ -46,3 +47,13 @@ So a DTO does three jobs at once:
 - **Shape** — which fields exist, which are optional.
 - **Constraints** — the rules a value must satisfy (`@IsInt`, `@Min`, `@IsEmail`).
 - **Trust boundary** — one line in the code where "input" becomes "data".
+
+<!--more-->
+
+Nest 12 ships a second built-in way to draw the same boundary: pass a Standard Schema (Zod,
+Valibot, ArkType) as `@Body({ schema: createOrderSchema })` and register
+`StandardSchemaValidationPipe`. The class-based `ValidationPipe` this unit uses is still fully
+supported, and the two can run side by side, each validating only the parameters it
+recognises. The ideas here — validate at the edge, globally, before the handler runs — apply
+to both; with a schema, it's the schema library rather than `whitelist` that decides what
+happens to keys you didn't declare.

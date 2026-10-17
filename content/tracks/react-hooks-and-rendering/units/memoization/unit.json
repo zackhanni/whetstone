@@ -10,12 +10,14 @@
     "Predict whether a memo child re-renders when its parent passes inline objects or functions",
     "Choose between useMemo (cache a value) and useCallback (cache a function), with the right deps",
     "Fix a memo child's needless re-renders by giving its callback prop a stable identity with useCallback",
-    "Spot premature memoization, where the cache and comparison cost more than the re-render saved"
+    "Spot memoization that buys nothing — cheap work that no memo child or Hook dependency consumes — and say what React Compiler changes"
   ],
   "sources": [
     { "title": "React docs: memo", "url": "https://react.dev/reference/react/memo" },
     { "title": "React docs: useMemo", "url": "https://react.dev/reference/react/useMemo" },
-    { "title": "React docs: useCallback", "url": "https://react.dev/reference/react/useCallback" }
+    { "title": "React docs: useCallback", "url": "https://react.dev/reference/react/useCallback" },
+    { "title": "React docs: Introduction to React Compiler", "url": "https://react.dev/learn/react-compiler/introduction" },
+    { "title": "React blog: React Compiler v1.0", "url": "https://react.dev/blog/2025/10/07/react-compiler-1" }
   ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
@@ -33,7 +35,7 @@
             { "id": "deep-equal", "text": "Deep-compares every prop, no matter how nested, before re-rendering" }
           ],
           "answer": "shallow-props",
-          "explanation": "memo does a shallow comparison of props (Object.is on each). If every prop is the same reference/value as last time, React reuses the previous render and skips the child. It does NOT deep-compare, and a parent re-render alone won't re-render a memo child — only changed props (or the child's own state/context) will."
+          "explanation": "memo does a shallow comparison of props (Object.is on each). If every prop is the same reference/value as last time, React reuses the previous render and skips the child. It does NOT deep-compare. A parent re-render alone won't usually re-render a memo child — changed props, or the child's own state or a context it reads, will. And it's a performance optimization, not a guarantee: react.dev says React may still re-render a memoized component, so your code must stay correct if it does."
         },
         {
           "id": "why-still-rerenders",
@@ -57,19 +59,31 @@
             { "id": "usememo-effects", "text": "useMemo runs side effects; useCallback runs computations" }
           ],
           "answer": "value-vs-fn",
-          "explanation": "useMemo(fn, deps) runs fn and caches its result, recomputing only when deps change. useCallback(fn, deps) caches the function reference itself. In fact useCallback(fn, deps) is just useMemo(() => fn, deps). Reach for useMemo to skip an expensive computation or stabilize a derived object; useCallback to keep a function's identity stable for a memoized child or an effect dependency."
+          "explanation": "useMemo(fn, deps) runs fn and caches its result, recomputing only when deps change. useCallback(fn, deps) caches the function reference itself. react.dev's simplified model: useCallback(fn, deps) behaves like useMemo(() => fn, deps). Reach for useMemo to skip an expensive computation or stabilize a derived object; useCallback to keep a function's identity stable for a memoized child or an effect dependency."
         },
         {
           "id": "when-not-to-memo",
-          "prompt": "When is adding useMemo/useCallback/memo most likely to be premature optimization?",
+          "prompt": "When does adding `useMemo` / `useCallback` / `memo` buy nothing?",
           "options": [
-            { "id": "cheap-fast", "text": "When the wrapped work is cheap and the child re-renders fast — the memo bookkeeping can cost more than it saves" },
+            { "id": "nothing-consumes", "text": "When the work is cheap and the result doesn't flow into a `memo` child or a Hook's dependency array" },
             { "id": "always-helps", "text": "Never — memoizing always makes an app faster" },
-            { "id": "only-lists", "text": "Only when rendering lists; everywhere else it's mandatory" },
-            { "id": "server-comp", "text": "Only in server components, which can't use hooks" }
+            { "id": "primitive-props", "text": "When a child's props are primitives — `memo` can only compare objects" },
+            { "id": "memo-enough", "text": "When the child is already wrapped in `memo` — then the parent's `useCallback` is redundant" }
           ],
-          "answer": "cheap-fast",
-          "explanation": "Memoization isn't free: it allocates the cache, stores deps, and runs a comparison every render. For cheap computations or components that render quickly, that overhead can exceed the re-render you avoided — and it clutters the code. Measure first; memoize the hot paths (expensive compute, big subtrees, stable props into memo children), not everything."
+          "answer": "nothing-consumes",
+          "explanation": "react.dev lists the cases where it pays: a calculation that's noticeably slow (around 1ms or more), a value or function passed to a `memo` child, or one used as a Hook dependency. Anywhere else it skips nothing. The comparison itself is cheap — react.dev calls over-memoizing no significant harm — but it costs readability and dependency arrays you must keep correct, and one always-new prop is enough to make it all dead weight. Primitives are where `memo` works best (`Object.is(3, 3)` is true), and `memo` without stable function props is exactly the case `useCallback` exists for."
+        },
+        {
+          "id": "react-compiler",
+          "prompt": "Your project turns on React Compiler (stable since v1.0, October 2025). What happens to the advice in this unit?",
+          "options": [
+            { "id": "automatic", "text": "The compiler memoizes components, values and callbacks at build time, so most hand-written memoization becomes unnecessary; `useMemo`/`useCallback` remain escape hatches" },
+            { "id": "nothing", "text": "Nothing changes — the compiler only strips dead code" },
+            { "id": "delete-all", "text": "`memo`, `useMemo` and `useCallback` stop working, so delete them all" },
+            { "id": "automatic-everywhere", "text": "Nothing to decide — every React 19 app already has the compiler turned on" }
+          ],
+          "answer": "automatic",
+          "explanation": "React Compiler analyses your components at build time and inserts the memoization you'd otherwise write by hand — react.dev's `memo` page says you typically don't need `React.memo` with it. For new code, react.dev recommends relying on it and keeping `useMemo`/`useCallback` as escape hatches (for example, to keep an Effect dependency stable). Existing memoization still works: leave it in place, or test before removing it, since removal can change the compiled output. It's a build plugin you add (Babel, Vite, Next.js and others; a few new-project templates, such as Expo SDK 54+, switch it on by default) and it works with React 17 and up — React 19 itself doesn't turn it on. In a project without it, everything in this unit applies as written."
         }
       ]
     },
@@ -134,10 +148,10 @@
             "  );",
             "}"
           ],
-          "question": "Every time you click the count button, does the memo'd Child re-render (does \"Child render\" log again)?",
+          "question": "Without React Compiler: every time you click the count button, does the memo'd Child re-render (does \"Child render\" log again)?",
           "answer": "Yes — Child re-renders on every parent update",
           "acceptable": ["yes", "yes, it re-renders", "it re-renders every time", "yes it logs again", "child render logs every click"],
-          "explanation": "The onClick arrow is created fresh on every Parent render, so it's a new reference each time. memo's shallow prop check sees onClick change and re-renders Child — the memo buys nothing. Wrap the handler in useCallback(() => console.log('clicked'), []) to give it a stable identity; then Child renders once and skips the unrelated count updates."
+          "explanation": "The onClick arrow is created fresh on every Parent render, so it's a new reference each time. memo's shallow prop check sees onClick change and re-renders Child — the memo buys nothing. Wrap the handler in useCallback(() => console.log('clicked'), []) to give it a stable identity; then Child renders once and skips the unrelated count updates. (With React Compiler enabled, the compiler would memoize that arrow for you and Child would stop re-rendering. In development, StrictMode calls each render twice, so every render logs twice — the yes/no answer is the same.)"
         },
         {
           "id": "usememo-reference-stability",
@@ -158,7 +172,7 @@
             "  );",
             "}"
           ],
-          "question": "With `style` wrapped in useMemo([]), does clicking the button re-render Child?",
+          "question": "Without React Compiler, and with `style` wrapped in useMemo([]): does clicking the button re-render Child?",
           "answer": "No — Child does not re-render",
           "acceptable": ["no", "no, it does not re-render", "child renders only once", "it stays memoized", "no it doesn't log again"],
           "explanation": "useMemo(() => ({ color: 'red' }), []) computes the object once and returns the same reference on every subsequent render. memo's shallow check sees an unchanged style prop and skips Child, so \"Child render\" logs only on the first mount. (Remove the useMemo and the inline object would break memo just like the inline callback above.)"

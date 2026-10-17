@@ -3,18 +3,29 @@ import { useState } from "react";
 export function SearchForm() {
   const [query, setQuery] = useState("");
 
-  // 🐛 BUG: this input should be focused the moment the form mounts, so the user
-  // can start typing immediately — but nothing focuses it. Reach for useRef: attach
-  // a ref to the <input>, then call .focus() on it in an effect that runs on mount.
+  // 🐛 BUG: "Clear" empties the box, but focus stays on the Clear button, so the user has
+  // to click back into the input before typing the next search. Clear should put focus
+  // back in the input. (`autoFocus` won't help: it focuses on mount, and this input is
+  // already mounted.)
+  //
+  // Fix order: 1. get hold of this form's own <input> DOM node with a ref.
+  //            2. focus that node from the Clear handler.
+  function handleClear() {
+    setQuery("");
+  }
 
   return (
-    <form onSubmit={(e) => e.preventDefault()}>
+    <form role="search" onSubmit={(e) => e.preventDefault()}>
       <input
         data-testid="search"
+        aria-label="Search"
         placeholder="Search…"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
+      <button type="button" onClick={handleClear}>
+        Clear
+      </button>
     </form>
   );
 }

@@ -8,6 +8,7 @@ and re-renders the child on every unrelated update — the `memo` buys nothing.
 
 ## Hints
 
-Give `handleChildClick` a stable identity with
-`useCallback(fn, deps)`. Since it only calls `setLastClicked` (a stable setter), the
-dependency array is empty.
+- `useCallback(fn, deps)` hands back the same function on every render until a
+  dependency changes.
+- Put in the dependency array only what the callback reads that can change. A `useState`
+  setter keeps the same identity on every render.

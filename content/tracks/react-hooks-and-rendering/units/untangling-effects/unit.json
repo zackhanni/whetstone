@@ -16,14 +16,16 @@
     "Refactor a derived-state effect into a value computed during render, like const count = text.length",
     "Spot why a no-deps prop-to-state sync clobbers typing, and reset local state with a key instead",
     "Fix a listener effect that piles up: named handler, matching removeEventListener, and [] deps",
-    "Explain why StrictMode runs effects twice in development and answer it with a cleanup, not a guard",
+    "Explain why StrictMode (React 18+) runs effects twice in development and answer it with a cleanup, not a guard",
     "Spot why deleting a dependency the effect reads is the wrong fix for an effect that re-runs"
   ],
   "sources": [
     { "title": "React docs: You Might Not Need an Effect", "url": "https://react.dev/learn/you-might-not-need-an-effect" },
     { "title": "React docs: Removing Effect Dependencies", "url": "https://react.dev/learn/removing-effect-dependencies" },
     { "title": "React docs: Synchronizing with Effects", "url": "https://react.dev/learn/synchronizing-with-effects" },
-    { "title": "MDN: EventTarget.removeEventListener()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/removeEventListener" }
+    { "title": "MDN: EventTarget.removeEventListener()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/removeEventListener" },
+    { "title": "React docs: useEffectEvent", "url": "https://react.dev/reference/react/useEffectEvent" },
+    { "title": "React blog: React 19.2 (useEffectEvent, Activity)", "url": "https://react.dev/blog/2025/10/01/react-19-2" }
   ],
   "blocks": [
     {
@@ -48,8 +50,8 @@
               "text": "window.addEventListener(\"resize\", onResize) with a cleanup"
             },
             {
-              "id": "focus",
-              "text": "inputRef.current.focus() on mount"
+              "id": "scroll",
+              "text": "rowRef.current.scrollIntoView() when the `selectedId` prop changes"
             },
             {
               "id": "socket",
@@ -81,7 +83,7 @@
             }
           ],
           "answer": "every-render",
-          "explanation": "No array means \"after every render.\" React never infers dependencies at runtime (the lint rule does that at build time). Here that makes the field unusable: type a character, the render that follows re-runs the effect and resets `text` back to the prop."
+          "explanation": "No array means \"after every render.\" React never infers dependencies (the `react-hooks/exhaustive-deps` lint rule only suggests them, in your editor). Here that makes the field unusable: type a character, the render that follows re-runs the effect and resets `text` back to the prop."
         },
         {
           "id": "reset-on-prop-change",
@@ -133,7 +135,7 @@
         },
         {
           "id": "strict-mode",
-          "prompt": "In development your effect runs twice on mount. What's the right response?",
+          "prompt": "In development (React 18+, StrictMode) your effect runs setup, cleanup, then setup again on mount. What's the right response?",
           "options": [
             {
               "id": "write-cleanup",
@@ -153,7 +155,7 @@
             }
           ],
           "answer": "write-cleanup",
-          "explanation": "StrictMode's double mount/unmount/remount is a deliberate stress test for missing cleanup. An effect that's safe to run twice is safe when React remounts for real (fast refresh, offscreen/suspended trees, future features). A `didRun` ref or deleting StrictMode hides the signal and leaves the doubled subscription in production."
+          "explanation": "StrictMode's double mount/unmount/remount is a deliberate stress test for missing cleanup. An effect that's safe to run twice is safe when React remounts for real: Fast Refresh in development, and in production a tree hidden with `<Activity mode=\"hidden\">` (React 19.2), which cleans up its effects and runs them again when shown. A `didRun` ref or deleting StrictMode hides the signal — the subscription still leaks every time the component really unmounts and mounts again."
         },
         {
           "id": "stale-closure-deps",
@@ -168,8 +170,8 @@
               "text": "Wrap onCommit in useCallback in the parent so its identity is stable"
             },
             {
-              "id": "ref",
-              "text": "Keep the callback in a ref refreshed on every render and read latest.current inside the effect"
+              "id": "effect-event",
+              "text": "Read `onCommit` through an Effect Event (`useEffectEvent`, React 19.2+) so the effect sees the latest callback without depending on it"
             },
             {
               "id": "primitive",
@@ -177,7 +179,7 @@
             }
           ],
           "answer": "delete-dep",
-          "explanation": "Removing a dependency the effect reads doesn't stop it being read — it just freezes it at the value from the render that created the effect (a stale closure), so you get a silent wrong-value bug instead of a loud loop. Stabilize the identity (`useCallback`), or keep the value in a ref when you want to *read* it without *reacting* to it."
+          "explanation": "Removing a dependency the effect reads doesn't stop it being read — it just freezes it at the value from the render that created the effect (a stale closure), so you get a silent wrong-value bug instead of a loud loop. Stabilize the identity (`useCallback` in the parent), or, when the effect should *read* the latest callback without *reacting* to it, wrap it in `useEffectEvent` (React 19.2+). Before 19.2 the same job took a ref refreshed in an effect — never assigned during render."
         }
       ]
     },
@@ -321,7 +323,7 @@
             "  return <span>{resizes}</span>;",
             "}",
             "",
-            "// The window is resized twice (one event each)."
+            "// Production build (no StrictMode). The window is resized twice."
           ],
           "question": "What number does the <span> show after those two resizes, and why isn't it 2?",
           "answer": "3",
@@ -331,7 +333,7 @@
             "more than 2",
             "3 — the listeners accumulate"
           ],
-          "explanation": "Count the listeners, not the events. Mount renders once, so the effect leaves one listener. Resize #1 runs that one listener → count 1 → a render → the effect runs again → now there are TWO listeners. Resize #2 runs both of them; the two `setResizes(r => r + 1)` calls are batched into one render, so the count goes 1 → 3 and the span shows **3** (and a third listener is now registered). The leak is one extra listener per render, so the numbers diverge further with every event. A cleanup that removes the listener plus `[]` deps keeps it at exactly one listener — and the answer at 2."
+          "explanation": "Count the listeners, not the events. Mount renders once, so the effect leaves one listener. Resize #1 runs that one listener → count 1 → a render → the effect runs again → now there are TWO listeners. Resize #2 runs both of them; the two `setResizes(r => r + 1)` calls are batched into one render, so the count goes 1 → 3 and the span shows **3** (and a third listener is now registered). The leak is one extra listener per render, so the numbers diverge further with every event. A cleanup that removes the listener plus `[]` deps keeps it at exactly one listener — and the answer at 2. In development under StrictMode it's worse: the extra mount cycle runs the effect twice with no cleanup to undo the first, so two listeners exist before the first resize and the span shows 5."
         }
       ]
     },

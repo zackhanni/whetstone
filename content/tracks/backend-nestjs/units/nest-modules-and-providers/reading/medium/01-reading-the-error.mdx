@@ -3,29 +3,31 @@ id: reading-the-error
 title: Reading "Nest can't resolve dependencies of the X"
 ---
 
-This is the error you will meet most often, and it tells you exactly where to look:
+This is the error you will meet most often, and it tells you exactly where to look. Nest 12
+prints it like this (one long first line, wrapped here), followed by a list of potential
+solutions:
 
 ```
-Nest can't resolve dependencies of the OrdersService (?, ConfigService).
-Please make sure that the argument PricingService at index [0] is available
-in the OrdersModule context.
+Nest can't resolve dependencies of the OrdersService (?, ConfigService). Please make sure
+that the argument PricingService at index [0] is available in the OrdersModule module.
 ```
 
 Read it as three facts:
 
 1. **Who needs something** — `OrdersService`.
 2. **Which argument** — the `?` marks the unresolved constructor parameter; index `[0]`.
-3. **Which registry was searched** — the `OrdersModule` context. Not "the app": Nest
-   modules are **encapsulated**, so only this module's own `providers` plus the `exports`
-   of its `imports` are in scope.
+3. **Which registry was searched** — `OrdersModule`. Not "the app": Nest modules are
+   **encapsulated**, so only this module's own `providers` plus the `exports` of its
+   `imports` are in scope.
 
 So there are exactly four causes:
 
 - The provider isn't in *any* module's `providers`.
 - Its owning module doesn't `exports` it.
 - `OrdersModule` doesn't `imports` the owning module.
-- The type is erased at runtime — an `interface`, or a circular import — so there is no
-  token to look up (see the Complex tier).
+- The type is erased at runtime — an `interface`, an `import type`, or a circular import — so
+  there is no token to look up (see the Complex tier). You can tell this one from the error
+  itself: it names no token and says "is available in the current module".
 
 ## Encapsulation, in one picture
 
@@ -67,3 +69,9 @@ const orders = moduleRef.get(OrdersService);
 
 No module mocking, no import interception — you overrode a token. That is the entire payoff
 of DI, and it's why "just import the singleton directly" costs you later.
+
+<!--more-->
+
+**Older wording.** Before Nest 11.1.16 the first line ended "…is available in the OrdersModule
+context." instead of "…module." — same fact, and the wording you'll find in older answers
+online.

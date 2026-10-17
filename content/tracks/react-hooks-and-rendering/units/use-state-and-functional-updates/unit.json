@@ -8,12 +8,14 @@
   "objectives": [
     "Predict what repeated setState calls in one handler produce, given state is a per-render snapshot",
     "Choose the functional updater form whenever the next state is computed from the previous state",
-    "Fix stacked updates that lose increments by rewriting setX(x + 1) as setX(prev => prev + 1)"
+    "Fix stacked updates that lose increments by rewriting setX(x + 1) as setX(prev => prev + 1)",
+    "Write a lazy initializer, `useState(() => compute())`, so expensive setup runs only on the first render"
   ],
   "sources": [
     { "title": "React docs: useState", "url": "https://react.dev/reference/react/useState" },
     { "title": "React docs: Queueing a Series of State Updates", "url": "https://react.dev/learn/queueing-a-series-of-state-updates" },
-    { "title": "React docs: State as a Snapshot", "url": "https://react.dev/learn/state-as-a-snapshot" }
+    { "title": "React docs: State as a Snapshot", "url": "https://react.dev/learn/state-as-a-snapshot" },
+    { "title": "React 18 Upgrade Guide: automatic batching", "url": "https://react.dev/blog/2022/03/08/react-18-upgrade-guide" }
   ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
@@ -23,27 +25,39 @@
       "questions": [
         {
           "id": "three-updates",
-          "prompt": "count starts at 0. In one click handler you call setCount(count + 1) three times. What is count on the next render?",
+          "prompt": "`count` starts at 0. One click handler calls `setCount(count + 1)` three times. What is `count` on the next render, and why?",
           "options": [
-            { "id": "one", "text": "1" },
-            { "id": "three", "text": "3" },
-            { "id": "zero", "text": "0" },
-            { "id": "error", "text": "It throws — you can't call setState twice" }
+            { "id": "snapshot", "text": "1 — `count` is 0 in all three calls, so each one queues \"set to 1\"" },
+            { "id": "batch-last", "text": "1 — React batches the three calls and keeps only the last one" },
+            { "id": "queue-adds", "text": "3 — React queues all three updates, so they add up" },
+            { "id": "live-update", "text": "3 — each `setCount` updates `count` before the next line runs" }
           ],
-          "answer": "one",
-          "explanation": "During a render, `count` is a fixed snapshot (0). All three calls compute 0 + 1 = 1, and React batches them, so the result is 1. Use the functional updater setCount(c => c + 1) — each call receives the latest value — to get 3."
+          "answer": "snapshot",
+          "explanation": "In this render, `count` is a snapshot: 0, and calling the setter can't change it. All three calls compute `0 + 1` and queue \"replace with 1\", so the next render has 1 (react.dev, State as a Snapshot). \"React batches them\" is the tempting wrong reason: batching only means React applies all three queued updates in **one** re-render instead of three. It doesn't drop any — queue three updater functions, `setCount(c => c + 1)`, in the same batch and you get 3, because each one receives the result of the one before."
         },
         {
           "id": "when-functional",
-          "prompt": "When should you use the functional updater form, setX(prev => ...)?",
+          "prompt": "When should you use the functional updater form, `setX(prev => ...)`?",
           "options": [
             { "id": "depends-prev", "text": "When the next value is computed from the previous value" },
-            { "id": "always", "text": "Always — the direct form setX(value) is deprecated" },
-            { "id": "never", "text": "Never — it's only for class components" },
-            { "id": "effect-only", "text": "Only inside useEffect" }
+            { "id": "async-only", "text": "Only in async code — inside a click handler, the state variable is always current" },
+            { "id": "objects-only", "text": "Only when the state is an object or an array" },
+            { "id": "always", "text": "Always — the direct form `setX(value)` is deprecated" }
           ],
           "answer": "depends-prev",
-          "explanation": "Reach for setX(prev => ...) whenever the new state depends on the old — multiple updates in one handler, updates inside async callbacks/closures, or anywhere the closed-over value might be stale. If you're setting a fresh value that doesn't read the old one, the direct form is fine."
+          "explanation": "Reach for `setX(prev => ...)` whenever the new state is calculated from the old. It's essential when you queue several updates in one handler (the snapshot is the same for all of them) or call the setter later, after an `await` or from a timer, when the closed-over value may be stale. \"Only in async code\" is the half-truth: React does make sure the state is current at the start of each click, so one update per click is safe either way — but the three-calls bug above lives entirely inside one synchronous handler. Setting a value that doesn't read the old one (`setName(e.target.value)`) needs no updater, and the direct form is not deprecated."
+        },
+        {
+          "id": "lazy-init-runs",
+          "prompt": "A component declares `const [todos, setTodos] = useState(createInitialTodos())`. How often does `createInitialTodos` run?",
+          "options": [
+            { "id": "every-render", "text": "On every render — React uses the result only on the first render and ignores it after" },
+            { "id": "first-only", "text": "Only on the first render — React skips the argument once the state exists" },
+            { "id": "props-change", "text": "Only when the component's props change" },
+            { "id": "never-client", "text": "Once on the server, never in the browser" }
+          ],
+          "answer": "every-render",
+          "explanation": "`createInitialTodos()` is a function *call*, and JavaScript evaluates call arguments before `useState` even runs — so it runs on every render, and React throws the result away after the first (react.dev: \"React saves the initial state once and ignores it on the next renders\"). Pass the function instead, `useState(createInitialTodos)` or `useState(() => createInitialTodos())`, and React calls it only while initializing. (In development, StrictMode calls an initializer twice and keeps one result, so keep it pure.)"
         }
       ]
     },
@@ -54,12 +68,40 @@
         {
           "id": "functional-updater",
           "prompt": "Rewrite this increment so three calls in a row reliably add 3, not 1.",
-          "code": "setCount(___ => ___ + 1);",
+          "code": "setCount(___);",
           "blanks": [
-            { "id": "b1", "accept": ["c", "prev", "n", "count", "x"] },
-            { "id": "b2", "accept": ["c", "prev", "n", "count", "x"] }
+            {
+              "id": "b1",
+              "accept": [
+                "c => c + 1",
+                "(c) => c + 1",
+                "prev => prev + 1",
+                "(prev) => prev + 1",
+                "n => n + 1",
+                "(n) => n + 1",
+                "count => count + 1",
+                "(count) => count + 1",
+                "prevCount => prevCount + 1",
+                "(prevCount) => prevCount + 1",
+                "x => x + 1",
+                "(x) => x + 1",
+                "p => p + 1",
+                "(p) => p + 1",
+                "prevState => prevState + 1",
+                "(prevState) => prevState + 1"
+              ]
+            }
           ],
-          "explanation": "The functional updater setCount(c => c + 1) hands you React's most up-to-date value instead of the render-time snapshot, so stacked updates compound correctly. The parameter name is yours to choose (c, prev, n…)."
+          "explanation": "The updater `setCount(c => c + 1)` queues a function, and React calls it with the result of the update queued before it instead of the render-time snapshot, so stacked updates compound: 0 → 1 → 2 → 3. In your own code the parameter name is yours to choose; react.dev's conventions are the state variable's first letter (`c`), its full name (`count`) or a `prev` prefix (`prevCount`)."
+        },
+        {
+          "id": "lazy-initializer",
+          "prompt": "Make `createInitialTodos` run only on the first render, not on every render.",
+          "code": "const [todos, setTodos] = useState(___);",
+          "blanks": [
+            { "id": "b1", "accept": ["createInitialTodos", "() => createInitialTodos()"] }
+          ],
+          "explanation": "Pass the function itself (`createInitialTodos`, no parentheses) or wrap the call in an arrow. Either way `useState` receives a function, which React treats as an initializer and calls only while initializing. Writing `createInitialTodos()` hands React the *result*, which means calling it on every render."
         }
       ]
     },
@@ -68,38 +110,38 @@
       "id": "predict-state",
       "snippets": [
         {
-          "id": "direct-double",
+          "id": "log-after-set",
           "code": [
             "function Counter() {",
             "  const [count, setCount] = useState(0);",
-            "  function bump() {",
+            "  function handleClick() {",
             "    setCount(count + 1);",
-            "    setCount(count + 1);",
+            "    console.log(count);",
             "  }",
-            "  return <button onClick={bump}>{count}</button>;",
+            "  return <button onClick={handleClick}>{count}</button>;",
             "}"
           ],
-          "question": "After clicking the button once, what does it show?",
-          "answer": "1",
-          "acceptable": ["shows 1", "count is 1", "just 1"],
-          "explanation": "Both calls read the same snapshot count = 0, so both set 1. React batches them into one re-render → 1, not 2."
+          "question": "You click the button once. What does `console.log` print, and what does the button show afterwards?",
+          "answer": "It logs 0; the button shows 1",
+          "acceptable": ["0, then 1", "logs 0, shows 1", "0 and 1"],
+          "explanation": "`setCount` doesn't change the `count` variable in the handler that's already running — that handler belongs to the render where `count` is 0, so it logs 0. The setter queues an update, and React re-renders with `count = 1`, which the button shows. (StrictMode doesn't double-call event handlers, so there's one log in development too.)"
         },
         {
-          "id": "functional-double",
+          "id": "replace-then-update",
           "code": [
             "function Counter() {",
             "  const [count, setCount] = useState(0);",
-            "  function bump() {",
-            "    setCount(c => c + 1);",
-            "    setCount(c => c + 1);",
+            "  function handleClick() {",
+            "    setCount(count + 5);",
+            "    setCount((c) => c + 1);",
             "  }",
-            "  return <button onClick={bump}>{count}</button>;",
+            "  return <button onClick={handleClick}>{count}</button>;",
             "}"
           ],
-          "question": "After clicking once, what does it show now?",
-          "answer": "2",
-          "acceptable": ["shows 2", "count is 2", "just 2"],
-          "explanation": "Each updater receives the result of the previous one: 0 → 1 → 2. Functional updates queue and compound, so you get 2."
+          "question": "After one click, what does the button show?",
+          "answer": "6",
+          "acceptable": ["shows 6", "six"],
+          "explanation": "Values and functions go into one queue, processed in order on the next render. `setCount(count + 5)` reads the snapshot (0) and queues \"replace with 5\"; the updater then receives 5 and returns 6. Swap the two lines and you get 5: the updater runs first (0 → 1), then \"replace with 5\" discards it. A plain value replaces whatever is queued before it; only an updater builds on it."
         }
       ]
     },

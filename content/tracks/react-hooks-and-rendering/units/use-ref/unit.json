@@ -8,13 +8,18 @@
   "objectives": [
     "Explain that useRef returns the same mutable box every render and writing .current never re-renders",
     "Choose a ref or state for a value by asking whether a change to it should update the screen",
+    "Spot a ref read or written during render, and move it into an event handler or effect",
     "Predict that a DOM ref is null during the first render and is set only after React commits",
-    "Write a DOM ref plus a mount effect that focuses an input"
+    "Write a DOM ref that moves focus after an action, where `autoFocus` (focus on mount) can't reach"
   ],
   "sources": [
     { "title": "React docs: useRef", "url": "https://react.dev/reference/react/useRef" },
     { "title": "React docs: Referencing Values with Refs", "url": "https://react.dev/learn/referencing-values-with-refs" },
-    { "title": "React docs: Manipulating the DOM with Refs", "url": "https://react.dev/learn/manipulating-the-dom-with-refs" }
+    { "title": "React docs: Manipulating the DOM with Refs", "url": "https://react.dev/learn/manipulating-the-dom-with-refs" },
+    { "title": "React docs: <input> (autoFocus)", "url": "https://react.dev/reference/react-dom/components/input" },
+    { "title": "React docs: useEffectEvent", "url": "https://react.dev/reference/react/useEffectEvent" },
+    { "title": "React blog: React 19.2 (useEffectEvent)", "url": "https://react.dev/blog/2025/10/01/react-19-2" },
+    { "title": "React docs: StrictMode", "url": "https://react.dev/reference/react/StrictMode" }
   ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
@@ -48,15 +53,39 @@
         },
         {
           "id": "dom-ref-timing",
-          "prompt": "You attach a ref to an <input> to call .focus(). Where is it safe to read inputRef.current?",
+          "prompt": "You attach a ref to an `<input>` to call `.focus()`. Where is it safe to read `inputRef.current`?",
           "options": [
             { "id": "effect-handler", "text": "In an effect or an event handler — after React has committed the DOM" },
             { "id": "render-body", "text": "Directly in the render body, right after useRef" },
             { "id": "never-null", "text": "Anywhere — a DOM ref is never null once declared" },
-            { "id": "before-return", "text": "Only before the component's return statement" }
+            { "id": "render-null-check", "text": "In the render body, as long as you check `if (inputRef.current)` first" }
           ],
           "answer": "effect-handler",
-          "explanation": "During the first render the DOM node doesn't exist yet, so inputRef.current is null. React sets it when it commits the element. Read it in an effect (runs after commit) or an event handler (runs after the user interacts) — never in the render body."
+          "explanation": "During the first render the DOM node doesn't exist yet, so inputRef.current is null; during later renders the DOM hasn't been updated yet. React sets the ref during commit. Read it in an effect (runs after commit) or an event handler (runs when the user interacts). A null check in the render body avoids the crash but not the problem: the render still reads a value React doesn't track, so what it shows depends on when it happened to render."
+        },
+        {
+          "id": "autofocus-or-ref",
+          "prompt": "Which of these focus jobs needs a DOM ref, because `autoFocus` can't do it?",
+          "options": [
+            { "id": "after-clear", "text": "Putting focus back in the search box after the user clicks **Clear** (the box is already on screen)" },
+            { "id": "on-mount", "text": "Focusing the search box when the page first shows it" },
+            { "id": "edit-mode", "text": "Focusing the edit field that appears when the user clicks **Edit** (it mounts at that moment)" },
+            { "id": "none", "text": "None of them — React can't focus an element without a ref" }
+          ],
+          "answer": "after-clear",
+          "explanation": "`<input autoFocus>` tells React to focus the element when it **mounts**. That covers the first-load box and, less obviously, the edit field: it mounts when Edit is clicked, so `autoFocus` fires right then. The Clear case is different: the input is already mounted, so moving focus in response to an action means calling `.focus()` on the real node — `inputRef.current.focus()` in the click handler."
+        },
+        {
+          "id": "render-counter-strict",
+          "prompt": "A component shows how often it has rendered with `renders.current += 1` in its body. In development under StrictMode (React 19.2, which this course runs), the very first mount already shows **2**. Why?",
+          "options": [
+            { "id": "impure-render", "text": "StrictMode calls the component body twice in development to catch impure rendering, and writing a ref during render is impure" },
+            { "id": "new-box", "text": "useRef creates a new box on each call, so the count is reset and re-added" },
+            { "id": "prod-too", "text": "React always renders a component twice on mount, in production too" },
+            { "id": "effect-ran", "text": "StrictMode re-ran the component's effects, and effects re-render the component" }
+          ],
+          "answer": "impure-render",
+          "explanation": "StrictMode calls the component body twice in development to surface impure rendering, and `renders.current += 1` is a write during render — react.dev says not to write or read `ref.current` while rendering (lazy initialization is the one exception). In React 19.2 the second call reuses the first call's ref, so both increments land in the same box and the first mount reads 2; if each call got a fresh box, you would see 1. Production calls the body once and the same code shows 1 — the number tracks how React chose to call the component, not anything real. Write refs in event handlers or effects, and use the React DevTools Profiler to see renders. StrictMode's extra effect run re-runs effects, not the component body, so it adds nothing to this count."
         }
       ]
     },
@@ -66,20 +95,25 @@
       "prompts": [
         {
           "id": "declare-and-focus",
-          "prompt": "Auto-focus this input on mount: declare a ref, attach it, then focus it in an effect.",
+          "prompt": "Clicking **Reply** should put the cursor in the comment box: declare a ref, attach it, then focus it from the click handler.",
           "code": [
-            "const inputRef = ___(null);",
-            "useEffect(() => {",
-            "  inputRef.___.focus();",
-            "}, []);",
-            "return <input ___={inputRef} />;"
+            "const boxRef = ___(null);",
+            "function handleReply() {",
+            "  boxRef.___.focus();",
+            "}",
+            "return (",
+            "  <>",
+            "    <button onClick={handleReply}>Reply</button>",
+            "    <textarea ___={boxRef} />",
+            "  </>",
+            ");"
           ],
           "blanks": [
-            { "id": "b1", "accept": ["useRef"] },
+            { "id": "b1", "accept": ["useRef", "React.useRef"] },
             { "id": "b2", "accept": ["current"] },
             { "id": "b3", "accept": ["ref"] }
           ],
-          "explanation": "useRef(null) makes the box, the ref={inputRef} attribute wires it to the DOM node, and inputRef.current is that node once React commits — so the effect (which runs after commit) can call .focus()."
+          "explanation": "useRef(null) makes the box, the `ref={boxRef}` attribute tells React to put the `<textarea>` DOM node into it at commit, and by the time the user can click Reply, `boxRef.current` is that node — so the handler can call `.focus()`. `autoFocus` couldn't do this: the textarea is already mounted when the click happens."
         },
         {
           "id": "silent-mutate",
@@ -116,8 +150,8 @@
           ],
           "question": "You click the button five times. What number does the label show?",
           "answer": "0",
-          "acceptable": ["0", "zero", "still 0", "shows 0"],
-          "explanation": "count.current really does climb to 5 in memory — but mutating a ref never tells React to re-render, so the button never repaints. It still shows the value from the last render: 0. If the value must appear on screen, it needs to be state, not a ref."
+          "acceptable": ["zero", "still 0", "shows 0"],
+          "explanation": "count.current really does climb to 5 in memory — but mutating a ref never tells React to re-render, so the button never repaints. It still shows the value from the last render: 0. The bug is reading `count.current` during render: if anything else re-rendered the component, the label would jump straight to 5. A value the screen shows belongs in state."
         },
         {
           "id": "ref-null-in-render",
@@ -130,8 +164,8 @@
           ],
           "question": "What does the console.log print during the very first render?",
           "answer": "null",
-          "acceptable": ["null", "prints null", "it's null"],
-          "explanation": "React only assigns inputRef.current AFTER it commits the <input> to the DOM. During the first render the node doesn't exist yet, so the ref is still its initial value, null. Read DOM refs in effects/handlers, not the render body."
+          "acceptable": ["prints null", "it's null"],
+          "explanation": "React only assigns inputRef.current during commit, after the render has returned the `<input>`. During the first render the node doesn't exist yet, so the ref still holds its initial value, null. (In development, StrictMode calls the component twice; both calls print null.) Read DOM refs in effects or handlers, not the render body."
         }
       ]
     },

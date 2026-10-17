@@ -20,9 +20,12 @@ describe("Parent / memo Child", () => {
     expect(screen.getByTestId("child-renders").textContent).toBe("1");
   });
 
-  it("still fires the child's callback when its own button is clicked", () => {
+  it("still fires the child's callback when its own button is clicked, without re-rendering it", () => {
     render(<Parent />);
     fireEvent.click(screen.getByText("Child action"));
     expect(screen.getByTestId("last-clicked").textContent).toBe("last clicked: child");
+    // The callback reads nothing that changes, so its identity shouldn't change either:
+    // an extra dependency (say, `lastClicked`) would re-render the child here.
+    expect(screen.getByTestId("child-renders").textContent).toBe("1");
   });
 });

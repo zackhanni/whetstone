@@ -1,15 +1,16 @@
 {
   "schemaVersion": 3,
   "slug": "use-state-fix-counter",
-  "title": "Fix the counter that only adds 1",
+  "title": "Fix the counter that loses updates",
   "skills": ["react", "hooks", "useState", "functional-updates"],
   "difficulty": "core",
-  "estimatedMinutes": 10,
+  "estimatedMinutes": 15,
   "runner": "in-browser",
   "entry": "Counter.tsx",
   "acceptanceCriteria": [
     "Clicking **Add 3** increases the count by 3",
     "Two clicks reach 6",
+    "Two quick **Save +1** clicks add 2 once both saves finish",
     "The counter still starts at 0"
   ]
 }

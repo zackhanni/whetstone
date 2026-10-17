@@ -1,44 +1,64 @@
 ---
 id: controlled-uncontrolled-warning
-title: The "changing an uncontrolled input to be controlled" warning
+title: Data that arrives late — the warning, and the field that stays empty
 ---
 
-React decides an input is controlled or uncontrolled on its **first render**, based
-on whether `value` is defined. If `value` starts `undefined` and later becomes a
-string, you flip an uncontrolled input into a controlled one — and React warns:
+An input is controlled when it gets a `value`, and `value={undefined}` (or `null`) counts as
+no value at all. An input mustn't switch between the two during its life. If `value` starts
+`undefined` and later becomes a string, React logs:
 
 > A component is changing an uncontrolled input to be controlled.
 
-The classic cause is state initialized without a matching key, so `value` is
-`undefined` at first:
+The classic cause is binding `value` straight to data that hasn't loaded yet:
 
 ```jsx
-function Form({ user }) {
-  // 🐛 user.name is undefined until the fetch resolves
-  const [name, setName] = useState(user.name);
-  // value={undefined} on render 1  →  value="Ada" on render 2
+function NameField({ user, onNameChange }) {
+  // 🐛 user is {} until the fetch resolves: value={undefined}, then value="Ada"
+  return <input value={user.name} onChange={(e) => onNameChange(e.target.value)} />;
+}
+```
+
+The fix is to keep `value` a string from the first render (react.dev's own advice):
+
+```jsx
+<input value={user.name ?? ""} onChange={(e) => onNameChange(e.target.value)} />
+```
+
+The mirror-image warning — _"changing a controlled input to be uncontrolled"_ — happens when
+`value` goes from a string back to `undefined`/`null` (resetting state to `undefined`, say).
+Same rule fixes both: pick controlled **or** uncontrolled and keep `value` consistently
+defined (or consistently absent) for the input's whole life.
+
+<!--more-->
+
+### The trap: copying late data into state
+
+Now the version most forms actually have — local state seeded from the prop, so the user
+can edit it:
+
+```jsx
+function NameForm({ user }) {
+  const [name, setName] = useState(user.name); // 🐛 reads user.name once, while it's undefined
   return <input value={name} onChange={(e) => setName(e.target.value)} />;
 }
 ```
 
-The fix is to keep `value` **always defined** — never let it be `undefined`. Default
-it to an empty string:
+This one does *not* warn when the data loads. `useState` ignores its argument after the
+first render, so `name` stays `undefined`: the field stays empty and nothing switched. The
+warning fires later, on the first keystroke, when `setName("x")` makes `value` a string.
+
+`useState(user.name ?? "")` silences that warning — and leaves the bug: the field is now a
+controlled empty string, and "Ada" still never appears. The fix is to create the state
+*after* the data exists:
 
 ```jsx
-const [name, setName] = useState(user.name ?? "");
-// or, at the prop:
-<input value={name ?? ""} onChange={(e) => setName(e.target.value)} />;
+// Render the form only once there's something to edit…
+{user ? <NameForm initialName={user.name} /> : <p>Loading…</p>}
+
+// …or remount it when the data arrives: a new key means fresh state from useState.
+<NameForm key={user?.id ?? "loading"} initialName={user?.name ?? ""} />
 ```
 
-The mirror-image warning — _"changing a controlled input to be uncontrolled"_ —
-happens when `value` goes from a string back to `undefined`/`null` (e.g. resetting
-state to `undefined`). Same rule fixes both: pick controlled **or** uncontrolled and
-keep `value` consistently defined (or consistently absent) for the input's whole
-life.
-
-<!--more-->
-
-Why it matters: the warning is React telling you the input just changed _who owns
-its value_ mid-flight. That's almost never intentional, and it usually means state
-is seeded from data that isn't there yet — coalesce to `""` and the ambiguity
-disappears.
+Avoid the third option people reach for, an effect that copies the prop into state: it
+renders once with the stale value first, and without the right dependencies it overwrites
+whatever the user types (the `untangling-effects` unit takes that bug apart).

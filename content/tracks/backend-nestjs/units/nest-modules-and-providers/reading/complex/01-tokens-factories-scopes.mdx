@@ -1,6 +1,6 @@
 ---
 id: tokens-factories-scopes
-title: Tokens, factories, scopes, and circular graphs
+title: Tokens, factories and scopes
 ---
 
 `providers: [UsersService]` is shorthand for the full form:
@@ -27,7 +27,7 @@ a **strategy**.
       provide: "REDIS",                                      // needs async setup / other providers
       useFactory: async (config: ConfigService) => {
         const client = createClient({ url: config.get("REDIS_URL") });
-        await client.connect();       // node-redis v4 doesn't connect on create — await it here
+        await client.connect();       // node-redis (v4 onward) doesn't connect on create — await it here
         return client;                // consumers get a client that's ready to use
       },
       inject: [ConfigService],
@@ -65,40 +65,17 @@ An abstract class works too, and keeps the type and the token as one symbol.
 | `REQUEST` | One per request | You need the request (tenant, user) inside a deep provider |
 | `TRANSIENT` | One per consumer | Each injector wants its own copy (e.g. a scoped logger) |
 
-Request scope is contagious: a request-scoped provider forces every provider that injects it
-to be re-instantiated per request too, up the chain — including the controller. That's a real
+Request scope is contagious — it bubbles *up* the injection chain:
+
+```
+(-> means "injects")
+OrdersController  ->  OrdersService  ->  TenantContext   @Injectable({ scope: Scope.REQUEST })
+per request now       per request now    per request
+OrdersController  ->  PricingService                     still one instance: it never reaches TenantContext
+```
+
+Everything that depends on a request-scoped provider, directly or through others, is rebuilt
+for every request, controller included; providers off that path stay singletons. That's a real
 throughput cost, and it's why `AsyncLocalStorage` (or passing the value as an argument) often
-beats `Scope.REQUEST`.
-
-The mirror-image bug is state on a singleton:
-
-```ts
-@Injectable()
-export class ReportService {
-  private currentUser?: User;          // ❌ shared by every concurrent request
-  run(user: User) { this.currentUser = user; /* … */ }
-}
-```
-
-Two overlapping requests and user A gets user B's report. Fields on a singleton are for
-dependencies and caches keyed by input — never for "the current request".
-
-## Circular dependencies
-
-If `A` injects `B` and `B` injects `A`, one of the two classes is `undefined` at the moment
-the other's metadata is read. Nest offers `forwardRef`:
-
-```ts
-constructor(@Inject(forwardRef(() => OrdersService)) private orders: OrdersService) {}
-```
-
-Treat it as a smell, not a solution. A cycle almost always means a third responsibility is
-hiding inside one of the two classes — extract it into a module both can depend on. The same
-goes for two modules importing each other (`imports: [forwardRef(() => OtherModule)]`).
-
-## Lifecycle hooks
-
-Providers can implement `OnModuleInit` / `OnApplicationShutdown`. Do connection work there,
-not in the constructor: the constructor must stay cheap and synchronous, and shutdown hooks
-(with `app.enableShutdownHooks()`) are what let a deployment drain in-flight requests instead
-of dropping them.
+beats `Scope.REQUEST` for "the current user/tenant". The opposite mistake — keeping the current
+user in a field on a singleton — is the shared-state bug from the previous unit.

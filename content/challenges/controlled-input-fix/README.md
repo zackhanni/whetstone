@@ -7,6 +7,6 @@ input to push changes back to state.
 
 ## Hints
 
-A controlled input pairs `value={query}` with
-`onChange={(e) => setQuery(e.target.value)}`. Both props together keep React state
-as the single source of truth.
+A controlled input needs both halves of the loop: `value` carries state into the field,
+and a change handler carries every keystroke back into state. The new text is on the
+event's target. With both in place, React state stays the single source of truth.

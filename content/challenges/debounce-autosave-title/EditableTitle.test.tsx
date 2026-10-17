@@ -82,6 +82,23 @@ describe("EditableTitle", () => {
     expect(calls.length).toBe(0);
   });
 
+  it("debounces two fields independently", async () => {
+    const calls: string[] = [];
+    render(
+      <>
+        <EditableTitle title="A" onCommit={(t) => calls.push(`a:${t}`)} />
+        <EditableTitle title="B" onCommit={(t) => calls.push(`b:${t}`)} />
+      </>,
+    );
+    const [a, b] = screen.getAllByTestId("title") as HTMLInputElement[];
+    // A handle shared by every instance (a module-level variable) lets B's keystroke
+    // cancel A's pending save.
+    fireEvent.change(a, { target: { value: "Alpha" } });
+    fireEvent.change(b, { target: { value: "Beta" } });
+    await settle();
+    expect([...calls].sort().join(", ")).toBe("a:Alpha, b:Beta");
+  });
+
   it("cancels a pending commit when the component unmounts", async () => {
     const { calls, type, unmount } = setup();
     type("Gone");

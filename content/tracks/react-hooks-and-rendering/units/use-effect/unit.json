@@ -9,7 +9,7 @@
     "Explain that effects exist to sync with systems outside React, like a socket, timer, or the network",
     "Write a subscription effect whose cleanup and deps reconnect cleanly when a prop like roomId changes",
     "Predict when an effect runs relative to render, and the stale value an empty-deps interval reads",
-    "Fix a fetch effect's race and leak by aborting the previous request with AbortController in cleanup"
+    "Fix a fetch effect's race and cancel stale requests by aborting the previous request with AbortController in cleanup, telling that AbortError apart from a real failure"
   ],
   "sources": [
     { "title": "React docs: useEffect", "url": "https://react.dev/reference/react/useEffect" },
@@ -45,7 +45,19 @@
             { "id": "debounce", "text": "Debounce the effect until roomId stops changing" }
           ],
           "answer": "rerun-on-change",
-          "explanation": "The dependency array is a claim about WHEN to re-synchronize: clean up with the previous values, then re-run with the new ones, whenever a listed value changes. [] means 'never re-run' (sync once); omitting the array entirely means 'run after every render'."
+          "explanation": "The dependency array is a claim about WHEN to re-synchronize: clean up with the previous values, then re-run with the new ones, whenever a listed value changes (compared with `Object.is`). `[]` means 'never re-run after mount'; omitting the array entirely means 'run after every render'. And `[]` doesn't promise 'exactly once': since React 18, StrictMode in development adds one extra setup + cleanup cycle on mount, which is harmless when the cleanup undoes the setup."
+        },
+        {
+          "id": "fetch-cleanup",
+          "prompt": "A search effect fetches results for `query` and calls `setResults` when the response arrives. What must its cleanup do?",
+          "options": [
+            { "id": "abort-or-ignore", "text": "Abort the request, or flag its response to be ignored, so an older query's late response can't overwrite a newer one" },
+            { "id": "react-discards", "text": "Nothing — React drops state updates that come from an effect it has already cleaned up" },
+            { "id": "run-once-ref", "text": "Set a ref so the effect only fetches the first time, which also stops StrictMode's double fetch" },
+            { "id": "await-order", "text": "Await the previous request before starting the next, so responses arrive in order" }
+          ],
+          "answer": "abort-or-ignore",
+          "explanation": "Responses can arrive in any order, and React doesn't know which `setResults` call is stale — it applies them all. The cleanup runs before the next query's effect, so it's where you mark the old request as dead: `controller.abort()` cancels it (and makes it reject with an `AbortError` you ignore), or an `ignore = true` flag makes its `.then` skip the update. Aborting also stops the wasted network work. A run-once ref breaks the effect for every later query and only hides StrictMode's check; serializing requests makes every search wait for the one before it."
         }
       ]
     },
@@ -68,6 +80,28 @@
             { "id": "b2", "accept": ["roomId"] }
           ],
           "explanation": "The cleanup tears down the old connection before the next run (and on unmount). Listing roomId re-runs the effect — disconnect old, connect new — on every room change. Omit the cleanup and you leak one connection per switch."
+        },
+        {
+          "id": "abort-in-cleanup",
+          "prompt": "Complete the search effect so a query change or an unmount cancels the request still in flight.",
+          "code": [
+            "useEffect(() => {",
+            "  const controller = new ___();",
+            "  fetch(`/api/search?q=${encodeURIComponent(query)}`, { ___: controller.signal })",
+            "    .then((res) => res.json())",
+            "    .then(setResults)",
+            "    .catch((err) => {",
+            "      if (err.name !== \"AbortError\") setError(err);",
+            "    });",
+            "  return () => controller.___();",
+            "}, [query]);"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["AbortController"] },
+            { "id": "b2", "accept": ["signal"] },
+            { "id": "b3", "accept": ["abort"] }
+          ],
+          "explanation": "Each run makes its own `AbortController` and hands its `signal` to `fetch` (the option is named `signal`). React runs the cleanup before the next run and on unmount, so `controller.abort()` cancels exactly the request that run started. The cancelled fetch rejects with an `AbortError` — so it never reaches `.then(setResults)`, which is what fixes the race — and the `.catch` skips that one because it's your own cleanup, not a failure."
         }
       ]
     },
@@ -90,11 +124,12 @@
           "question": "What value does the counter show after ~5 seconds, and why?",
           "answer": "It shows 1 and never climbs.",
           "acceptable": ["1", "stays at 1", "shows 1 forever", "stuck at 1"],
-          "explanation": "Empty deps → the effect runs once and closes over count = 0 forever (a stale closure). Every tick computes 0 + 1 = 1. Fix with the functional updater setCount(c => c + 1), which always reads the latest value and needs no count in the deps."
+          "explanation": "Empty deps → the effect runs once and closes over count = 0 forever (a stale closure). Every tick computes 0 + 1 = 1. Fix with the functional updater setCount(c => c + 1), which receives the latest value and needs no count in the deps. (StrictMode doesn't change the answer: its extra mount cycle runs the cleanup, which clears the first interval before the second starts.)"
         },
         {
           "id": "effect-after-render",
           "code": [
+            "// Production build (no StrictMode double-calls)",
             "function App() {",
             "  const [n, setN] = useState(0);",
             "  console.log('render', n);",
@@ -107,7 +142,7 @@
           "question": "What is logged on the first render, then after one click?",
           "answer": "render 0, effect 0, then render 1, effect 1",
           "acceptable": ["render 0 effect 0 render 1 effect 1", "render then effect, each time"],
-          "explanation": "React runs render first (logs 'render n'), commits to the DOM, then runs effects (logs 'effect n') — effects fire AFTER paint, and with no dependency array, after every render. So 'render' always logs before 'effect', each time n changes."
+          "explanation": "React calls the component (logs 'render n'), commits the result to the DOM, and only then runs effects (logs 'effect n') — with no dependency array, after every render. What's guaranteed is *after commit*, not *after paint*: an effect caused by an interaction like this click may run before the browser paints (react.dev, useEffect caveats); one that isn't usually runs after. In development under StrictMode you'd see more lines — `render 0` twice (React calls the component twice to catch impure rendering), `effect 0` twice (the extra setup + cleanup cycle on mount), then `render 1` twice and `effect 1` once — but the order rule holds."
         }
       ]
     },
