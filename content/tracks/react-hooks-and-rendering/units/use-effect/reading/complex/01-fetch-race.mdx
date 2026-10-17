@@ -1,12 +1,14 @@
 ---
 id: fetch-race
-title: Fetching in an effect — guard races and leaks
+title: Fetching in an effect — guard races and cancel stale requests
 ---
 
 Fetching inside an Effect has two classic hazards:
 
-1. **Race conditions** — a slow earlier request resolves *after* a newer one and overwrites it.
-2. **Leaks** — the response comes back after unmount, and you set state on nothing.
+1. **Race conditions** — a slow earlier request resolves *after* a newer one and overwrites
+   its results.
+2. **Requests nobody needs** — the query changed or the component unmounted, but the old
+   request keeps running, using bandwidth and server time for a response you'll throw away.
 
 Guard both with `AbortController`:
 
@@ -14,23 +16,31 @@ Guard both with `AbortController`:
 useEffect(() => {
   const controller = new AbortController();
   fetchResults(query, { signal: controller.signal })
-    .then(setResults)
+    .then((results) => {
+      setResults(results);
+      setError(null);
+    })
     .catch((err) => {
-      if (err.name !== "AbortError") throw err; // ignore cancellation, surface real errors
+      if (err.name === "AbortError") return; // we cancelled it in cleanup: expected
+      setError(err); // a real failure: put it on screen
     });
   return () => controller.abort();
 }, [query]);
 ```
 
+Don't `throw err` inside that `.catch` to "surface" a real error. A throw there only rejects
+the promise chain, which ends as an unhandled promise rejection in the console; it never
+reaches React, so an error boundary can't catch it. Put the error in state and render it.
+
 This is the exact bug you fix in the challenge at the end of this unit. In real apps, prefer
-a data-fetching library (TanStack Query) that handles this for you — but understand *why*
-it's needed.
+a data-fetching library (TanStack Query) or your framework's data loading, which handle this
+for you — but understand *why* it's needed.
 
 <!--more-->
 
 ### Why not just a boolean `ignore` flag?
 
-A common alternative is an `ignore` flag instead of aborting:
+react.dev's own examples use an `ignore` flag instead of aborting:
 
 ```jsx
 useEffect(() => {
@@ -40,9 +50,25 @@ useEffect(() => {
 }, [query]);
 ```
 
-This fixes the *race* (stale results are ignored) but it does **not cancel the network
-request** — the work still completes, wasting bandwidth and battery. `AbortController` both
-ignores *and* cancels, which is why the challenge tests assert the request was aborted.
+This fixes the *race* (stale results are ignored), and react.dev accepts either: the cleanup
+should "either abort the fetch or ignore its result". But the flag doesn't **cancel** the
+request — the work still completes, wasting bandwidth and server time. Aborting cancels it,
+and in the example above it fixes the race too: the aborted request rejects, so its `.then`
+never runs. That only holds while every async step before `setResults` honours the signal.
+react.dev warns that aborting alone isn't enough once more async work is chained after the
+fetch, and calls the `ignore` flag the most reliable race fix, so with a longer chain, use
+both. The challenge asserts the abort because cancelling is the part a flag can't do.
 
-Also: in React Strict Mode (dev only), effects run twice on mount to surface missing
-cleanup — another reason your fetch effect must be cancellable.
+### What about setting state after unmount?
+
+Older code often guards `setResults` with an `isMounted` check to silence React 17's "Can't
+perform a React state update on an unmounted component" warning. React 18 removed that warning:
+setting state on an unmounted component does nothing, and the warning mostly fired where
+that was harmless. The cost worth fixing is the request that kept running — cancel it.
+
+### StrictMode's double fetch
+
+Since React 18, StrictMode in development runs one extra setup + cleanup cycle when a
+component mounts. With the abort cleanup above you'll see two requests in the Network tab,
+the first one cancelled — that's the check working, not a bug. (With an `ignore` flag both
+complete, and the first response is dropped.) Production sends one.

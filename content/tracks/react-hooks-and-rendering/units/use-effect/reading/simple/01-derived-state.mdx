@@ -23,8 +23,11 @@ is correct on the very first render and does no extra work.
 
 ### The deeper reason
 
-Effects run *after* render and commit. Deriving state in an Effect means React paints once
-with the old value, then re-renders with the corrected one — a wasted render every time the
-inputs change, and a flash of stale UI in the worst case. Computing during render sidesteps
-the whole round-trip. If the computation is genuinely expensive, reach for `useMemo` — still
-during render, never an Effect.
+Effects run *after* render and commit. Deriving state in an Effect means React does a whole
+render pass and commit with the stale `fullName`, then the Effect's `setFullName` triggers a
+second render with the corrected one — a wasted render every time the inputs change. Whether
+the user ever *sees* the stale frame depends on what triggered it (React may process an
+Effect's update before or after the browser paints), so sometimes you get a flash of stale UI
+and sometimes you don't — but the extra render always happens. Computing during render
+sidesteps the whole round-trip. If the computation is genuinely expensive, reach for
+`useMemo` — still during render, never an Effect.

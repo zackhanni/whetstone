@@ -17,3 +17,7 @@ useEffect(() => {
 
 Forget the cleanup and you leak a connection every time `roomId` changes. The dependency
 array is a claim: "re-run this effect only when these values change."
+
+In development, StrictMode (React 18+) checks this for you: on mount it runs one extra
+setup + cleanup cycle, so you'll see connect → disconnect → connect. With a correct cleanup
+that's invisible to the user; without one, you'd see two live connections straight away.
