@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "polling-loop-stops-cleanly",
+  "title": "Make the poller wait its turn, survive errors and stop cleanly",
+  "skills": ["async", "timers"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "poll.ts",
+  "acceptanceCriteria": [
+    "The first poll runs immediately, not after `intervalMs`",
+    "The next poll starts `intervalMs` after the previous one **finishes**, so two polls never run at once",
+    "A failed poll is passed to `onError`, and polling carries on",
+    "`stop()` during an in-flight poll means no further poll ever starts",
+    "`stop()` between polls cancels the scheduled one"
+  ]
+}

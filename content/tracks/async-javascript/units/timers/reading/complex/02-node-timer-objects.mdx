@@ -1,0 +1,70 @@
+---
+id: node-timer-objects
+title: Node's Timeout object and promise timers
+---
+
+In Node, a timer handle is an object with behaviour of its own, and some of it matters in
+production.
+
+**`unref()`: don't keep the process alive for this.** A pending timer keeps a Node process
+running. That's right for real work and wrong for housekeeping, such as a heartbeat log or a
+cache sweep: a CLI or a test runner that should exit hangs instead.
+
+```js
+const heartbeat = setInterval(() => log("alive"), 30_000);
+heartbeat.unref(); // the process may exit while this is pending
+```
+
+`ref()` undoes it, and `hasRef()` reports it.
+
+**`refresh()`: restart the countdown without a new timer.** It reschedules the same timer for its
+original duration, counted from now. That's a cheap idle watchdog:
+
+```js
+const idle = setTimeout(closeConnection, 60_000);
+socket.on("data", () => idle.refresh()); // any traffic pushes the deadline back
+```
+
+**`+timeout` gives a primitive id.** `Timeout` implements `Symbol.toPrimitive` (Node v14.9.0 /
+v12.19.0), and `clearTimeout` accepts that number. It's useful when the handle has to be
+stored as a key or serialised within the same thread.
+
+**Promise timers with cancellation: `node:timers/promises`** (added in v15.0.0, stable since
+v16.0.0):
+
+```js
+import { setTimeout as sleep, setInterval as every } from "node:timers/promises";
+
+await sleep(500);                                 // pause an async function
+await sleep(500, "value", { signal: ac.signal }); // rejects with an AbortError on abort
+
+while (!(await pollOnce())) {                     // "wait 1 s after each poll"
+  await sleep(1000);
+}
+
+for await (const _ of every(1000)) {              // an async-iterator interval
+  if (await pollOnce()) break;                    // break clears the interval
+}
+```
+
+The two loops are not the same. The `sleep` loop is the recursive-`setTimeout` shape: the
+wait starts after each poll finishes. The `every` loop never runs its body twice at once, but
+the interval keeps ticking underneath it, and ticks that fire while the body is busy are
+buffered and handed over **back to back** afterwards. In a test with a 20 ms interval and one
+90 ms body, the next four iterations all started in the same millisecond. For polling, prefer
+the `sleep` loop.
+
+Browsers have no built-in promise `sleep`. There, `new Promise((r) => setTimeout(r, ms))` is the
+idiom, and cancellation is yours to wire up (the `cancellation-and-races` unit).
+
+<!--more-->
+
+### Small Node differences that change behaviour
+
+- **No 4 ms nesting clamp, but a 1 ms floor.** "When `delay` is larger than `2147483647` or less
+  than `1` or `NaN`, the `delay` will be set to `1`." So in Node `setTimeout(a, 1)` and
+  `setTimeout(b, 0)` are the same delay. In testing they ran `a, b`, in the order scheduled.
+  Node's docs don't guarantee ordering, so don't encode it.
+- **No ordering guarantee in general.** Node "makes no guarantees about the exact timing of when
+  callbacks will fire, nor of their ordering". If B must follow A, have A schedule B.
+- **`this` in a non-arrow callback is the `Timeout`**, not `globalThis` as in browsers.
