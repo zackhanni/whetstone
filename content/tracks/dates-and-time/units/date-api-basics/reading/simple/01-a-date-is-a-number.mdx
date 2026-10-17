@@ -1,0 +1,37 @@
+---
+id: a-date-is-a-number
+title: A Date is one number
+---
+
+A `Date` doesn't store a year, a month and a day. It stores **one number**: the milliseconds
+since 1970-01-01 00:00:00 UTC, called the _epoch_. The year, the weekday and the string you print
+are all computed from that number when you ask for them.
+
+```js
+const epoch = new Date(0);
+epoch.getTime();     // 0
+epoch.toISOString(); // "1970-01-01T00:00:00.000Z"
+
+Date.now();          // e.g. 1773154800000: just the number, no object
+new Date();          // the same instant, wrapped in a Date
+```
+
+Because there's a number underneath:
+
+- **`b - a` is elapsed milliseconds.** Subtraction converts both Dates to their numbers.
+- **`a < b` works, `a === b` doesn't.** `<` and `>` compare the numbers, but `===` compares the
+  _objects_, so two Dates for the same instant are not `===`. Compare
+  `a.getTime() === b.getTime()`.
+- **Copying is `new Date(d)`** (or `new Date(d.getTime())`): a second, independent object
+  holding the same instant.
+
+`toISOString()` prints that instant in UTC. The trailing `Z` means "zero offset", so it prints
+the same string on every machine. The `get…` methods (`getHours`, `getDate`, …) read the same
+number through the machine's time zone. That difference is the next unit; this one stays on one
+machine in one zone.
+
+<!--more-->
+
+The range is ±8,640,000,000,000,000 ms (100 million days) either side of the epoch, which is
+April 20, 271821 BC to September 13, 275760 AD. Outside it you get an Invalid Date, covered at
+the end of this unit.
