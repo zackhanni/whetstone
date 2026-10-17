@@ -1,0 +1,42 @@
+---
+id: which-equality
+title: toBe, toEqual, toStrictEqual, toMatchObject
+---
+
+Four matchers, four meanings of "equal". Each row below was run under Vitest 4.
+
+| Matcher | Compares | Passes | Fails |
+| --- | --- | --- | --- |
+| `toBe` | `Object.is` — the same primitive, or the *same object* | `expect("ab").toBe("a" + "b")` | `expect({ a: 1 }).toBe({ a: 1 })` |
+| `toEqual` | structure, recursively | `expect({ a: 1 }).toEqual({ a: 1 })` | `expect({ a: 1, b: 2 }).toEqual({ a: 1 })` |
+| `toStrictEqual` | structure, plus `undefined` keys, sparse arrays and the object's class | `expect([1, 2]).toStrictEqual([1, 2])` | `expect({ a: 1, b: undefined }).toStrictEqual({ a: 1 })` |
+| `toMatchObject` | the expected keys only (a subset) | `expect({ id: 7, name: "Ada" }).toMatchObject({ name: "Ada" })` | `expect({ name: "Ada" }).toMatchObject({ name: "Bo" })` |
+
+How to choose:
+
+- **Primitives** (numbers, strings, booleans): `toBe`.
+- **Objects and arrays you built**: `toEqual`. `toBe` asks "is this the very same object?", so two
+  objects with identical contents fail it — the error even says `// Object.is equality`.
+- **When `undefined` vs missing matters**, or a class instance must not pass for a plain object:
+  `toStrictEqual`. `toEqual` treats `{ a: 1, b: undefined }` as equal to `{ a: 1 }`, and a
+  `new User("Ada")` as equal to `{ name: "Ada" }`.
+- **When the result has fields you don't care about** (an id, a timestamp): `toMatchObject`.
+  `toEqual` is not a subset check — an extra key fails it.
+
+Two traps the table doesn't show:
+
+```ts
+expect(0.1 + 0.2).toBe(0.3);        // fails: 0.30000000000000004
+expect(0.1 + 0.2).toBeCloseTo(0.3); // passes — use this for floating point
+
+expect(-0).toBe(0);                 // fails: Object.is tells -0 from +0
+```
+
+<!--more-->
+
+## The same choice in `node:assert`
+
+Import from `node:assert/strict`. Node's default `node:assert` is *legacy mode*, whose
+`equal`/`deepEqual` use `==`: `assert.equal(1, "1")` passes there. In strict mode, `equal` is
+`Object.is` (like `toBe`) and `deepEqual` behaves like `deepStrictEqual`, which also compares
+prototypes — so it's closer to `toStrictEqual` than to `toEqual`.

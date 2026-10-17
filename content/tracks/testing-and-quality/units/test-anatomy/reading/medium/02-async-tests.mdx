@@ -1,0 +1,51 @@
+---
+id: async-tests
+title: Async tests — the test must wait for the work
+---
+
+A test function can be `async`. Vitest waits for the promise it returns, and the test fails if that
+promise rejects. So the rule is simple: **every promise the test cares about must be awaited** (or
+returned) before the test function finishes.
+
+```ts
+it("loads the user's display name", async () => {
+  const name = await displayName(1); // wait for the work
+  expect(name).toBe("ADA");          // then check it
+});
+```
+
+## `.resolves` and `.rejects`
+
+They unwrap a promise and apply the matcher to its value or its rejection reason. They return a
+promise themselves, so **await the whole assertion**:
+
+```ts
+await expect(displayName(1)).resolves.toBe("ADA");
+await expect(applyCode(cart, "NOPE")).rejects.toThrow("Unknown code");
+```
+
+What happens if you forget that `await` depends on the version:
+
+- **Vitest 4** auto-awaits a dangling `.resolves`/`.rejects` when the test ends, so a wrong
+  expectation still fails — and prints a warning that *"this will cause the test to fail in the next
+  Vitest major"*. A *correct* un-awaited assertion passes with the same warning (checked on
+  4.1.12; the `expect` API page's "marked as failed" overstates it).
+- **Vitest 5** fails the test for the missing `await` itself — checked on 5.0.5, even an assertion
+  that would have passed fails with *"This assertion is asynchronous and must be awaited"*.
+- **Node's `node:test`** doesn't auto-await: a test with an un-awaited `assert.rejects(...)` is
+  marked ✔ before the check runs. The failure arrives later, as a warning that the test
+  *"generated asynchronous activity after the test ended"* — on Node 24 that fails the run, but the
+  test itself still reads as passed.
+
+Write the `await` either way; it's the only form that means the same thing everywhere.
+
+## `toThrow` needs a function
+
+```ts
+expect(parse("{")).toThrow(SyntaxError);         // ✗ parse throws BEFORE expect runs
+expect(() => parse("{")).toThrow(SyntaxError);   // ✓ expect calls it and catches the throw
+```
+
+In the first line, `parse("{")` runs as an argument, throws, and the test fails with the raw
+`SyntaxError` — the matcher never ran. Give `expect` a function so it can call it inside a
+`try`. For async code, use `.rejects` on the promise instead; no wrapper needed.
