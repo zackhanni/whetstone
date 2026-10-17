@@ -1,0 +1,78 @@
+---
+id: extract-from-a-component
+title: Extracting the logic out of a component
+---
+
+A task list that fetches, filters, sorts and labels — all inside the component:
+
+```tsx
+export function TaskList({ filter }: { filter: "all" | "overdue" }) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  useEffect(() => {
+    fetch("/api/tasks").then((r) => r.json()).then(setTasks);
+  }, []);
+
+  const visible = tasks
+    .filter((t) => filter === "all" || t.dueAt < Date.now())
+    .sort((a, b) => a.dueAt - b.dueAt);
+
+  return (
+    <ul>
+      {visible.map((t) => (
+        <li key={t.id}>{t.title} — {dueLabel(Date.now(), t.dueAt)}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+To test "overdue tasks come first, sorted by due date" you have to render the component, intercept
+`fetch`, wait for the effect, fake the clock, and read the order out of the DOM. The rule you care
+about is three lines; the test is thirty.
+
+Split it by job:
+
+```ts
+// tasks.ts — pure. No React, no fetch, no clock.
+export function visibleTasks(tasks: Task[], filter: "all" | "overdue", now: number): Task[] {
+  return tasks
+    .filter((t) => filter === "all" || t.dueAt < now)
+    .toSorted((a, b) => a.dueAt - b.dueAt);
+}
+```
+
+```tsx
+// TaskList.tsx — the shell: fetches, owns the clock, renders
+export function TaskList({ filter, now }: { filter: "all" | "overdue"; now: number }) {
+  const tasks = useTasks(); // the fetch lives in a hook
+  return (
+    <ul>
+      {visibleTasks(tasks, filter, now).map((t) => (
+        <li key={t.id}>{t.title} — {dueLabel(now, t.dueAt)}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+Now each rule is a one-line test in the Node environment — no DOM at all:
+
+```ts
+expect(visibleTasks([later, earlier], "all", NOON).map((t) => t.id)).toEqual([earlier.id, later.id]);
+expect(visibleTasks([pastDue, future], "overdue", NOON)).toEqual([pastDue]);
+```
+
+and the component needs one rendering test to prove the wiring, not one per rule.
+
+Three things moved, each for a reason:
+
+- **The decision** went to a `.ts` file with no imports from React. That file can be tested as fast as
+  any function, and reused on the server.
+- **The fetch** went to a hook. One place handles loading and errors; the component stops caring.
+- **The clock** became a prop. A component that calls `Date.now()` while rendering returns different
+  output for the same props and state. React assumes *"every component you write is a pure
+  function"*; react.dev's own clock example keeps `new Date()` and `setInterval` in a hook and passes
+  `time` to the component as a prop.
+
+`toSorted` returns a new array (ES2023); `sort` would reorder the array the caller passed in — a
+side effect hiding inside a "pure" function.

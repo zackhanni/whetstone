@@ -1,0 +1,235 @@
+{
+  "schemaVersion": 3,
+  "slug": "designing-for-testability",
+  "title": "Designing code you can test",
+  "skills": ["testing", "testability", "test-doubles", "typescript"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Extract decision logic into a pure function that takes everything it depends on — including the current time — as arguments, leaving a thin shell that supplies the real values",
+    "Add a dependency seam (pass the clock, `fetch` or a mailer in) so a test substitutes a double without mocking a module",
+    "Explain why module-level state and same-module calls resist tests, and restructure them with a factory or an injected dependency",
+    "Explain the real rule behind \"you can't use enums in tests\" — Node's type stripping and `erasableSyntaxOnly` reject `enum`, an ambient `const enum` has no runtime object, a factory mock drops it — and use a union or an `as const` object instead"
+  ],
+  "sources": [
+    { "title": "React docs: Keeping Components Pure", "url": "https://react.dev/learn/keeping-components-pure" },
+    { "title": "Vitest 4 docs: Mocking Modules", "url": "https://v4.vitest.dev/guide/mocking/modules" },
+    { "title": "Vitest 4 docs: vi.mock", "url": "https://v4.vitest.dev/api/vi" },
+    { "title": "Node.js docs: Modules — TypeScript (type stripping)", "url": "https://nodejs.org/api/typescript.html" },
+    { "title": "TypeScript docs: TSConfig reference (isolatedModules, erasableSyntaxOnly)", "url": "https://www.typescriptlang.org/tsconfig/" },
+    { "title": "TypeScript 5.8 release notes: --erasableSyntaxOnly", "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-8.html" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-testability", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-testability",
+      "questions": [
+        {
+          "id": "why-hard",
+          "prompt": "`dueLabel(dueAt)` computes `\"Overdue\"` / `\"Due in 3h\"` from `dueAt - Date.now()`. What makes it hard to test?",
+          "options": [
+            { "id": "hidden-input", "text": "Its result depends on an input that isn't an argument — the clock — so a test must recompute from `Date.now()` or fake time" },
+            { "id": "async", "text": "Reading the clock makes the function asynchronous" },
+            { "id": "forbidden", "text": "Vitest doesn't allow `Date.now()` inside code under test" },
+            { "id": "slow", "text": "`Date.now()` is slow, so the test would time out" }
+          ],
+          "answer": "hidden-input",
+          "explanation": "A test controls a function through its arguments. The clock is a hidden argument: the same `dueAt` gives different answers at different times, so the test either duplicates the logic (`Date.now() - 1`) or installs fake timers. Pass `now` in and the test becomes `dueLabel(NOON, NOON - 1)`. Nothing about `Date.now()` is async, slow or banned."
+        },
+        {
+          "id": "which-pure",
+          "prompt": "Which of these is a pure function?",
+          "options": [
+            { "id": "pure", "text": "`(now: number, dueAt: number) => (dueAt < now ? \"Overdue\" : \"Upcoming\")`" },
+            { "id": "sort", "text": "`(tasks: Task[]) => tasks.sort((a, b) => a.dueAt - b.dueAt)`" },
+            { "id": "uuid", "text": "`(title: string) => ({ id: crypto.randomUUID(), title })`" },
+            { "id": "storage", "text": "`(key: string) => localStorage.getItem(key) ?? \"\"`" }
+          ],
+          "answer": "pure",
+          "explanation": "Same arguments, same result, nothing outside touched. `sort` reorders the caller's array in place — a side effect (use `toSorted`). `randomUUID` returns a different value each call. `localStorage` is outside state that can change between calls. Each of those belongs in the shell, or gets passed in."
+        },
+        {
+          "id": "seam-vs-module-mock",
+          "prompt": "`remindOverdue(tasks, { now, sendEmail })` takes its clock and mailer as arguments. What does that buy you over `vi.mock(\"./mailer\")` plus fake timers?",
+          "options": [
+            { "id": "visible", "text": "The dependency is visible in the signature, there are no hoisting or restore rules, and it works in any test runner" },
+            { "id": "faster", "text": "It runs faster in production" },
+            { "id": "required", "text": "TypeScript can't type-check a module mock" },
+            { "id": "async-mock", "text": "`vi.mock` can't mock async functions" }
+          ],
+          "answer": "visible",
+          "explanation": "A seam makes the dependency part of the contract: a test passes `() => NOON` and a recording function, and those doubles exist only inside that one call — nothing to hoist, restore or leak into the next test. It needs no mocking library at all, which is why the in-browser challenges here use seams. `vi.mock` handles async functions fine; the difference is design, not capability."
+        },
+        {
+          "id": "module-state",
+          "prompt": "`rate-limit.ts` keeps `const hits = new Map()` at module level. Test A uses up the limit for `1.2.3.4`; test B in the same file then fails. The best fix?",
+          "options": [
+            { "id": "factory", "text": "A `createRateLimiter()` factory that owns its own `Map`; the app creates one at startup, each test creates its own" },
+            { "id": "retry", "text": "Retry test B — the failure is timing-dependent" },
+            { "id": "separate-files", "text": "Move every test into its own file" },
+            { "id": "fake-timers", "text": "Use fake timers so the limit resets" }
+          ],
+          "answer": "factory",
+          "explanation": "A module is evaluated once per test file, so its top-level state is shared by every test there — a deterministic leak, not flake. Giving the state to an instance fixes it at the root and keeps one shared limiter in the app. One file per test only hides it, and fake timers don't touch a Map. (If you can't change the shape, an exported `reset()` called in `beforeEach` is the fallback.)"
+        },
+        {
+          "id": "same-module-call",
+          "prompt": "`clock.ts` exports `now()` and `stamp()`, and `stamp` calls `now`. A test mocks `now` with `vi.mock` + `importOriginal`; `now()` returns the fake, but `stamp()` still uses the real time. Why?",
+          "options": [
+            { "id": "local-call", "text": "`vi.mock` changes what *importers* of the module see; `stamp` calls the local `now` directly, so move `now` to its own module or pass it in" },
+            { "id": "not-hoisted", "text": "`vi.mock` wasn't hoisted, so `stamp` was loaded first" },
+            { "id": "spy-namespace", "text": "It needed `vi.spyOn` on the module namespace instead" },
+            { "id": "importoriginal", "text": "`importOriginal` restored the real `now` after the factory ran" }
+          ],
+          "answer": "local-call",
+          "explanation": "Inside `clock.ts`, `now` is a local binding; the mock only replaces the module's exports as other files see them. Vitest's docs say mocking calls between functions in the same file isn't possible and won't be — they suggest refactoring or dependency injection. The hoisting worked (the test's own `now()` is mocked), and spying on the namespace doesn't reach the internal call either."
+        },
+        {
+          "id": "node-test-enum",
+          "prompt": "A teammate insists \"enums don't work in tests\". Their tests are `*.test.ts` files run with `node --test` on Node 24, and the code under test declares `enum Status { … }`. What actually happens?",
+          "options": [
+            { "id": "strip-only", "text": "Node's type stripping refuses the file — `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX: TypeScript enum is not supported in strip-only mode`" },
+            { "id": "undefined", "text": "Node strips the enum along with the types, so `Status` is `undefined` at runtime" },
+            { "id": "works", "text": "It works; Node compiles enums like `tsc` does" },
+            { "id": "const-only", "text": "Only `const enum` fails; a regular enum works" }
+          ],
+          "answer": "strip-only",
+          "explanation": "Node 22.18+/23.6+ runs `.ts` by *erasing* type syntax. An enum isn't a type — it compiles to a JavaScript object — so there's nothing to erase and Node rejects the whole file with that error (checked on Node 24.21). It doesn't silently drop it. Both `enum` and `const enum` need compiling; the old `--experimental-transform-types` flag that did that was removed in Node 26."
+        },
+        {
+          "id": "vitest-which-enum-fails",
+          "prompt": "Under Vitest 4.1 (no special config), which of these fails at runtime?",
+          "options": [
+            { "id": "ambient", "text": "Using a `declare const enum` that only exists in a library's `.d.ts` file" },
+            { "id": "regular", "text": "Importing a regular `enum` from another `.ts` file" },
+            { "id": "const-ts", "text": "Importing a `const enum` declared in another `.ts` file" },
+            { "id": "local", "text": "Declaring an `enum` inside the test file itself" }
+          ],
+          "answer": "ambient",
+          "explanation": "Vitest compiles each file with a per-file transpiler, which emits a real object for any enum it can see — so regular enums, local enums and `const enum`s from `.ts` files all work. An *ambient* const enum has no object anywhere: `tsc` would inline its values, but a one-file transpiler never reads the `.d.ts`, so `Color.Red` reads a property of `undefined`. `isolatedModules: true` makes `tsc` flag exactly this (TS2748)."
+        },
+        {
+          "id": "enum-and-factory-mock",
+          "prompt": "`vi.mock(\"./api\", () => ({ fetchUser: vi.fn() }))` fails with `No \"Role\" export is defined on the \"./api\" mock`, because the code under test compares `user.role === Role.Admin`. Without touching the factory, which change to `api.ts` (and that comparison) stops the error?",
+          "options": [
+            { "id": "union-type", "text": "Make `Role` a type, `type Role = \"admin\" | \"member\"`, and compare with `\"admin\"`" },
+            { "id": "as-const", "text": "Replace the enum with `const Role = { Admin: \"admin\" } as const`" },
+            { "id": "const-enum", "text": "Make it a `const enum`" },
+            { "id": "move-mock", "text": "Move the `vi.mock` call above the imports" }
+          ],
+          "answer": "union-type",
+          "explanation": "The factory's return value is the whole module, so any *value* export it omits is missing — an enum, an `as const` object, and (under Vitest, which emits it as an object) a `const enum` alike; all three were checked and fail. A union type is erased before the test runs, so the code under test imports nothing at runtime and the factory doesn't need to provide it. Moving `vi.mock` changes nothing; it's hoisted anyway. (If you need the values at runtime, keep the `as const` object and use `importOriginal` in the factory.)"
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-testability",
+      "prompts": [
+        {
+          "id": "pure-signature",
+          "prompt": "Make `dueLabel` pure: the current time becomes its first argument, named `now`.",
+          "code": [
+            "export function dueLabel(___: number, dueAt: number): string {",
+            "  const hoursLeft = (dueAt - ___) / 3_600_000;",
+            "  if (hoursLeft < 0) return \"Overdue\";",
+            "  return hoursLeft < 24 ? `Due in ${Math.ceil(hoursLeft)}h` : \"Due later\";",
+            "}"
+          ],
+          "blanks": [
+            { "id": "param", "accept": ["now"] },
+            { "id": "use", "accept": ["now"] }
+          ],
+          "explanation": "The clock read moves to the caller — `dueLabel(Date.now(), task.dueAt)` — and the function's result now depends only on its arguments, so a test can pass any instant, including the exact boundary."
+        },
+        {
+          "id": "seam-default",
+          "prompt": "Give the seam defaults so production call sites don't change, while tests pass their own clock and mailer.",
+          "code": [
+            "export async function remindOverdue(",
+            "  tasks: Task[],",
+            "  { now = ___, sendEmail = mailer.send }: Partial<ReminderDeps> = {},",
+            ") { /* … */ }"
+          ],
+          "blanks": [{ "id": "date-now", "accept": ["Date.now", "() => Date.now()"] }],
+          "explanation": "Pass the function itself, not its result: `now` must be read on each call. `Date.now` works unbound (it doesn't use `this`), so `{ now = Date.now }` is enough; a test passes `{ now: () => NOON, sendEmail: recorder }`."
+        },
+        {
+          "id": "as-const-union",
+          "prompt": "Replace `enum Role { Admin = \"admin\", Member = \"member\" }` with something Node's type stripping accepts.",
+          "code": [
+            "export const Role = { Admin: \"admin\", Member: \"member\" } as ___;",
+            "export type Role = (typeof Role)[___ typeof Role]; // \"admin\" | \"member\""
+          ],
+          "blanks": [
+            { "id": "const", "accept": ["const"] },
+            { "id": "keyof", "accept": ["keyof"] }
+          ],
+          "explanation": "`as const` keeps the literal types `\"admin\"` and `\"member\"` instead of widening to `string`; indexing the object's type by `keyof` gives the union of its values. Both lines are plain JavaScript once the types are erased, so `node --test` runs the file — and code that only needs the type can import nothing at runtime."
+        },
+        {
+          "id": "tsconfig-flags",
+          "prompt": "Name the two `tsconfig.json` options that make `tsc` report these problems before a test runner does.",
+          "code": [
+            "\"___\": true, // TS 5.8+: error on enum, namespaces with code, parameter properties",
+            "\"___\": true  // error on code a one-file-at-a-time transpiler can't compile, e.g. an ambient const enum"
+          ],
+          "blanks": [
+            { "id": "erasable", "accept": ["erasableSyntaxOnly"] },
+            { "id": "isolated", "accept": ["isolatedModules"] }
+          ],
+          "explanation": "`erasableSyntaxOnly` mirrors Node's type stripping (TS1294 on each construct it would reject). `isolatedModules` mirrors per-file transpilers like Vite, esbuild and Babel (TS2748 for an ambient const enum). Neither changes the emitted code — they turn runtime surprises into type errors."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-testability",
+      "snippets": [
+        {
+          "id": "same-module-mock",
+          "code": [
+            "// clock.ts",
+            "export function now() { return \"real now\"; }",
+            "export function stamp() { return `at ${now()}`; }",
+            "",
+            "// clock.test.ts",
+            "import { now, stamp } from \"./clock\";",
+            "vi.mock(\"./clock\", async (importOriginal) => ({",
+            "  ...(await importOriginal<typeof import(\"./clock\")>()),",
+            "  now: () => \"fake now\",",
+            "}));",
+            "",
+            "console.log(now(), \"|\", stamp());"
+          ],
+          "question": "What does it print under Vitest 4?",
+          "answer": "fake now | at real now",
+          "acceptable": ["fake now | at real now", "fake now, at real now"],
+          "explanation": "The test file imports the mocked module, so its `now()` is the fake. But `stamp` is the original function from the real module (spread in by `importOriginal`), and inside that module `now` is a local binding the mock can't reach. Move `now` to its own module, or give `stamp` a `now` parameter."
+        },
+        {
+          "id": "node-strip-enum",
+          "code": [
+            "// status.ts",
+            "export enum Status { Active = \"active\", Closed = \"closed\" }",
+            "",
+            "// status.test.ts",
+            "import { test } from \"node:test\";",
+            "import assert from \"node:assert/strict\";",
+            "import { Status } from \"./status.ts\";",
+            "",
+            "test(\"active\", () => assert.equal(Status.Active, \"active\"));",
+            "",
+            "// $ node --test status.test.ts    (Node 24)"
+          ],
+          "question": "What happens?",
+          "answer": "The file fails to load: SyntaxError [ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX]: TypeScript enum is not supported in strip-only mode",
+          "acceptable": ["ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX", "it fails: enum not supported in strip-only mode", "SyntaxError, enums aren't supported"],
+          "explanation": "Node runs TypeScript by erasing type syntax, and an enum is runtime code, so the import of `status.ts` throws before any test runs and the runner reports the file as failed. The same test passes under Vitest, which compiles enums — which is exactly why \"you can't use enums in tests\" sounds true to some people and false to others."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-testable-resend", "challengeSlug": "testable-resend-cooldown" }
+  ]
+}

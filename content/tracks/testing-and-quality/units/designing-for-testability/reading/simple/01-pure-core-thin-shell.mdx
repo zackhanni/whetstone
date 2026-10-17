@@ -1,0 +1,57 @@
+---
+id: pure-core-thin-shell
+title: Pull the clock out, and the test writes itself
+---
+
+```ts
+// ❌ The decision and the clock are tangled together
+export function dueLabel(dueAt: number): string {
+  const hoursLeft = (dueAt - Date.now()) / 3_600_000;
+  if (hoursLeft < 0) return "Overdue";
+  if (hoursLeft < 24) return `Due in ${Math.ceil(hoursLeft)}h`;
+  return "Due later";
+}
+```
+
+To test "Overdue" you need a `dueAt` in the past *relative to whenever the test runs*. So the test
+computes it from `Date.now()` — re-implementing the logic it's meant to check — or installs fake
+timers, or is green today and red at midnight. The function is hard to test because it reads
+something that isn't one of its arguments.
+
+Move that read out, and pass the value in:
+
+```ts
+// ✅ Pure: everything it depends on arrives as an argument
+export function dueLabel(now: number, dueAt: number): string {
+  const hoursLeft = (dueAt - now) / 3_600_000;
+  if (hoursLeft < 0) return "Overdue";
+  if (hoursLeft < 24) return `Due in ${Math.ceil(hoursLeft)}h`;
+  return "Due later";
+}
+```
+
+```ts
+const NOON = Date.UTC(2026, 2, 10, 12);
+
+it("labels a task by the time left", () => {
+  expect(dueLabel(NOON, NOON - 1)).toBe("Overdue");
+  expect(dueLabel(NOON, NOON + 90 * 60_000)).toBe("Due in 2h");
+  expect(dueLabel(NOON, NOON + 30 * 3_600_000)).toBe("Due later");
+});
+```
+
+No doubles, no fake timers, no setup. The caller — the **thin shell** — supplies the real value:
+`dueLabel(Date.now(), task.dueAt)`.
+
+A **pure function** returns the same output for the same inputs and changes nothing outside itself.
+react.dev's two-line version: it *"minds its own business"*, and *"same inputs, same output"*.
+The usual reasons a function isn't pure, each of which belongs in the shell:
+
+- the time — `Date.now()`, `new Date()`
+- randomness — `Math.random()`, `crypto.randomUUID()`
+- I/O — `fetch`, the database, `localStorage`, the file system
+- the environment — `process.env`, `window.location`
+- state that outlives the call — a module-level variable
+
+Keep the decisions in a pure core and push those reads to the edge. The core gets tested with plain
+values; the shell is so thin there's little left in it to get wrong.
