@@ -364,6 +364,20 @@ export const TAXONOMY: TagNode[] = [
   { slug: "consistency-models", label: "Consistency Models", parents: ["system-design", "databases"] },
   { slug: "back-pressure", label: "Back-pressure & Load Shedding", parents: ["scaling"] },
   { slug: "fan-out", label: "Fan-out (Feeds)", parents: ["system-design"] },
+
+  // ── infrastructure ──
+  { slug: "infrastructure", label: "Infrastructure", parents: [] },
+  { slug: "terraform", label: "Terraform", parents: ["infrastructure"] },
+  { slug: "terraform-state", label: "Terraform State", parents: ["terraform"] },
+  { slug: "ci-cd", label: "CI/CD", parents: ["infrastructure"] },
+  { slug: "github-actions", label: "GitHub Actions", parents: ["ci-cd"] },
+  { slug: "deployments", label: "Deployments & Environments", parents: ["ci-cd"] },
+  { slug: "observability", label: "Observability", parents: ["infrastructure"] },
+  { slug: "structured-logging", label: "Structured Logging", parents: ["observability"] },
+  { slug: "metrics", label: "Metrics", parents: ["observability"] },
+  { slug: "tracing", label: "Tracing", parents: ["observability"] },
+  { slug: "opentelemetry", label: "OpenTelemetry", parents: ["observability"] },
+  { slug: "alerting", label: "Alerting", parents: ["observability"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

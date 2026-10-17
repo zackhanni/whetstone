@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 3,
+  "slug": "infrastructure",
+  "title": "Infrastructure",
+  "description": "The machinery between a merged commit and a healthy production system: Terraform's state, plan and apply loop — and how to change infrastructure without destroying it — then the environments and CI/CD pipeline that carry a commit to production (GitHub Actions triggers, concurrency and minutes, preview deployments, migrations and rollbacks), and finally the logs, metrics and traces that tell you whether production is actually working.",
+  "units": [
+    "terraform-basics",
+    "environments-and-ci-cd",
+    "observability-basics"
+  ]
+}
