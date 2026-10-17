@@ -1,0 +1,60 @@
+---
+id: a-typed-route-tree
+title: A route tree TypeScript can check
+---
+
+TanStack Router v1 treats your routes as typed data. Every path, path param and search param is
+known to TypeScript, so a typo in a link is a compile error instead of a 404 in production.
+
+There are two ways to declare the tree. **File-based routing** is the one the docs recommend: a
+file per route under `src/routes/`, each exporting a route made with `createFileRoute`, and a
+bundler plugin (or the Router CLI) that generates `routeTree.gen.ts` — the tree plus its types —
+and keeps the path strings in sync when you move files.
+
+```tsx
+// src/routes/posts.tsx
+export const Route = createFileRoute("/posts")({
+  component: PostsPage,
+});
+```
+
+**Code-based routing** builds the same tree by hand. It's what you'll see in small examples and
+tests, and it shows what the generator does for you:
+
+```tsx
+const rootRoute = createRootRoute();
+const postsRoute = createRoute({ getParentRoute: () => rootRoute, path: "posts" });
+const postRoute = createRoute({ getParentRoute: () => rootRoute, path: "posts/$postId" });
+
+const routeTree = rootRoute.addChildren([postsRoute, postRoute]);
+const router = createRouter({ routeTree });
+```
+
+`getParentRoute` links each route to its parent. At runtime the router uses it to build the
+route's full path (a child's `path` is relative to its parent's); in the types, it's how a child
+inherits its parents' params, search and context. The docs stress the types, but it isn't
+optional at runtime either: without it, the router throws an invariant error when it builds the
+tree. `addChildren` then assembles the tree the router matches against.
+
+One more line makes the *global* exports — `Link`, `useNavigate`, `redirect` — check against
+**your** tree. You register the router's type with the library:
+
+```ts
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}
+```
+
+After that, with Router 1.170 and TypeScript 5.9, the first two links fail to compile and the
+third is the fix:
+
+```tsx
+<Link to="/post">…</Link>             // '"/post"' is not assignable … Did you mean '"/posts"'?
+<Link to="/posts/$postId">…</Link>    // Property 'params' is missing
+<Link to="/posts/$postId" params={{ postId: "5" }}>…</Link> // ✅
+```
+
+Inside a route's own component, use the route's hooks — `Route.useParams()`,
+`Route.useSearch()`, `Route.useLoaderData()` — which are typed for that route without any hint.

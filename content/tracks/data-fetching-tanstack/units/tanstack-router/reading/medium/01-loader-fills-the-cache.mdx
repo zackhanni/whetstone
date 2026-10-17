@@ -1,0 +1,69 @@
+---
+id: loader-fills-the-cache
+title: The loader fills the query cache; the component reads it
+---
+
+Fetching in a component starts only after it renders, and a child's fetch starts only after its
+parent's has finished — a waterfall, with a spinner at each level. A route **loader** starts
+loading as soon as the router knows where the user is going, before anything renders. With
+TanStack Query, the loader doesn't *own* the data; it makes sure the query cache has it.
+
+```tsx
+// the root route declares what every loader receives
+const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  component: () => <Outlet />,
+});
+
+const postsQuery = (search: PostsSearch) =>
+  queryOptions({ queryKey: ["posts", search], queryFn: () => fetchPosts(search) });
+
+const postsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "posts",
+  validateSearch: parsePostsSearch, // the validator from the search-params example
+  loaderDeps: ({ search }) => ({ page: search.page, tag: search.tag }),
+  loader: ({ context, deps }) =>
+    context.queryClient.query({ ...postsQuery(deps), staleTime: "static" }),
+  pendingComponent: () => <p>Loading posts…</p>,
+  component: function PostsPage() {
+    const search = postsRoute.useSearch();
+    const { data } = useSuspenseQuery(postsQuery(search));
+    return <PostList posts={data.items} />;
+  },
+});
+
+const router = createRouter({
+  routeTree: rootRoute.addChildren([postsRoute]),
+  context: { queryClient },
+  defaultPreloadStaleTime: 0,
+});
+```
+
+Line by line:
+
+- **`createRootRouteWithContext<{ queryClient }>()`** (note the double call) types the router
+  context; `createRouter` must then be given a `queryClient`, and every loader receives it as
+  `context.queryClient`.
+- **`loaderDeps`** lists the search values the loader uses. The loader reads them from `deps`,
+  and when they change between navigations the router re-runs the loader — "regardless of
+  `staleTime`", in the docs' words. Return only what the loader uses: returning the whole
+  `search` reloads on every unrelated param.
+- **`queryClient.query({ ...options, staleTime: "static" })`** returns the cached data if there
+  is any and fetches otherwise. That's the read-or-fetch the docs now use in loaders. It
+  replaced `queryClient.ensureQueryData(options)`, which Query **v5.102** deprecated (still
+  works, to be removed in v6) — most existing code and older guides use that name. Run
+  side by side headlessly, both called the `queryFn` once for two loads; a plain
+  `query(options)` (default `staleTime: 0`) called it twice.
+- **Returning the promise** makes the router wait for it. The navigation completes when the
+  data is in the cache, so the component never sees a loading state for it.
+- **`useSuspenseQuery(postsQuery(search))`** in the component reads the same key — the factory
+  guarantees it — and subscribes to it, so invalidations and refetches still update the page.
+  Its `data` is never `undefined`.
+- **`defaultPreloadStaleTime: 0`** — the router caches loader results too (preloads are fresh
+  for 30 seconds by default). The docs recommend `0` with an external cache so that Query,
+  not the router, decides whether to fetch.
+
+What the user sees when they click **Next** (checked against Router 1.170 with a slow server):
+the page they're on stays on screen while the loader runs; only if it takes longer than
+`pendingMs` (default **1 second**) does the `pendingComponent` appear — and then for at least
+`pendingMinMs` (default 500 ms), so it doesn't flash.

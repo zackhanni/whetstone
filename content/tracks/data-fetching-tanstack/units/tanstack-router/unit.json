@@ -1,0 +1,392 @@
+{
+  "schemaVersion": 3,
+  "slug": "tanstack-router",
+  "title": "TanStack Router: typed routes, search state and loaders",
+  "skills": [
+    "tanstack-router",
+    "tanstack-query",
+    "data-fetching"
+  ],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Build a typed route tree — file-based (`createFileRoute` plus a generated tree) or code-based (`createRoute`, `getParentRoute`, `addChildren`) — and register the router so `Link` and `navigate` are type-checked",
+    "Write a `validateSearch` that turns untrusted URL search params into typed state with fallbacks, and update search with an updater that keeps the other params",
+    "Load a route's data before render: `loaderDeps` for the search values the loader uses, and a loader that fills the query cache (`queryClient.query({ …, staleTime: 'static' })`, formerly `ensureQueryData`) for `useSuspenseQuery` to read",
+    "Predict what the user sees on a navigation: when the loader re-runs, when the pending component appears, and what a missing `loaderDeps` does"
+  ],
+  "sources": [
+    {
+      "title": "TanStack Router v1 docs: Code-Based Routing",
+      "url": "https://tanstack.com/router/v1/docs/framework/react/routing/code-based-routing"
+    },
+    {
+      "title": "TanStack Router v1 docs: File-Based Routing",
+      "url": "https://tanstack.com/router/v1/docs/framework/react/routing/file-based-routing"
+    },
+    {
+      "title": "TanStack Router v1 docs: Type Safety",
+      "url": "https://tanstack.com/router/v1/docs/framework/react/guide/type-safety"
+    },
+    {
+      "title": "TanStack Router v1 docs: Search Params",
+      "url": "https://tanstack.com/router/v1/docs/framework/react/guide/search-params"
+    },
+    {
+      "title": "TanStack Router v1 docs: Data Loading",
+      "url": "https://tanstack.com/router/v1/docs/framework/react/guide/data-loading"
+    },
+    {
+      "title": "TanStack Router v1 docs: External Data Loading",
+      "url": "https://tanstack.com/router/v1/docs/framework/react/guide/external-data-loading"
+    },
+    {
+      "title": "TanStack Query v5 docs: Migrating to v5 — Imperative QueryClient methods",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/migrating-to-v5#imperative-queryclient-methods"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-router",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-router",
+      "questions": [
+        {
+          "id": "register",
+          "prompt": "What does `declare module '@tanstack/react-router' { interface Register { router: typeof router } }` buy you?",
+          "options": [
+            {
+              "id": "typed-globals",
+              "text": "`Link`, `useNavigate` and `redirect` are type-checked against your route tree"
+            },
+            {
+              "id": "runtime",
+              "text": "It registers the routes at runtime, so `RouterProvider` can match URLs against them"
+            },
+            {
+              "id": "file-routes",
+              "text": "It's what makes file-based routing generate `routeTree.gen.ts`"
+            },
+            {
+              "id": "context",
+              "text": "It injects the router into every loader's `context`"
+            }
+          ],
+          "answer": "typed-globals",
+          "explanation": "A `declare module` block is erased at compile time: it's declaration merging, pure TypeScript. It tells the library's top-level exports which router your app uses, so `<Link to=\"/post\">` is a compile error with a \"did you mean '/posts'\" hint. The runtime router comes from `createRouter` and `RouterProvider`; the generated tree comes from the bundler plugin or CLI; loader context comes from `createRootRouteWithContext` and `createRouter({ context })`."
+        },
+        {
+          "id": "parent-route",
+          "prompt": "In code-based routing, why does every non-root `createRoute` need `getParentRoute: () => parentRoute`?",
+          "options": [
+            {
+              "id": "both",
+              "text": "Both: the router builds the route's full path from it, and the types inherit through it"
+            },
+            {
+              "id": "types-only",
+              "text": "Only for TypeScript: at runtime the tree comes entirely from `addChildren`, so it's erased"
+            },
+            {
+              "id": "order",
+              "text": "It sets the order in which sibling routes are tried when matching a URL"
+            },
+            {
+              "id": "lazy",
+              "text": "It lets the parent route be code-split and loaded only when a child matches"
+            }
+          ],
+          "answer": "both",
+          "explanation": "The docs justify it with type safety — a child route inherits its parents' params, search and context through it — but it's also used at runtime: in Router 1.170 a route's id and full path are built from its parent's, and a child route without it fails an invariant when the router builds the tree. Matching order and code splitting are unrelated."
+        },
+        {
+          "id": "validate-why",
+          "prompt": "`?page=2` arrives in `validateSearch` as the number `2`. Why validate at all?",
+          "options": [
+            {
+              "id": "user-input",
+              "text": "The URL is user input: `?page=abc` and `?page=-3` arrive too"
+            },
+            {
+              "id": "strings",
+              "text": "Because the router hands every search value over as a string, and validation converts it"
+            },
+            {
+              "id": "required",
+              "text": "Because routes without `validateSearch` ignore the query string"
+            },
+            {
+              "id": "types-only",
+              "text": "Only so TypeScript knows the type; at runtime the return value is discarded"
+            }
+          ],
+          "answer": "user-input",
+          "explanation": "The router JSON-parses first-level values, so numbers and booleans keep their types — but `abc` is still `\"abc\"` and nothing stops `-3`. `validateSearch` is the trust boundary: its return value is what `useSearch`, `loaderDeps` and the loader receive, so returning fallbacks there keeps every consumer simple. Without it the raw values still reach `useSearch` — just untyped and unchecked."
+        },
+        {
+          "id": "search-replace",
+          "prompt": "On `/posts?page=1&tag=react`, the Next link is `<Link from=\"/posts\" search={{ page: page + 1 }}>`. Where does it go?",
+          "options": [
+            {
+              "id": "drops-tag",
+              "text": "`/posts?page=2` — the object replaces the whole search, dropping `tag`"
+            },
+            {
+              "id": "merges",
+              "text": "`/posts?page=2&tag=react` — the router merges an object into the current search"
+            },
+            {
+              "id": "type-error",
+              "text": "It doesn't compile: the search object is missing the `tag` key"
+            },
+            {
+              "id": "throws",
+              "text": "It throws at runtime, because the new search no longer matches the route's schema"
+            }
+          ],
+          "answer": "drops-tag",
+          "explanation": "An object is the new search, full stop. The updater form, `search={(prev) => ({ ...prev, page: prev.page + 1 })}`, keeps everything else. Optional keys make the bug invisible to TypeScript. (Run headlessly: the object link's `href` was `/posts?page=2` and the updater's kept every other param.)"
+        },
+        {
+          "id": "loader-deps",
+          "prompt": "A `/posts` loader reads `page` from `location.search` and has no `loaderDeps`. The user clicks from page 1 to page 2. What happens?",
+          "options": [
+            {
+              "id": "no-rerun",
+              "text": "The loader doesn't re-run; the component suspends on page 2 and the pending component flashes"
+            },
+            {
+              "id": "reruns",
+              "text": "The loader re-runs, because the URL changed and loaders run on every navigation"
+            },
+            {
+              "id": "stale-page",
+              "text": "Page 1 stays on screen for good, because the loader never runs again for this route"
+            },
+            {
+              "id": "error",
+              "text": "The router throws an error: loaders may only read search params through `loaderDeps`"
+            }
+          ],
+          "answer": "no-rerun",
+          "explanation": "Loader results are keyed by pathname plus `loaderDeps`. Without deps, `?page=2` is the same key, and in a headless run the loader didn't run again. The page still ends up right — the component asks for page 2 and `useSuspenseQuery` fetches it — but by suspending, so the user sees a loading flash and the waterfall the loader was meant to prevent. `loaderDeps: ({ search }) => ({ page: search.page })` fixes it."
+        },
+        {
+          "id": "loader-call",
+          "prompt": "Which loader body matches what `ensureQueryData` did, in TanStack Query v5.102+?",
+          "options": [
+            {
+              "id": "static",
+              "text": "`context.queryClient.query({ ...postsQuery(deps), staleTime: 'static' })`"
+            },
+            {
+              "id": "plain",
+              "text": "`context.queryClient.query(postsQuery(deps))`"
+            },
+            {
+              "id": "prefetch",
+              "text": "`context.queryClient.prefetchQuery(postsQuery(deps))`"
+            },
+            {
+              "id": "no-return",
+              "text": "`void context.queryClient.query({ ...postsQuery(deps), staleTime: 'static' })` — without returning it"
+            }
+          ],
+          "answer": "static",
+          "explanation": "`ensureQueryData` meant \"cached data if there is any, otherwise fetch\". With `staleTime: 'static'`, `query` treats any cached data as fresh, which is the same thing — the migration guide's own replacement. Plain `query` uses `staleTime: 0`, so it refetches even when cached (headlessly: two calls for two loads, versus one). `prefetchQuery` is deprecated too and swallows errors. Not returning the promise means the router doesn't wait — fine for streaming non-critical data, wrong for what the page needs to render."
+        },
+        {
+          "id": "pending-timing",
+          "prompt": "With default router options and `loaderDeps` in place, the user clicks **Next** and page 2's loader takes 3 seconds. What do they see?",
+          "options": [
+            {
+              "id": "old-then-pending",
+              "text": "Page 1 for about a second, then the `pendingComponent` until page 2 is ready"
+            },
+            {
+              "id": "pending-now",
+              "text": "The `pendingComponent` immediately, for 3 seconds"
+            },
+            {
+              "id": "old-only",
+              "text": "Page 1 for 3 seconds, then page 2 — the pending component only shows on first load"
+            },
+            {
+              "id": "blank",
+              "text": "A blank outlet until page 2 is ready"
+            }
+          ],
+          "answer": "old-then-pending",
+          "explanation": "The router waits for the loader and keeps the current page rendered meanwhile. Only past `pendingMs` (default 1 s) does it show the route's `pendingComponent`, and then for at least `pendingMinMs` (default 500 ms) so it doesn't flash. An immediate pending component is the symptom of a component that suspended — usually missing `loaderDeps`."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-router",
+      "prompts": [
+        {
+          "id": "code-based-route",
+          "prompt": "Declare a code-based child route and build the tree.",
+          "code": [
+            "const postsRoute = createRoute({",
+            "  ___: () => rootRoute,",
+            "  path: \"posts\",",
+            "});",
+            "",
+            "const routeTree = rootRoute.___([postsRoute]);"
+          ],
+          "blanks": [
+            {
+              "id": "c1",
+              "accept": [
+                "getParentRoute"
+              ]
+            },
+            {
+              "id": "c2",
+              "accept": [
+                "addChildren"
+              ]
+            }
+          ],
+          "explanation": "`getParentRoute` links the child to its parent (for the full path and for inherited types); `addChildren` assembles the tree that `createRouter({ routeTree })` matches against. File-based routing generates both for you in `routeTree.gen.ts`."
+        },
+        {
+          "id": "validate-search",
+          "prompt": "Validate the search: a page that isn't a positive integer falls back to 1.",
+          "code": [
+            "validateSearch: (search: Record<string, unknown>): PostsSearch => {",
+            "  const page = ___(search.page);",
+            "  return { page: Number.___(page) && page > 0 ? page : 1 };",
+            "},"
+          ],
+          "blanks": [
+            {
+              "id": "v1",
+              "accept": [
+                "Number"
+              ]
+            },
+            {
+              "id": "v2",
+              "accept": [
+                "isInteger",
+                "isSafeInteger"
+              ]
+            }
+          ],
+          "explanation": "`Number(...)` turns `2`, `\"2\"`, `\"abc\"` and `undefined` into `2`, `2`, `NaN` and `NaN`; `Number.isInteger` rejects `NaN` and `1.5`. Whatever the URL held, the route sees a valid number."
+        },
+        {
+          "id": "loader-wiring",
+          "prompt": "Make the loader depend on `page` only, and fill the query cache before render.",
+          "code": [
+            "___: ({ search }) => ({ page: search.page }),",
+            "loader: ({ context, ___ }) =>",
+            "  context.queryClient.query({ ...postsQuery(deps.page), staleTime: \"___\" }),"
+          ],
+          "blanks": [
+            {
+              "id": "l1",
+              "accept": [
+                "loaderDeps"
+              ]
+            },
+            {
+              "id": "l2",
+              "accept": [
+                "deps"
+              ]
+            },
+            {
+              "id": "l3",
+              "accept": [
+                "static"
+              ]
+            }
+          ],
+          "explanation": "`loaderDeps` declares what the loader reads, so changing `page` re-runs it and other params don't; the loader receives the result as `deps`. `staleTime: 'static'` makes `query` return cached data when there is some — the replacement for the deprecated `ensureQueryData`."
+        },
+        {
+          "id": "keep-search",
+          "prompt": "Go to the next page and keep every other search param.",
+          "code": "<Link from=\"/posts\" search={(___) => ({ ...prev, page: prev.page + 1 })}>Next</Link>",
+          "blanks": [
+            {
+              "id": "k1",
+              "accept": [
+                "prev"
+              ]
+            }
+          ],
+          "explanation": "The function form receives the current search; spreading it keeps `tag`, `sort` and anything else. An object literal would replace the search entirely."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-router",
+      "snippets": [
+        {
+          "id": "parsed-types",
+          "code": [
+            "// The router starts at /posts?page=2&desc=true&tag=react&q=007",
+            "validateSearch: (search: Record<string, unknown>) => {",
+            "  console.log(Object.entries(search).map(([k, v]) => `${k}:${typeof v}`).join(\" \"));",
+            "  return search;",
+            "},"
+          ],
+          "question": "What's logged?",
+          "answer": "page:number desc:boolean tag:string q:string",
+          "explanation": "The router JSON-parses each first-level value: `2` and `true` become a number and a boolean, while `react` isn't valid JSON and stays a string. So does `007` — JSON has no leading zeros — which saves an id like `007` from becoming `7`. Validation still has to handle each case. (Logged headlessly with Router 1.170.)"
+        },
+        {
+          "id": "no-deps-flash",
+          "code": [
+            "const postsRoute = createRoute({",
+            "  getParentRoute: () => rootRoute,",
+            "  path: \"posts\",",
+            "  validateSearch: parsePostsSearch,",
+            "  loader: ({ context, location }) =>",
+            "    context.queryClient.query({ ...postsQuery(location.search.page), staleTime: \"static\" }),",
+            "  pendingComponent: () => <p>Loading posts…</p>,",
+            "  component: () => {",
+            "    const { page } = postsRoute.useSearch();",
+            "    const { data } = useSuspenseQuery(postsQuery(page));",
+            "    return <PostList posts={data} />;",
+            "  },",
+            "});",
+            "// On page 1, the user clicks Next. Page 2 takes 2 seconds to load."
+          ],
+          "question": "How many times does the loader run for page 2, and what is on screen during those 2 seconds?",
+          "answer": "Zero times; \"Loading posts…\" shows at once, until page 2 arrives",
+          "acceptable": [
+            "the loader doesn't re-run; the pending component shows immediately"
+          ],
+          "explanation": "Without `loaderDeps`, a search-only change keeps the same loader key, so the router doesn't re-run it. The component then reads page 2, which isn't cached, and `useSuspenseQuery` suspends — the route's pending component shows immediately instead of page 1 staying up. With `loaderDeps`, the loader fetches page 2 while page 1 stays on screen. (Both behaviours observed headlessly with Router 1.170.)"
+        },
+        {
+          "id": "object-vs-updater",
+          "code": [
+            "// Current URL: /posts?page=2&tag=react&sort=new",
+            "<Link from=\"/posts\" search={{ page: 3 }}>A</Link>",
+            "<Link from=\"/posts\" search={(prev) => ({ ...prev, page: 3 })}>B</Link>"
+          ],
+          "question": "What `href` does each link render?",
+          "answer": "A: /posts?page=3 — B: /posts?page=3&tag=react&sort=new",
+          "explanation": "An object *is* the next search; a function receives the current one. Link A silently drops `tag` and `sort`; link B keeps them. Both type-check if those keys are optional in the route's search type. (The rendered `href`s were checked headlessly.)"
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-router",
+      "challengeSlug": "router-search-loader"
+    }
+  ]
+}
