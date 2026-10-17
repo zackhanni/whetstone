@@ -1,0 +1,61 @@
+---
+id: the-page-arrives-in-pieces
+title: The page arrives in pieces — one response, many chunks
+---
+
+Without streaming, a server builds the whole HTML document and only then sends it, so the page
+is as slow as its slowest query. With streaming the server sends the parts that are ready **now**
+and the rest **later, in the same response**, using chunked transfer encoding.
+
+Here is that at the HTTP level, from a small `node:http` server that writes three pieces 800 ms
+apart, read with `fetch` and a stream reader:
+
+```text
+/plain: status 200, transfer-encoding=chunked, content-length=null
+  +  31ms  <p>shell</p>
+  + 827ms  <p>slow part</p>
+  +1628ms  <p>end</p>
+```
+
+No `Content-Length` (the server doesn't know it yet), and the first bytes arrive in 31 ms although
+the response takes 1.6 s. The browser starts painting from the first chunk.
+
+The App Router does this for you, and **`<Suspense>` decides where the cuts go**:
+
+```tsx
+// app/dashboard/page.tsx
+import { Suspense } from "react";
+
+export default function Dashboard() {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <Suspense fallback={<p>Loading revenue…</p>}>
+        <Revenue />          {/* async: ~200 ms */}
+      </Suspense>
+      <Suspense fallback={<p>Loading orders…</p>}>
+        <RecentOrders />     {/* async: ~1 s */}
+      </Suspense>
+    </div>
+  );
+}
+```
+
+The first chunk carries the `<h1>` and both **fallbacks**: the **static shell**. When `Revenue`
+resolves, React streams its HTML plus a tiny inline script that swaps it in for the fallback. A
+second later the orders do the same. Each boundary resolves on its own: the slow one never holds
+up the fast one, and none of them holds up the shell.
+
+That's the whole mental model:
+
+- everything **outside** any pending boundary → first chunk;
+- each `<Suspense>` boundary → its fallback first, its real content when its async work finishes;
+- the user sees the page fill in section by section, and can interact with what has hydrated.
+
+<!--more-->
+
+On a client-side navigation no HTML is sent at all: the router fetches the RSC payload (the
+request carries an `rsc: 1` header), which streams in the same boundary-by-boundary way. The
+Suspense boundaries also split hydration: React hydrates each one independently and prioritises
+the part the user is interacting with, which is why the Streaming guide ties boundaries to INP as
+well as load time.

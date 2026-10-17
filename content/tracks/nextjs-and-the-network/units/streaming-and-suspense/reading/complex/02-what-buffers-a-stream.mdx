@@ -1,0 +1,59 @@
+---
+id: what-buffers-a-stream
+title: Streaming works locally and arrives all at once in production — what buffers it
+---
+
+Every layer between the server and the screen can collect chunks before passing them on, and one
+buffering layer is enough to turn a stream back into a single delayed response. The usual
+suspects, from the Next.js Streaming and Self-Hosting guides:
+
+- **Reverse proxies.** nginx buffers responses by default. Send `X-Accel-Buffering: no` (the docs
+  set it through `next.config` `headers()`), and check load balancers too: some, such as AWS ALB
+  with a Lambda integration, may buffer by default.
+- **Serverless platforms.** AWS Lambda streams only in its response-streaming mode, which isn't the
+  default. Vercel streams natively.
+- **Compression.** A compressor holds bytes until it has enough to compress well (see below).
+- **The client.** Safari/WebKit holds a streamed response until about 1 KB has arrived (only tiny
+  demos notice). `curl` buffers its output too; `-N` turns that off, but it still prints line by
+  line, so a stream without newlines can look stalled.
+
+Compression is the one that surprises people, because it's on by default. Here is the same
+three-part stream from a small `node:http` server, gzip-encoded, with and without a flush after
+each write:
+
+```text
+/gzip:        +1605ms  <p>shell</p><p>late part</p><p>end</p>
+/gzip-flush:  +   2ms  <p>shell</p>
+              + 804ms  <p>late part</p>
+              +1606ms  <p>end</p>
+```
+
+Unflushed, the shell arrived together with everything else at 1.6 s: streaming in name only.
+
+**Verify with a reader, not your eyes.** The Streaming guide's method: fetch the page with
+compression disabled and timestamp each chunk.
+
+```js
+// stream-observer.mjs — node stream-observer.mjs
+const res = await fetch("https://your-app.example/dashboard", {
+  headers: { "Accept-Encoding": "identity" }, // no compressor buffering in the way
+});
+const reader = res.body.getReader();
+const start = Date.now();
+for (;;) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  console.log(`+${Date.now() - start}ms`, value.length, "bytes");
+}
+```
+
+A healthy streamed page shows a first chunk (the shell: `<head>`, layout, fallbacks with
+`<template id="B:0">` placeholders) almost at once, then later chunks as each boundary resolves.
+One chunk at the end means something in the path is buffering. Compare the result against the
+origin directly, then through each layer, to find which one.
+
+<!--more-->
+
+Route Handlers can stream without React: return `new Response(readableStream)` and enqueue chunks
+as they're ready (Server-Sent Events, a large CSV, model output). The same buffering layers
+apply, so verify a streamed endpoint the same way.
