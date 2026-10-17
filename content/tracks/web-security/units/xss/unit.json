@@ -1,0 +1,250 @@
+{
+  "schemaVersion": 3,
+  "slug": "xss",
+  "title": "XSS: when your page runs someone else's script",
+  "skills": ["security", "xss", "react"],
+  "difficulty": "core",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Explain why XSS defeats session-based defences: injected script runs as your page, with the user's cookies",
+    "Tell stored, reflected and DOM-based XSS apart by where the payload lives and where it becomes markup",
+    "Predict what React 19 does with a payload in a text child, an attribute, `dangerouslySetInnerHTML` and a `javascript:` href",
+    "Choose escaping, sanitising (DOMPurify) or a URL-scheme allow-list for a given piece of user input",
+    "Fix a component that renders user-supplied HTML, attributes and links unsafely"
+  ],
+  "sources": [
+    { "title": "OWASP Cheat Sheet: Cross Site Scripting Prevention", "url": "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html" },
+    { "title": "MDN: Cross-site scripting (XSS)", "url": "https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/XSS" },
+    { "title": "MDN: Element.innerHTML (security considerations)", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Element/innerHTML" },
+    { "title": "MDN: What is a URL? (the fragment is never sent to the server)", "url": "https://developer.mozilla.org/en-US/docs/Learn_web_development/Howto/Web_mechanics/What_is_a_URL" },
+    { "title": "React docs: Common components — dangerouslySetInnerHTML", "url": "https://react.dev/reference/react-dom/components/common" },
+    { "title": "React 19 upgrade guide (\"Error for javascript URLs in src and href\")", "url": "https://react.dev/blog/2024/04/25/react-19-upgrade-guide" },
+    { "title": "React 16.9 release notes: deprecating javascript: URLs", "url": "https://legacy.reactjs.org/blog/2019/08/08/react-v16.9.0.html" },
+    { "title": "URL Standard (WHATWG) — how URLs are parsed", "url": "https://url.spec.whatwg.org/" },
+    { "title": "DOMPurify README", "url": "https://github.com/cure53/DOMPurify" },
+    { "title": "Next.js docs: JSON-LD", "url": "https://nextjs.org/docs/app/guides/json-ld" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-xss", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-xss",
+      "questions": [
+        {
+          "id": "runs-as-your-page",
+          "prompt": "An attacker gets their script running in your app's page. Which defence still stops them acting as the logged-in user?",
+          "options": [
+            { "id": "none", "text": "None of the session defences — the script runs in your origin, so its `fetch('/api/…')` calls carry the user's cookies and it can read any CSRF token on the page" },
+            { "id": "httponly", "text": "An `HttpOnly` session cookie — the script can't read the cookie, so it can't use the session" },
+            { "id": "samesite", "text": "`SameSite=Strict` — the attacker's requests come from another site, so the cookie isn't sent" },
+            { "id": "csrf-token", "text": "A per-session CSRF token — the attacker can't guess it" }
+          ],
+          "answer": "none",
+          "explanation": "XSS puts the attacker *inside* your origin. `HttpOnly` stops the script reading `document.cookie`, but it doesn't need to: the browser attaches the cookie to every request the script makes, because those requests are same-origin — which is also why `SameSite` doesn't apply. A CSRF token sitting in a form or meta tag is readable by any script in the page. CSRF defences assume the attacker is on another site; with XSS they aren't. That's why preventing XSS comes first."
+        },
+        {
+          "id": "dom-based-fragment",
+          "prompt": "A client component reads `location.hash`, decodes it and assigns it to `element.innerHTML`. A victim opens `https://app.example/welcome#<img src=x onerror=…>`. What kind of XSS is this, and what can your server-side logging see of it?",
+          "options": [
+            { "id": "dom-invisible", "text": "DOM-based; the server never sees the payload, because the `#fragment` isn't sent with the request" },
+            { "id": "reflected-logged", "text": "Reflected; the payload is in the URL, so it shows up in the access log" },
+            { "id": "stored", "text": "Stored; the payload is kept in the browser history" },
+            { "id": "dom-logged", "text": "DOM-based; the server sees the full URL including the fragment, but can't tell it's malicious" }
+          ],
+          "answer": "dom-invisible",
+          "explanation": "The fragment — everything after `#` — is never sent to the server, so this attack happens entirely in the browser: client code reads attacker-controlled input and writes it into an HTML sink. That's DOM-based XSS. It's not *reflected*: reflected means the server echoes the payload back in its response, which requires the server to receive it. Server logs, WAFs and server-side filters can't see a fragment-borne payload at all, so the defence has to be in the client code (render as text, or use `textContent`)."
+        },
+        {
+          "id": "stored-ticket",
+          "prompt": "A customer puts a payload in a support-ticket subject. Days later it runs in the browser of every agent who opens the ticket queue. Which kind is it, and why is it usually the most damaging?",
+          "options": [
+            { "id": "stored", "text": "Stored — the payload lives in your database and runs for everyone who views it, with no further action by the attacker" },
+            { "id": "reflected", "text": "Reflected — the subject is reflected back into the queue page" },
+            { "id": "dom", "text": "DOM-based — it runs in the agents' browsers" },
+            { "id": "self", "text": "Self-XSS — the customer only attacked their own ticket" }
+          ],
+          "answer": "stored",
+          "explanation": "Every XSS runs in a browser, so \"it runs in the browser\" doesn't distinguish DOM-based. *Reflected* means the payload rides in the victim's own request (a crafted link), so each victim must be tricked into opening it. *Stored* means it was saved and is served to everyone who views it, every time — and here the victims are support agents with elevated access. That reach is why MDN calls stored XSS particularly severe."
+        },
+        {
+          "id": "text-child-escaped",
+          "prompt": "In a React component, `<p>{comment.body}</p>` renders a comment whose body is `<img src=x onerror=\"alert(1)\">`. What happens?",
+          "options": [
+            { "id": "literal", "text": "The visitor sees the characters `<img src=x onerror=\"alert(1)\">` as text; nothing runs" },
+            { "id": "runs", "text": "The image fails to load and `alert(1)` runs" },
+            { "id": "stripped", "text": "React strips the tag and renders an empty paragraph" },
+            { "id": "throws", "text": "React throws, because a string child can't contain HTML" }
+          ],
+          "answer": "literal",
+          "explanation": "React sets string children as text, never as HTML. Server-rendered with React 19 the paragraph comes out as `<p>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</p>` — escaped characters, displayed literally. React doesn't sanitise or strip (the text is preserved exactly), and it doesn't throw: a string containing `<` is ordinary text. This is why plain `{value}` is the safe default and review effort goes to the escape hatches."
+        },
+        {
+          "id": "concat-attribute",
+          "prompt": "Why is `` <span dangerouslySetInnerHTML={{ __html: `<img alt=\"${name}\" src=\"${url}\">` }} /> `` unsafe even if `name` contains no `<`, while `<img alt={name} src={url} />` is safe?",
+          "options": [
+            { "id": "quote", "text": "A `\"` in `name` closes the `alt` value in the string version and starts a new attribute like `onerror`; JSX escapes the quote, so it stays inside `alt`" },
+            { "id": "img-only", "text": "Only `<img>` tags are dangerous in `__html`; any other tag would be fine" },
+            { "id": "alt-runs", "text": "Browsers execute `alt` text as script when the image fails to load" },
+            { "id": "same", "text": "They're equally safe, because there's no `<script>` tag involved" }
+          ],
+          "answer": "quote",
+          "explanation": "Escaping is about context. In an HTML string, an attribute value ends at the next `\"`, so `Ann\" onerror=\"steal()` turns into two attributes — no `<` needed. JSX attributes are set as values, and React escapes a `\"` inside them (`title=\"&quot; onmouseover=…\"` when server-rendered), so the whole string stays one value. `alt` text never executes, and the danger isn't specific to `<img>`: any element with event-handler attributes works. Build markup with JSX, not by gluing strings."
+        },
+        {
+          "id": "react19-javascript-href",
+          "prompt": "React 19.2: a user sets their website to `javascript:fetch('/api/me').then(…)` and you render `<a href={user.website}>`. What happens when someone clicks it?",
+          "options": [
+            { "id": "blocked", "text": "Nothing of the attacker's runs: React rendered a `javascript:` URL that throws \"React has blocked a javascript: URL as a security precaution.\"" },
+            { "id": "dev-warning", "text": "The payload runs; React only logs a warning, and only in development" },
+            { "id": "no-href", "text": "React drops the `href` attribute, so the link does nothing" },
+            { "id": "render-error", "text": "React refuses to render the component and shows the error boundary" }
+          ],
+          "answer": "blocked",
+          "explanation": "React 19's changelog lists \"Error for javascript URLs in `src` and `href`\". Rendering it (React 19.2, development and production builds, client and server) gives `href=\"javascript:throw new Error('React has blocked a javascript: URL as a security precaution.')\"`, so a click throws instead of running the payload. \"Warning only, in development\" was React 16.9–18, where the payload did run. React keeps the attribute (it doesn't drop it) and the component renders normally. It still isn't URL validation: `data:` and other schemes pass through unchanged."
+        },
+        {
+          "id": "url-allow-list",
+          "prompt": "You render a user-supplied website as a link. Which check should decide whether it becomes an `<a href>`?",
+          "options": [
+            { "id": "parse-allow", "text": "Parse it with `new URL(value)` (catching the throw) and allow only `protocol === \"https:\"` or `\"http:\"`" },
+            { "id": "starts-with", "text": "`!value.startsWith(\"javascript:\")`" },
+            { "id": "encode", "text": "Pass it through `encodeURIComponent(value)` first" },
+            { "id": "react", "text": "No check — React 19 already blocks dangerous URLs" }
+          ],
+          "answer": "parse-allow",
+          "explanation": "The browser's URL parser lowercases the scheme and strips leading spaces, control characters, tabs and newlines, so check *its* answer and allow only what you want. A `startsWith` deny-list misses `JavaScript:`, `  javascript:` and `java⇥script:` — all parsed as `javascript:` — and every scheme you didn't think of. `encodeURIComponent` is encoding, not validation: it's for one query-string value, so it turns `https://ann.dev` into the relative path `https%3A%2F%2Fann.dev` and breaks every real link (it only defuses `javascript:alert(1)` by accident, by encoding the colon). React 19 blocks only `javascript:`; OWASP notes this \"does not replace application-specific URL validation\"."
+        },
+        {
+          "id": "rich-text",
+          "prompt": "Posts are written in a rich-text editor that saves HTML (bold, lists, links). How should the post page render them?",
+          "options": [
+            { "id": "sanitise", "text": "Sanitise the HTML with an allow-list sanitiser such as DOMPurify, pass the result straight to `dangerouslySetInnerHTML`, and don't modify it afterwards" },
+            { "id": "escape", "text": "Render `{post.html}` so React escapes it" },
+            { "id": "regex", "text": "Remove `<script>` tags with a regex, then use `dangerouslySetInnerHTML`" },
+            { "id": "trusted-users", "text": "Use `dangerouslySetInnerHTML` directly — only logged-in users can post" }
+          ],
+          "answer": "sanitise",
+          "explanation": "When the input *must* stay HTML, escaping is wrong for the feature (readers would see `<b>` literally), so the job is sanitising: keep an allow-list of harmless tags and attributes, drop the rest. OWASP recommends DOMPurify and warns that modifying content after sanitising can void it. Stripping `<script>` misses `<img onerror>`, `<svg onload>` and many more — and on a client render a `<script>` set via `innerHTML` doesn't even run, so the regex removes a tag the attacker never needed. \"Only logged-in users\" describes exactly who mounts a stored XSS."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-xss",
+      "prompts": [
+        {
+          "id": "safe-href",
+          "prompt": "Return a URL only if it's an absolute `https:` or `http:` URL. Parse first, then check the parsed scheme.",
+          "code": [
+            "function safeHref(value: string): string | null {",
+            "  let url: URL;",
+            "  try {",
+            "    url = new ___(value);",
+            "  } catch {",
+            "    return null;",
+            "  }",
+            "  return url.___ === \"https:\" || url.protocol === \"http:\" ? url.href : null;",
+            "}"
+          ],
+          "blanks": [
+            { "id": "h1", "accept": ["URL"] },
+            { "id": "h2", "accept": ["protocol"] }
+          ],
+          "explanation": "`new URL` throws on anything that isn't an absolute URL, so the `catch` handles garbage and relative paths. `protocol` includes the trailing colon and is already lowercased and trimmed by the parser, which is what makes an allow-list on it reliable where `startsWith` on the raw string isn't."
+        },
+        {
+          "id": "sanitise-then-render",
+          "prompt": "Render rich-text HTML: sanitise it with DOMPurify, then hand the result to React as raw HTML.",
+          "code": [
+            "const clean = DOMPurify.___(post.html, { USE_PROFILES: { html: true } });",
+            "return <div ___={{ ___: clean }} />;"
+          ],
+          "blanks": [
+            { "id": "s1", "accept": ["sanitize"] },
+            { "id": "s2", "accept": ["dangerouslySetInnerHTML"] },
+            { "id": "s3", "accept": ["__html"] }
+          ],
+          "explanation": "`DOMPurify.sanitize(dirty)` returns HTML with everything outside its allow-list removed; `USE_PROFILES: { html: true }` limits it to HTML (no SVG or MathML). React's escape hatch takes an object with an `__html` key — the awkward shape is deliberate, so raw HTML is always visibly marked. Sanitise right before rendering and pass the result through untouched."
+        },
+        {
+          "id": "json-in-script",
+          "prompt": "Embed JSON-LD in a `<script>` tag so that a product name containing `</script>` can't close the tag. Replace which character with `\\u003c`?",
+          "code": "__html: JSON.stringify(jsonLd).replace(/___/g, \"\\\\u003c\")",
+          "blanks": [{ "id": "j1", "accept": ["<"] }],
+          "explanation": "Inside a script element the HTML parser only looks for `</script>`, and `JSON.stringify` doesn't escape `<`. Replacing every `<` with the JSON escape `\\u003c` means the parser never sees a closing tag, while `JSON.parse` still reads `\\u003c` back as `<`. This is the fix the Next.js JSON-LD guide shows."
+        },
+        {
+          "id": "text-content",
+          "prompt": "In plain DOM code (no React), show a server message that is meant to be plain text, without parsing it as HTML.",
+          "code": "statusEl.___ = message;",
+          "blanks": [{ "id": "t1", "accept": ["textContent", "innerText"] }],
+          "explanation": "`textContent` creates a text node and never parses HTML; MDN recommends it whenever the content should be plain text. (`innerText` also doesn't parse HTML, though it's layout-aware and slower.) `innerHTML` would parse `message` as markup — the DOM-based XSS sink."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-xss",
+      "snippets": [
+        {
+          "id": "deny-list-misses",
+          "code": [
+            "const inputs = [\"JavaScript:alert(1)\", \"  javascript:alert(1)\", \"javascript:alert(1)\"];",
+            "const allowed = inputs.filter((u) => !u.startsWith(\"javascript:\"));",
+            "console.log(allowed.length);",
+            "console.log(new URL(inputs[1]).protocol);"
+          ],
+          "question": "What two lines are printed?",
+          "answer": "2, then javascript:",
+          "acceptable": ["2 and javascript:", "2 / javascript:"],
+          "explanation": "`startsWith` is case-sensitive and doesn't trim, so only the exact lowercase form is caught: two of three payloads pass the filter. The URL parser strips leading spaces and lowercases the scheme, so it reads the padded one as `javascript:` — which is how the browser will read it too. Check the parsed `protocol` against an allow-list instead of the raw string against a deny-list."
+        },
+        {
+          "id": "react19-href",
+          "code": [
+            "// React 19.2, react-dom/server",
+            "const user = { website: \" JavaScript:alert(document.cookie)\" };",
+            "console.log(renderToStaticMarkup(<a href={user.website}>Site</a>));"
+          ],
+          "question": "What is in the rendered `href`?",
+          "answer": "javascript:throw new Error('React has blocked a javascript: URL as a security precaution.')",
+          "acceptable": ["A javascript: URL that throws React's \"blocked\" error instead of the payload", "React's blocked-URL placeholder"],
+          "explanation": "React 19 tests `href`/`src` values against a case-insensitive `javascript:` pattern that tolerates leading spaces and control characters, and swaps a match for a URL that throws — in development and production builds alike (the exact output is `<a href=\"javascript:throw new Error(&#x27;React has blocked a javascript: URL as a security precaution.&#x27;)\">Site</a>`). Under React 18 the payload would be rendered as given. Note what React did *not* do: decide that this value shouldn't be a link at all. That's your allow-list's job."
+        },
+        {
+          "id": "inner-html-script-vs-img",
+          "code": [
+            "// a client component, rendered after a click (no server render)",
+            "<div",
+            "  dangerouslySetInnerHTML={{",
+            "    __html: `<script>steal(\"script\")</script><img src=\"x\" onerror=\"steal('img')\">`,",
+            "  }}",
+            "/>"
+          ],
+          "question": "Which calls to `steal` run?",
+          "answer": "Only steal('img')",
+          "acceptable": ["just the img one", "only the onerror handler", "the img, not the script"],
+          "explanation": "On the client React applies `__html` through `innerHTML`, and MDN notes `innerHTML` prevents injected `<script>` elements from executing — but the broken image's `onerror` attribute runs as normal. That's why real payloads use `onerror`/`onload` and why \"I tried a `<script>` and nothing happened\" proves nothing. If the same HTML were in the server-rendered page, the parser would run the `<script>` too."
+        },
+        {
+          "id": "json-ld-breakout",
+          "code": [
+            "// app/products/[id]/page.tsx — server-rendered",
+            "const jsonLd = { name: \"Mug </script><script>alert(1)</script>\" };",
+            "return (",
+            "  <script",
+            "    type=\"application/ld+json\"",
+            "    dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}",
+            "  />",
+            ");"
+          ],
+          "question": "How many `<script>` elements does the browser's HTML parser create, and does `alert(1)` run?",
+          "answer": "2 — and yes, the second one runs alert(1)",
+          "acceptable": ["two, and alert runs", "2, alert(1) executes"],
+          "explanation": "`JSON.stringify` escapes quotes but not `<`, so the HTML contains `{\"name\":\"Mug </script><script>alert(1)</script>\"}`. Inside a script element the parser ends the element at the first `</script>`, so it sees a truncated JSON block and then a brand-new, untyped `<script>alert(1)</script>`, which executes (a spec-compliant parser, parse5, reports exactly two script elements). The fix: `.replace(/</g, \"\\\\u003c\")` on the JSON string."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-xss", "challengeSlug": "xss-safe-profile-card" }
+  ]
+}

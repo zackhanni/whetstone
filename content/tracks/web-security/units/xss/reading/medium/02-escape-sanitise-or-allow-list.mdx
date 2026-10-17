@@ -1,0 +1,62 @@
+---
+id: escape-sanitise-or-allow-list
+title: Escape, sanitise, or allow-list — pick by what the input is
+---
+
+Three different defences, each right for one kind of input. Choosing wrong either leaves a hole or
+breaks the feature.
+
+**1. Plain text → escape.** A name, a comment, a search term. Render it as `{value}` and let React
+escape it. In non-React DOM code, assign `textContent`, never `innerHTML` (MDN: `textContent`
+"should be used when you know that the user-provided content should be plain text").
+
+**2. HTML you genuinely need → sanitise.** A rich-text editor's output has to stay HTML, so
+escaping would show the tags literally. Run it through a sanitiser that keeps an **allow-list** of
+harmless tags and attributes and drops everything else — OWASP recommends DOMPurify:
+
+```tsx
+import DOMPurify from "dompurify";
+
+function PostBody({ html }: { html: string }) {
+  // Sanitise right where the HTML is produced, and don't touch the result afterwards:
+  // "If you sanitize content and then modify it afterwards, you can easily void your
+  // security efforts." (OWASP)
+  const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+  return <div dangerouslySetInnerHTML={{ __html: clean }} />;
+}
+```
+
+A home-made regex that strips `<script>` is not a sanitiser: `<img src=x onerror=...>`,
+`<svg onload=...>` and dozens of other forms get through. Use the maintained library and keep it
+patched.
+
+**3. A URL → parse it and allow-list the scheme.** Escaping doesn't help here: `javascript:alert(1)`
+contains no `<` or `"` to escape. The scheme decides what a click does, so check it after the
+browser's own URL parser has normalised it:
+
+```ts
+function safeHref(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value); // throws on anything that isn't an absolute URL
+  } catch {
+    return null;
+  }
+  return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+}
+```
+
+Compare a deny-list. `value.startsWith("javascript:")` is false for all of these, yet the URL
+parser reads every one as the `javascript:` scheme (checked in Node 24):
+
+| Input | `startsWith("javascript:")` | `new URL(input).protocol` |
+| --- | --- | --- |
+| `JavaScript:alert(1)` | false | `javascript:` |
+| `  javascript:alert(1)` (leading spaces) | false | `javascript:` |
+| `java⇥script:alert(1)` (a tab inside) | false | `javascript:` |
+| `data:text/html,…` | false | `data:` |
+
+The parser strips leading spaces and control characters, removes tabs and newlines, and lowercases
+the scheme before you see `protocol`, so the allow-list compares against what the browser will
+actually do. An allow-list also fails safe: a scheme nobody thought of is rejected, not let
+through.

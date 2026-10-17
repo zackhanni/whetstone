@@ -1,0 +1,56 @@
+---
+id: stored-reflected-dom
+title: Stored, reflected, DOM-based — where the payload lives
+---
+
+The three names describe **where the attacker's string travels** before something turns it into
+markup. The sink is the same idea every time; what changes is who can see the payload and how many
+people it hits.
+
+**Stored.** The payload is saved — a bio, a product review, a support-ticket subject — and served
+to everyone who views it. MDN calls it "particularly severe, because the infected content will be
+served to all users who access the page, every time they access it". The admin who opens the
+ticket queue is the usual victim.
+
+```tsx
+// app/u/[name]/page.tsx — the bio was saved from a profile form
+const user = await getUser(name);
+return <div dangerouslySetInnerHTML={{ __html: user.bio }} />; // runs for every visitor
+```
+
+**Reflected.** The payload rides in the request — usually a link the attacker gets the victim to
+open — and the server echoes it straight back into the response.
+
+```ts
+// app/search/route.ts — builds HTML by hand, so nothing escapes `q`
+export async function GET(req: Request) {
+  const q = new URL(req.url).searchParams.get("q") ?? "";
+  return new Response(`<p>No results for ${q}</p>`, {
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+// /search?q=<img src=x onerror=alert(1)>
+```
+
+**DOM-based.** The payload never needs to reach your server: client-side code reads it from the
+URL (often the `#fragment`, which browsers don't send to the server at all), `postMessage` or
+storage, and writes it into a sink.
+
+```ts
+// a client component, after mount
+const name = decodeURIComponent(location.hash.slice(1));
+banner.current!.innerHTML = `Welcome back, ${name}`; // #<img src=x onerror=...>
+```
+
+Because the fragment never leaves the browser, server logs and server-side filters can't see a
+DOM-based attack happen.
+
+| Kind | Where the payload lives | Who it hits |
+| --- | --- | --- |
+| Stored | your database | everyone who views it |
+| Reflected | the request (a crafted link) | whoever opens the link |
+| DOM-based | the browser (URL, fragment, storage, messages) | whoever opens the link; invisible to the server |
+
+The fix is the same for all three: keep the value out of HTML and script sinks — render it as
+text, or pass it through the right sanitiser or URL check first. The kind tells you where to look
+and how bad it is, not which defence to use.

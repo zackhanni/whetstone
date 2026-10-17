@@ -1,0 +1,42 @@
+---
+id: react-escapes-text
+title: React escapes text and attribute values for you
+---
+
+A comment rendered the React way:
+
+```tsx
+function Comment({ body }: { body: string }) {
+  return <p>{body}</p>;
+}
+```
+
+React never parses `body` as HTML. It sets it as **text**, so the browser shows the characters
+and runs nothing. Give it `<img src=x onerror="alert(1)">` and render on the server with React 19
+— the payload comes out escaped:
+
+```html
+<p>&lt;img src=x onerror=&quot;alert(1)&quot;&gt;</p>
+```
+
+Attribute values get the same treatment. A display name like `" onmouseover="alert(1)` passed as
+`title={name}` cannot close the quote and start a new attribute — React escapes the `"` inside the
+value:
+
+```html
+<div title="&quot; onmouseover=&quot;alert(1)"></div>
+```
+
+So in a React app, plain `{value}` in JSX is the safe default, and most XSS in React code comes
+through a short list of **escape hatches** — places where you, not React, decide what is HTML or
+what is a URL:
+
+| Escape hatch | Why it's dangerous |
+| --- | --- |
+| `dangerouslySetInnerHTML={{ __html: x }}` | `x` is parsed as HTML, exactly like `innerHTML` |
+| `href={x}` / `src={x}` with a user URL | the URL's scheme decides what a click does |
+| `ref.current.innerHTML = x`, `insertAdjacentHTML`, `document.write` | plain DOM sinks — React isn't involved |
+| `eval(x)`, `new Function(x)`, `setTimeout(x)` with a string | runs `x` as JavaScript |
+
+Memorise the table, not a list of payloads: when you review React code for XSS, you search for
+these, and everything else is already escaped.

@@ -1,0 +1,57 @@
+---
+id: sinks-that-surprise
+title: Inert scripts, live attributes, and JSON that closes its own tag
+---
+
+Three behaviours that catch experienced developers, each checked against the HTML parser's rules.
+
+**1. A `<script>` inserted with `innerHTML` doesn't run — an event attribute does.** MDN:
+`innerHTML` "does prevent `<script>` elements from executing when they are injected", but "it is
+susceptible to many other ways that attackers can craft HTML to run malicious JavaScript". React's
+client sets `dangerouslySetInnerHTML` through `innerHTML`, so after a client render of
+
+```tsx
+<div dangerouslySetInnerHTML={{ __html: `<script>steal()</script><img src=x onerror="steal()">` }} />
+```
+
+the `<script>` is inert and the image's `onerror` fires. Testing "is it XSS?" with a `<script>`
+payload and seeing nothing happen proves nothing.
+
+**2. The same HTML server-rendered *does* run the script.** With SSR — every Next.js page's first
+load — that string is part of the HTML document itself. The browser's parser meets the `<script>`
+while building the page and executes it. Code that seems safe on client-side navigation is
+exploitable on a full page load.
+
+**3. JSON inside a `<script>` tag can end the tag.** Inside a script element the HTML parser
+looks only for `</script>`, so a string value containing it closes the element early:
+
+```tsx
+const jsonLd = { name: product.name }; // "Mug </script><script>alert(1)</script>"
+<script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+```
+
+`JSON.stringify` escapes quotes, not `<`, so the server sends
+`{"name":"Mug </script><script>alert(1)</script>"}`. A spec-compliant parser (parse5) reads that
+as **two** script elements: a truncated JSON block and a new, untyped `alert(1)` script that runs.
+The Next.js JSON-LD guide's fix is to replace every `<` with its JSON escape:
+
+```tsx
+__html: JSON.stringify(jsonLd).replace(/</g, "\\u003c")
+```
+
+`\u003c` is still `<` to `JSON.parse`, so the data round-trips unchanged, but the HTML parser never
+sees a `</script>`.
+
+**Sanitising on the server.** DOMPurify needs a DOM. In Node its README pairs it with jsdom
+(`createDOMPurify(new JSDOM("").window)`), says to keep jsdom current because older versions had
+XSS-enabling bugs, and calls happy-dom "not considered safe" for this. Sanitise once, at the
+boundary where you render, and pass the result straight to `__html`.
+
+<!--more-->
+
+**Trusted Types** turn "remember to sanitise" into an enforced rule: with the CSP directive
+`require-trusted-types-for 'script'`, assigning a plain string to `innerHTML` throws, and only
+values produced by a policy you register (for example, one that calls `DOMPurify.sanitize`) are
+accepted. React 19 passes a `TrustedHTML` value given to `__html` to the browser without
+stringifying it. MDN's compat data lists support in Chromium (83+), Firefox 148+ and Safari 26+ —
+check your audience before relying on it.
