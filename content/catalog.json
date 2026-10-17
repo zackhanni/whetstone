@@ -6,6 +6,7 @@
     "dates-and-time",
     "react-hooks-and-rendering",
     "state-and-data-flow",
+    "data-fetching-tanstack",
     "backend-nestjs"
   ]
 }

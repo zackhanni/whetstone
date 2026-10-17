@@ -75,13 +75,14 @@ when the problem is general and sweeps it across lessons. Both append a line to
 
 ### Frontend
 
-- ⬜ **Data Fetching (TanStack)**
-  - ⬜ Query keys — shape, hierarchy, and why they are the cache identity
-  - ⬜ Invalidation vs refetch vs `setQueryData`
-  - ⬜ **Mutations** — `useMutation` inside a custom hook, `onSuccess`/`onError`/`onSettled`, invalidating after write
-  - ⬜ Optimistic updates + rollback (`onMutate` + context)
-  - ⬜ Loading/error/empty states, `isPending` vs `isFetching`
-  - ⬜ TanStack Router — typed routes, loaders, search-param state
+- ✅ **Data Fetching with TanStack** (`data-fetching-tanstack`), 6 units — TanStack Query v5 + TanStack Router v1, the library API (who *owns* server state is `context-vs-store-vs-server-state`'s job). Challenges import the real `@tanstack/react-query`.
+  - ✅ **Query keys** (`query-keys`) — the key *is* the cache entry: array keys, deterministic hashing (object key order ignored, array order not), every `queryFn` input in the key, general→specific hierarchy and key factories, and what a prefix matches. Challenge: `query-keys-list-detail`.
+  - ✅ **Query states** (`query-states`) — reading one query over time: `status` (is there data?) vs `fetchStatus` (is the `queryFn` running?), `isPending`/`isFetching`/`isLoading`, an error *with* data, empty vs loading, `placeholderData: keepPreviousData`, `staleTime` vs `gcTime`, the refetch triggers and the default `retry: 3`. Challenge: `query-states-todo-list`.
+  - ✅ **Invalidation & cache writes** (`invalidation-and-cache-writes`) — the `QueryClient` calls you make after the server changed: `invalidateQueries` vs `refetchQueries` vs `setQueryData` vs `resetQueries`/`removeQueries`, query filters (prefix, `exact`, `type`, `predicate`), immutable writes, and when to write a response straight into the cache. Challenge: `cache-sync-handlers` (server-push handlers, DOM-free entry).
+  - ✅ **Mutations** (`mutations`) — `useMutation` in a custom hook, `mutate` vs `mutateAsync`, hook-level vs call-level callbacks (call-level ones skip after unmount and fire once for consecutive calls), returning the invalidation promise to stay pending, `variables`/`reset`, no retries by default. Challenge: `mutation-save-button`.
+  - ✅ **Optimistic updates** (`optimistic-updates`) — the cache recipe (`onMutate`: cancel, snapshot, write, return; roll back in `onError`; invalidate in `onSettled`), the v5 UI-only recipe via `variables`/`useMutationState`, and the races: an in-flight refetch and overlapping mutations. Challenge: `optimistic-toggle`.
+  - ✅ **TanStack Router** (`tanstack-router`) — typed routes (code-based vs file-based), the registered router type that makes `Link`/`navigate` checked, `validateSearch` as typed URL state, `loaderDeps` + a loader that fills the Query cache before render (`queryClient.query({ …, staleTime: 'static' })`, formerly `ensureQueryData`). Challenge: `router-search-loader` (code-based routes on a memory history).
+  - ✅ Browser run of all six challenges (2026-10-17, Sandpack in Chrome): every starter fails its planted-bug tests and every solution passes. These are the first challenges that declare `dependencies` (`@tanstack/react-query` 5.104.1; `router-search-loader` also `@tanstack/react-router` 1.170.41), so the `dependencies` feature is now proven in the browser.
 - 🔨 **Async JavaScript & Timing** (`async-javascript`) — the framework-free language mechanics
   under the React units. `debounced-input-and-autosave` keeps the timer handle in a ref, unmount
   cleanup and the debounce-vs-throttle _choice_; `use-effect` keeps the `ignore` flag and abort in
@@ -109,7 +110,7 @@ when the problem is general and sweeps it across lessons. Both append a line to
     `AbortSignal.any()` (with support versions), telling `AbortError` from `TimeoutError` from a
     real failure, last-write-wins bugs, request ids vs aborting. Challenge:
     `latest-only-search-client`.
-  - ✅ Browser run of the four challenges (2026-10-17, in a background tab where Chrome throttles timers): every starter fails and every solution passes, except that `debounce-throttle-from-scratch`'s burst test hit Sandpack's 5 s test timeout because each throttled sleep took ~1 s. No assertion failed. Re-run it once in a visible tab. The two timing-heavy graders now wait for a condition or count calls, instead of using a fixed wall-clock window.
+  - ✅ Browser run of the four challenges (2026-10-17, in a background tab where Chrome throttles timers): every starter fails and every solution passes, except that `debounce-throttle-from-scratch`'s burst test hit Sandpack's 5 s test timeout because each throttled sleep took ~1 s. No assertion failed; a re-run in headless Chrome (visible page, no throttling) passes 11/11. The two timing-heavy graders now wait for a condition or count calls, instead of using a fixed wall-clock window.
 - ✅ **JavaScript & TypeScript Fundamentals** (`javascript-typescript-fundamentals`, first in the catalog) — 5 units, 4 challenges. The language layer every other track assumes. Intro/core, with an advanced edge in each complex tier.
   - ✅ **Maps, Sets, objects & arrays** (`maps-sets-objects-arrays`) — choosing the collection: `has`/`get` vs `includes`/`find` cost, object keys become strings while `Map` keys keep their type (SameValueZero), prototype keys like `"constructor"`, insertion order, `size`, a `Map` serialising to `{}`, dedupe with `Set`, `Object.groupBy`/`Map.groupBy` (ES2024), `WeakMap` in one line. Challenge: index/dedupe/count/serialise an order list.
   - ✅ **Shorthand syntax** (`shorthand-syntax`) — what each shorthand expands to: `?.`/`?.[]`/`?.()` short-circuiting the whole chain, `??` vs `||` on `0`/`""`/`false`, `??=`/`||=`/`&&=`, destructuring defaults (only `undefined` triggers them), rename, rest/spread, shorthand properties/methods, computed keys. Challenge: an options resolver that loses `0`, `""` and `null`.

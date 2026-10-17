@@ -259,6 +259,15 @@ export const TAXONOMY: TagNode[] = [
   // ── async-javascript ──
   { slug: "event-loop", label: "Event Loop", parents: ["async"] },
   { slug: "promises", label: "Promises & async/await", parents: ["async"] },
+
+  // ── data-fetching-tanstack ──
+  { slug: "web", label: "Web & Network", parents: [] },
+  { slug: "caching", label: "Caching", parents: ["web", "backend"] },
+  { slug: "query-keys", label: "Query Keys", parents: ["tanstack-query"] },
+  { slug: "mutations", label: "Mutations", parents: ["data-fetching"] },
+  { slug: "optimistic-updates", label: "Optimistic Updates", parents: ["mutations"] },
+  // A client-side router: not under `routing`, which sits under http/nestjs (server routes).
+  { slug: "tanstack-router", label: "TanStack Router", parents: ["react"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

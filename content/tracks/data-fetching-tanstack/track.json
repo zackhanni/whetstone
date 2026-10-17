@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 3,
+  "slug": "data-fetching-tanstack",
+  "title": "Data Fetching with TanStack",
+  "description": "The TanStack Query v5 API for server state — query keys as cache identity, reading a query's states over time, invalidating and writing the cache, mutations and optimistic updates — plus TanStack Router v1's typed routes, validated search params and loaders that fill the query cache before render.",
+  "units": [
+    "query-keys",
+    "query-states",
+    "invalidation-and-cache-writes",
+    "mutations",
+    "optimistic-updates",
+    "tanstack-router"
+  ]
+}
