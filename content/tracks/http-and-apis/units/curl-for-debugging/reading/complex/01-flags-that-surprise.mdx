@@ -1,0 +1,89 @@
+---
+id: flags-that-surprise
+title: -X, -L and exit codes — the flags that do less (or more) than you think
+---
+
+Three habits produce most "curl lied to me" moments. Each output below was captured with
+curl 8.7.1 against the local `/echo` endpoint.
+
+## `-X` changes the method word and nothing else
+
+The manual is blunt: `-X` "only changes the actual word used in the HTTP request, it does not
+alter the way curl behaves". Two consequences:
+
+```console
+$ curl -X GET -d 'q=tea' http://localhost:4123/echo
+{"method":"GET","path":"/echo","headers":{"content-type":"application/x-www-form-urlencoded","content-length":"5","accept":"*/*"},"body":"q=tea"}
+```
+
+A `GET` with a form body. RFC 9110 says content in a `GET` has no defined meaning and some
+servers reject it. If you meant a query string, `-G -d 'q=tea'` sends `GET /echo?q=tea`.
+
+```console
+$ curl -sS -m 3 -X HEAD http://localhost:4123/orders/42
+curl: (28) Operation timed out after 3007 milliseconds with 0 out of 26 bytes received
+```
+
+The server answered `HEAD` correctly — headers only, including `Content-Length: 26`. curl still
+behaves as if it sent a `GET` and waits for 26 body bytes that will never come, until the
+`-m 3` timeout (exit 28). Without `-m` it waits until the server closes the connection. `-I` is
+the real `HEAD`: it tells curl not to expect a body.
+
+## `-L` follows redirects — and may change your request
+
+`-L` re-sends to the `Location` of a `3xx`. For a `POST`, what it re-sends depends on the code:
+
+```console
+$ curl -L -d 'a=1' http://localhost:4123/old-echo        # 301 -> /echo
+{"method":"GET","path":"/echo","headers":{"accept":"*/*"},"body":""}
+
+$ curl -L -d 'a=1' http://localhost:4123/old-echo-308    # 308 -> /echo
+{"method":"POST","path":"/echo","headers":{"content-type":"application/x-www-form-urlencoded","content-length":"3","accept":"*/*"},"body":"a=1"}
+```
+
+After a `301`, `302` or `303`, curl switches the `POST` to a `GET` and drops the body (`-v` prints
+`* Switch from POST to GET`), as browsers do. `307` and `308` keep the method and body. Now add a
+habitual `-X POST`:
+
+```console
+$ curl -X POST -L -d 'a=1' http://localhost:4123/old-echo
+{"method":"POST","path":"/echo","headers":{"accept":"*/*"},"body":""}
+```
+
+The method word is forced to `POST` on every hop, but the body is still dropped after the `301`:
+the server gets an empty `POST`. The manual warns about exactly this, and since curl 8.16.0
+`--follow` is the redirect option that applies a `-X` method the way the HTTP spec says.
+
+`-L` also stops sending `Authorization` and `Cookie` once a redirect leads to a different host —
+your token isn't leaked to wherever a redirect points. `--location-trusted` turns that off; use
+it only for hosts you control.
+
+## curl succeeds when the server fails
+
+```console
+$ curl -s http://localhost:4123/boom; echo " exit=$?"
+{"error":"something broke"} exit=0
+
+$ curl -s --fail-with-body http://localhost:4123/boom; echo " exit=$?"
+{"error":"something broke"} exit=22
+```
+
+By default an HTTP `500` is a successful transfer, so a script (or a CI health check) carries on.
+`-f` / `--fail` exits 22 for any status of 400 or more and prints no body; `--fail-with-body`
+(curl 7.76.0+) exits 22 and keeps the body, which is what you want in logs. When you only need
+the status code:
+
+```console
+$ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4123/boom
+500
+```
+
+<!--more-->
+
+**Why `-L` drops credentials only on a different host.** The manual counts "another host" as a
+change of hostname, scheme or port. A redirect from `http://` to `https://` on the same name is
+therefore a different host, and `--oauth2-bearer`/`-u`/`-H "Cookie: …"` won't follow it without
+`--location-trusted`.
+
+**`-f` is "not fail-safe".** The manual notes that some `401`/`407` responses involved in
+authentication negotiation can slip through. For a health check, compare `%{http_code}` yourself.

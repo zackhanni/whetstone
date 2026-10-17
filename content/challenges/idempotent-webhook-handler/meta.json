@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "idempotent-webhook-handler",
+  "title": "Make the payment webhook safe to deliver twice",
+  "skills": ["webhooks", "idempotency"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "runner": "in-browser",
+  "entry": "webhook-handler.ts",
+  "acceptanceCriteria": [
+    "A delivery whose `v1` signature matches `\"<t>.<raw body>\"` is applied once and answered `200` — whatever whitespace the body has",
+    "A wrong signature, an edited body or a missing header gets `400`, and nothing is applied",
+    "A correctly signed delivery more than `toleranceSeconds` old gets `400`, and nothing is applied",
+    "A retry of an applied event — same `id`, new timestamp and signature — gets `200` without applying it again",
+    "If `apply` throws, the answer is `500` and the event is not recorded, so a later delivery applies it"
+  ]
+}

@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 3,
+  "slug": "sync-vs-async-apis",
+  "title": "Sync vs async APIs: 202, push channels and webhooks",
+  "skills": ["http", "async-apis", "webhooks", "idempotency"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Choose between a synchronous response and `202 Accepted` + a status URL for long-running work, and write the polling contract",
+    "Compare polling, long-polling, Server-Sent Events and WebSockets by direction, connection cost and reconnect behaviour",
+    "Verify a webhook: an HMAC over the raw body and timestamp, compared by the platform, inside a replay window",
+    "Make a webhook handler idempotent under at-least-once delivery: dedupe by event id, record it only after the work succeeds, answer duplicates with `2xx`"
+  ],
+  "sources": [
+    { "title": "RFC 9110: HTTP Semantics (202 Accepted, Retry-After)", "url": "https://www.rfc-editor.org/rfc/rfc9110" },
+    { "title": "RFC 6202: Long Polling and Streaming in Bidirectional HTTP", "url": "https://www.rfc-editor.org/rfc/rfc6202" },
+    { "title": "HTML Standard: Server-sent events", "url": "https://html.spec.whatwg.org/multipage/server-sent-events.html" },
+    { "title": "MDN: Using server-sent events", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events" },
+    { "title": "MDN: The WebSocket API", "url": "https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API" },
+    { "title": "RFC 6455: The WebSocket Protocol", "url": "https://www.rfc-editor.org/rfc/rfc6455" },
+    { "title": "GitHub Docs: Validating webhook deliveries", "url": "https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries" },
+    { "title": "GitHub Docs: Best practices for using webhooks", "url": "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks" },
+    { "title": "Stripe Docs: Receive webhook events (signatures, retries, duplicates)", "url": "https://docs.stripe.com/webhooks" },
+    { "title": "MDN: SubtleCrypto.verify()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/verify" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-async-apis", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-async-apis",
+      "questions": [
+        {
+          "id": "long-export",
+          "prompt": "\"Export all orders as CSV\" takes about four minutes. Which API shape fits?",
+          "options": [
+            { "id": "202", "text": "`POST /exports` answers `202 Accepted` with a status URL; the client polls it until it points at the file" },
+            { "id": "hold", "text": "Keep the request open for four minutes and answer `200` with the CSV" },
+            { "id": "201-empty", "text": "Answer `201 Created` at once with an empty file that fills in later" },
+            { "id": "503", "text": "Answer `503` with `Retry-After: 240` and do the work in the meantime" }
+          ],
+          "answer": "202",
+          "explanation": "A four-minute request has to survive every proxy, load balancer and platform timeout on the way, and a client that gives up gets an error even if the export finishes. `202` splits accepted from done and hands back somewhere to check. A `201` claims the resource exists in finished form; `503` says the service is unavailable, which would make clients treat a healthy API as down."
+        },
+        {
+          "id": "202-body",
+          "prompt": "Per RFC 9110, what should a `202 Accepted` response contain?",
+          "options": [
+            { "id": "monitor", "text": "A description of the request's current status, and a pointer to (or an embedded) status monitor" },
+            { "id": "result", "text": "The final result of the processing" },
+            { "id": "empty", "text": "Nothing — a `202` must not have a body" },
+            { "id": "retry-after", "text": "A mandatory `Retry-After` header saying when the work will finish" }
+          ],
+          "answer": "monitor",
+          "explanation": "RFC 9110: the representation \"ought to describe the request's current status and point to (or embed) a status monitor\". The result doesn't exist yet. RFC 9110 spells out what `Retry-After` means only on `503` and `3xx` responses (RFC 6585 adds `429`), so on a `202` (or a status poll) it's a convention your API documents, not a requirement."
+        },
+        {
+          "id": "pick-channel",
+          "prompt": "A browser dashboard shows order counts that the server pushes as they change. The browser never sends anything back on that channel. What's the simplest fit?",
+          "options": [
+            { "id": "sse", "text": "Server-Sent Events — one long `GET`, server-to-client only, with automatic reconnects" },
+            { "id": "ws", "text": "WebSockets, because it's real-time" },
+            { "id": "webhook", "text": "A webhook to the browser" },
+            { "id": "poll-fast", "text": "Polling every 100 ms" }
+          ],
+          "answer": "sse",
+          "explanation": "The data flows one way, so SSE's plain-HTTP stream fits exactly, and `EventSource` reconnects by itself. WebSockets would work, but you'd write the reconnects, heartbeats and auth for a two-way channel you don't use. A browser can't receive webhooks — it has no public URL. Polling ten times a second is load for its own sake."
+        },
+        {
+          "id": "sse-reconnect",
+          "prompt": "An SSE connection drops in the middle of a stream. What happens next, by default?",
+          "options": [
+            { "id": "auto", "text": "`EventSource` reconnects on its own and sends the last event id it saw in a `Last-Event-ID` header" },
+            { "id": "manual", "text": "Nothing, until your code creates a new `EventSource`" },
+            { "id": "replay-all", "text": "The browser reconnects and the server automatically replays every event from the start" },
+            { "id": "fallback", "text": "The browser falls back to a WebSocket" }
+          ],
+          "answer": "auto",
+          "explanation": "The HTML standard has `EventSource` reconnect after a delay and report the last `id:` it received in `Last-Event-ID`. Whether anything is replayed is up to the server: it can use that id to resume. A response other than `200` (e.g. `204 No Content`) fails the connection and stops the reconnects."
+        },
+        {
+          "id": "reserialised-body",
+          "prompt": "An Express app with `app.use(express.json())` verifies webhooks by computing the HMAC of `JSON.stringify(req.body)`. Genuine deliveries fail verification. Why?",
+          "options": [
+            { "id": "bytes", "text": "The signature covers the exact bytes received; re-serialised JSON drops the sender's whitespace (and may escape differently), so it's different bytes" },
+            { "id": "sorted", "text": "`JSON.stringify` sorts the object's keys alphabetically" },
+            { "id": "base64", "text": "HMAC only works on base64 input" },
+            { "id": "hash", "text": "Express hashes the body with SHA-1 before your code sees it" }
+          ],
+          "answer": "bytes",
+          "explanation": "An HMAC is over bytes, and `{\"id\": \"evt_1\"}` and `{\"id\":\"evt_1\"}` are different bytes. Providers say it outright: Stripe's docs warn that any manipulation of the raw body breaks verification. Give the webhook route the raw body (Express's `express.raw()` on that route) and parse only after verifying. `JSON.stringify` doesn't sort keys — it follows the parsed object's own property order — which is exactly why it *looks* like a faithful round trip."
+        },
+        {
+          "id": "why-timestamp",
+          "prompt": "A provider signs `timestamp + \".\" + body` and sends the timestamp in the header. Why does that stop a replayed delivery when a signature over the body alone doesn't?",
+          "options": [
+            { "id": "signed-time", "text": "The timestamp is covered by the signature, so an attacker can't refresh it, and the receiver rejects anything older than its tolerance" },
+            { "id": "encrypted", "text": "The timestamp is encrypted, so an attacker can't read it" },
+            { "id": "once", "text": "The provider refuses to sign the same body twice" },
+            { "id": "tls", "text": "TLS makes a captured delivery impossible to resend" }
+          ],
+          "answer": "signed-time",
+          "explanation": "A valid signature over the body stays valid forever, so a captured delivery can be re-sent any time. Folding the timestamp into the signed payload binds the signature to a moment: change `t` and verification fails, keep it and the receiver sees it's stale. Stripe's libraries default to a five-minute window and warn that a tolerance of `0` turns the check off."
+        },
+        {
+          "id": "dedupe-on",
+          "prompt": "A provider retries failed deliveries with a fresh timestamp and signature each time. Which value should your handler dedupe on?",
+          "options": [
+            { "id": "event-id", "text": "The event's `id` from the verified body" },
+            { "id": "signature", "text": "The signature header" },
+            { "id": "timestamp", "text": "The `t=` timestamp" },
+            { "id": "received", "text": "The time your server received the delivery" }
+          ],
+          "answer": "event-id",
+          "explanation": "Every retry of one event carries the same event `id` and a different timestamp — so a different signature. Deduping on the signature or the timestamp lets every retry through as \"new\"; arrival time is different every time by definition. (Stripe also notes it occasionally emits two event objects for one change; for those it suggests the related object's id plus the event type.)"
+        },
+        {
+          "id": "duplicate-answer",
+          "prompt": "Your handler receives an event id it has already applied. What should it answer?",
+          "options": [
+            { "id": "2xx", "text": "`200` (or another `2xx`) — acknowledge it so the provider stops retrying, and do nothing" },
+            { "id": "409", "text": "`409 Conflict` — it's a duplicate" },
+            { "id": "500", "text": "`500` — something upstream went wrong" },
+            { "id": "422", "text": "`422` — the event can't be processed again" }
+          ],
+          "answer": "2xx",
+          "explanation": "To the provider, any non-`2xx` means \"not delivered\", so it retries — for days, in Stripe's case — something you've already done. The duplicate isn't an error from the provider's point of view; it's the normal consequence of at-least-once delivery. Acknowledge and move on."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-async-apis",
+      "prompts": [
+        {
+          "id": "accepted",
+          "prompt": "Accept the export and say where to check on it.",
+          "code": [
+            "HTTP/1.1 ___ Accepted",
+            "___: /exports/jobs/7",
+            "Content-Type: application/json",
+            "",
+            "{\"jobId\":\"7\",\"status\":\"queued\"}"
+          ],
+          "blanks": [
+            { "id": "a1", "accept": ["202"] },
+            { "id": "a2", "accept": ["Location"] }
+          ],
+          "explanation": "`202` says accepted-but-not-done; `Location` (plus the `jobId` in the body) is the status monitor RFC 9110 asks a `202` to point to."
+        },
+        {
+          "id": "sse-pieces",
+          "prompt": "A server-sent event stream: the response's media type, and the browser API that reads it.",
+          "code": [
+            "// server",
+            "res.writeHead(200, { \"Content-Type\": \"text/___\" });",
+            "",
+            "// browser",
+            "const source = new ___(\"/orders/stream\");",
+            "source.onmessage = (e) => render(JSON.parse(e.data));"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["event-stream"] },
+            { "id": "b2", "accept": ["EventSource"] }
+          ],
+          "explanation": "SSE responses must be `text/event-stream`. `EventSource` opens the long `GET`, parses `data:`/`id:`/`event:` lines, and reconnects on its own."
+        },
+        {
+          "id": "verify-and-window",
+          "prompt": "Sign-check the exact bytes, then reject stale deliveries.",
+          "code": [
+            "const rawBody = await request.text();          // the bytes exactly as received",
+            "const signedPayload = `${timestamp}.${___}`;",
+            "if (!(await verifyHmacSha256Hex(secret, signedPayload, signature))) return 400;",
+            "if (nowSeconds - timestamp > ___) return 400;",
+            "const event = JSON.parse(rawBody);              // only now is it worth parsing"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["rawBody"] },
+            { "id": "c2", "accept": ["toleranceSeconds", "300", "5 * 60"] }
+          ],
+          "explanation": "The signature covers the raw request body as received — never a re-serialised `JSON.stringify(JSON.parse(rawBody))`, whose bytes can differ. The timestamp is inside the signature, so comparing it with the clock (five minutes is Stripe's default tolerance) rejects replays."
+        },
+        {
+          "id": "record-after",
+          "prompt": "Dedupe on the right key, and record it at the right moment.",
+          "code": [
+            "if (processed.has(event.___)) return 200;",
+            "await markOrderPaid(event.data.orderId);",
+            "processed.___(event.id);",
+            "return 200;"
+          ],
+          "blanks": [
+            { "id": "d1", "accept": ["id"] },
+            { "id": "d2", "accept": ["add"] }
+          ],
+          "explanation": "The event id is the same on every delivery of that event. Recording it *after* the side effect means a failure leaves it unrecorded, so the next delivery tries again."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-async-apis",
+      "snippets": [
+        {
+          "id": "reserialise",
+          "code": [
+            "const raw = '{\"id\": \"evt_1\", \"type\": \"payment.succeeded\"}';",
+            "const signature = await hmacHex(secret, raw);       // what the provider sent",
+            "",
+            "const body = JSON.parse(raw);                        // what the framework hands you",
+            "console.log(await verifyHex(secret, JSON.stringify(body), signature));"
+          ],
+          "question": "What's logged?",
+          "answer": "false",
+          "acceptable": ["false — verification fails"],
+          "explanation": "`raw` is 44 characters with spaces after the colons and commas; `JSON.stringify(body)` is 41 without them. Different bytes, different HMAC, so a genuine delivery is rejected. Verify against the raw body, then parse. (Run in Node 24 with Web Crypto.)"
+        },
+        {
+          "id": "record-before-work",
+          "code": [
+            "async function handle(event) {",
+            "  if (processed.has(event.id)) return 200;",
+            "  processed.add(event.id);",
+            "  try { await markOrderPaid(event.data.orderId); }  // throws the first time: DB down",
+            "  catch { return 500; }",
+            "  return 200;",
+            "}",
+            "",
+            "console.log(await handle(event), await handle(event));   // the provider retries"
+          ],
+          "question": "What's logged, and how many times is the order marked paid?",
+          "answer": "500 200 — and the order is never marked paid",
+          "acceptable": ["500 200, paid 0 times", "never paid"],
+          "explanation": "The first delivery records the id, then fails and answers `500`. The retry finds the id, answers `200`, and skips the work. The provider sees success, the logs look healthy, and the payment is lost. Recording after the work succeeds (or in the same transaction) is what lets the retry repair the failure."
+        },
+        {
+          "id": "check-then-act-race",
+          "code": [
+            "async function handle(event) {",
+            "  if (await processedEvents.has(event.id)) return 200;   // a database read",
+            "  await markOrderPaid(event.data.orderId);",
+            "  await processedEvents.add(event.id);",
+            "  return 200;",
+            "}",
+            "",
+            "// A retry arrives while the first delivery is still running:",
+            "await Promise.all([handle(event), handle(event)]);"
+          ],
+          "question": "How many times is the order marked paid?",
+          "answer": "Twice",
+          "acceptable": ["2", "two"],
+          "explanation": "Both calls read \"not processed\" before either one writes, so both do the work — check-then-act across an `await` is a race. Let the database arbitrate: insert the event id first under a unique constraint (status `processing`) so the second insert fails, and finish or roll back that row with the work."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-webhook", "challengeSlug": "idempotent-webhook-handler" }
+  ]
+}

@@ -1,0 +1,70 @@
+---
+id: grpc-on-one-page
+title: gRPC on one page — contract, wire, streams, browsers
+---
+
+gRPC is procedure-shaped RPC with a **contract first**. You describe the service in a `.proto`
+file — Protocol Buffers is gRPC's default interface definition language — and the protobuf
+compiler's gRPC plugins generate a typed client and a server skeleton in each language you use.
+
+```proto
+syntax = "proto3";
+package shop.v1;
+
+service Orders {
+  rpc GetOrder (GetOrderRequest) returns (Order);                      // unary
+  rpc WatchOrders (WatchOrdersRequest) returns (stream OrderEvent);    // server streaming
+}
+
+message GetOrderRequest { int64 id = 1; }
+message Order { int64 id = 1; string status = 2; }
+```
+
+The numbers (`= 1`, `= 2`) are the contract on the wire: a field number "cannot be changed once
+your message type is in use", and a deleted field's number must be `reserved` so nobody reuses
+it. That's how a Go server and a Java client deployed months apart still agree.
+
+## On the wire: always HTTP/2, always POST
+
+Every call is an HTTP/2 request with `:method POST`, `:path /shop.v1.Orders/GetOrder` and
+`content-type: application/grpc`. The body is a stream of length-prefixed protobuf messages —
+binary, so curl shows you bytes, not JSON. The result travels in **trailers** after the body:
+`grpc-status: 0` is OK, anything else is an error. An error response still uses HTTP status
+`200`, which is why gRPC servers answer `415` to clients that don't speak gRPC, so a plain HTTP
+client doesn't mistake a gRPC error for success.
+
+## What it gives you beyond "JSON over POST"
+
+- **Four call types:** unary (one request, one response), server streaming, client streaming,
+  and bidirectional streaming — both sides sending on one long-lived call.
+- **Deadlines.** The client says how long it will wait (sent as a `grpc-timeout` header);
+  past it, the call ends with `DEADLINE_EXCEEDED`.
+- **Cancellation** from either side stops further work immediately — but, as grpc.io warns,
+  "changes made before a cancellation are not rolled back".
+- **Generated clients** in every supported language, from the one `.proto`.
+
+## The browser problem
+
+A browser can't make a native gRPC call: `fetch` gives you no control over HTTP/2 framing and no
+access to trailers. **gRPC-Web** is a variant protocol for browsers, and something has to
+translate it to real gRPC: usually a proxy in front of the service — Envoy is grpc-web's default,
+and its README lists others such as Nginx — or a server framework with gRPC-Web support built in
+(the README names Armeria and Tonic). The grpc-web client supports only unary and
+server-streaming calls (server streaming only in its `grpcwebtext` mode); client and
+bidirectional streaming are "not currently supported".
+
+So gRPC shines **between services you own**: many languages, high call volume, streaming, a
+contract the compiler enforces. For browsers and third-party developers, expose a JSON/HTTP API
+instead (or in front of it).
+
+<!--more-->
+
+**Metadata** is gRPC's name for headers: key–value pairs per call, which gRPC itself doesn't
+interpret. Tokens travel there — grpc.io's auth guide says per-call OAuth tokens go "normally as
+part of HTTP Authorization header", and most implementations refuse to send credentials over an
+unencrypted channel.
+
+**Load balancers.** One HTTP/2 connection carries many calls. A connection-level (L4) balancer
+picks a backend per *connection*, so one busy client stays on one server; a request-aware (L7)
+balancer "can distribute the streams from one client among multiple backends", and client-side
+balancing picks a backend per call (grpc.io, "gRPC Load Balancing").

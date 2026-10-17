@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 3,
+  "slug": "request-response-anatomy",
+  "title": "Request & response anatomy",
+  "skills": ["http", "idempotency"],
+  "difficulty": "intro",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Read a raw HTTP request and response: request line, status line, header fields, the empty line and the body",
+    "Classify a method as safe and/or idempotent (RFC 9110), and say which failed requests a client may resend on its own",
+    "Tell `Content-Type` from `Accept`, and handle a response by its status class — `fetch` resolves on a 404 or a 500",
+    "Make a `POST` retry-safe with one `Idempotency-Key` per operation, retrying only failures that can succeed later"
+  ],
+  "sources": [
+    { "title": "RFC 9110: HTTP Semantics", "url": "https://www.rfc-editor.org/rfc/rfc9110" },
+    { "title": "RFC 9112: HTTP/1.1 (message format)", "url": "https://www.rfc-editor.org/rfc/rfc9112" },
+    { "title": "RFC 5789: PATCH Method for HTTP", "url": "https://www.rfc-editor.org/rfc/rfc5789" },
+    { "title": "RFC 6585: Additional HTTP Status Codes (429)", "url": "https://www.rfc-editor.org/rfc/rfc6585" },
+    { "title": "Fetch Standard: extracting a body (default Content-Type)", "url": "https://fetch.spec.whatwg.org/#concept-bodyinit-extract" },
+    { "title": "MDN: Window.fetch()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch" },
+    { "title": "Express 5 API: express.json()", "url": "https://expressjs.com/en/5x/api/express/" },
+    { "title": "IETF draft: The Idempotency-Key HTTP Header Field", "url": "https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/" },
+    { "title": "Stripe API: Idempotent requests", "url": "https://docs.stripe.com/api/idempotent_requests" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-anatomy", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-anatomy",
+      "questions": [
+        {
+          "id": "where-headers-end",
+          "prompt": "In a raw HTTP/1.1 request, how does the receiver know where the header fields end and the body begins?",
+          "options": [
+            { "id": "empty-line", "text": "An empty line — CR LF on its own — ends the header section" },
+            { "id": "content-length", "text": "The `Content-Length` line is always the last header" },
+            { "id": "body-header", "text": "A `Body:` header introduces the body" },
+            { "id": "json-brace", "text": "The first line that starts with `{` or `<` is the body" }
+          ],
+          "answer": "empty-line",
+          "explanation": "The message is start line, header lines, **an empty line**, then the body (RFC 9112, section 2.1). Header order isn't fixed, so `Content-Length` can appear anywhere among them — its job is to say *how many bytes* of body follow the empty line, not where the headers stop. Nothing about the body's first character is consulted."
+        },
+        {
+          "id": "content-type-vs-accept",
+          "prompt": "Your client sends a JSON body to `POST /reports` and wants the report back as CSV. Which headers say that?",
+          "options": [
+            { "id": "right", "text": "`Content-Type: application/json` and `Accept: text/csv`" },
+            { "id": "swapped", "text": "`Content-Type: text/csv` and `Accept: application/json`" },
+            { "id": "list", "text": "`Content-Type: application/json, text/csv`" },
+            { "id": "accept-only", "text": "Only `Accept: text/csv` — the server can tell the body is JSON by looking at it" }
+          ],
+          "answer": "right",
+          "explanation": "`Content-Type` describes the body of the message it's on — here, the JSON you're sending. `Accept` is a request header listing what you'd like *back*. Swapping them is the classic mix-up. And servers don't sniff: body parsers such as Express's `express.json()` decide from `Content-Type` alone, so a JSON body labelled anything else is treated as not-JSON."
+        },
+        {
+          "id": "unknown-status",
+          "prompt": "Your `POST` gets back status `471`, a code you've never seen. Per RFC 9110, how should a client treat it?",
+          "options": [
+            { "id": "as-400", "text": "Like `400 Bad Request` — the first digit says the request is the problem, so don't resend it unchanged" },
+            { "id": "success", "text": "As success, since it isn't a `5xx`" },
+            { "id": "transient", "text": "As transient: retry with backoff until you get a code you recognise" },
+            { "id": "network-error", "text": "As a network error, because unregistered codes are invalid" }
+          ],
+          "answer": "as-400",
+          "explanation": "RFC 9110 requires a client to understand the *class* of any status and treat an unrecognised code as the `x00` of its class — its own example is exactly `471` → `400`. The class tells you whose problem it is: `4xx` means the request as sent, so a retry of the same bytes gets the same answer. Only codes outside 100–599 are invalid, and those are treated as `5xx`."
+        },
+        {
+          "id": "delete-twice",
+          "prompt": "`DELETE /orders/7` returns `204`. A retry of the same request returns `404`. Is `DELETE` still idempotent?",
+          "options": [
+            { "id": "yes-effect", "text": "Yes — idempotency is about the effect on the server (order 7 is gone either way), not about getting the same response" },
+            { "id": "no-responses", "text": "No — the two responses differ, so the method isn't idempotent here" },
+            { "id": "only-204", "text": "Only if the server is fixed to return `204` both times" },
+            { "id": "safe", "text": "The question doesn't apply: `DELETE` is a safe method" }
+          ],
+          "answer": "yes-effect",
+          "explanation": "RFC 9110 defines idempotent as \"the intended effect on the server of multiple identical requests ... is the same as the effect for a single such request\", and adds that the response might differ. Returning `404` the second time is fine. `DELETE` is idempotent but **not** safe — it asks for a state change; it just asks for the same one every time."
+        },
+        {
+          "id": "auto-retry",
+          "prompt": "The connection drops before any response arrives. Which request may an HTTP client library resend **automatically**, with no other information?",
+          "options": [
+            { "id": "put", "text": "`PUT /profile` with the full profile in the body" },
+            { "id": "post", "text": "`POST /orders` with the cart in the body" },
+            { "id": "patch", "text": "`PATCH /cart` with `{ \"op\": \"add\", \"sku\": \"TEA-1\" }`" },
+            { "id": "none", "text": "Any of them — a dropped connection means the server never received it" }
+          ],
+          "answer": "put",
+          "explanation": "`PUT` is idempotent: if the first one landed, repeating it leaves the profile the same. `POST` and `PATCH` aren't (an `add` applied twice adds two), and RFC 9110 says a client SHOULD NOT retry those automatically without some way to know it's safe. The last option is the dangerous assumption: a dropped connection can happen *after* the server did the work and before the response got back."
+        },
+        {
+          "id": "get-with-side-effect",
+          "prompt": "`GET /emails/42?action=archive` archives the email. A chat app's link-preview bot fetches pasted URLs, and users' emails start disappearing. Whose bug is it?",
+          "options": [
+            { "id": "server", "text": "The server's: `GET` is safe, so an unsafe action must not be reachable through it — make it `POST /emails/42/archive`" },
+            { "id": "bot", "text": "The bot's: well-behaved bots don't follow URLs with query strings" },
+            { "id": "cache", "text": "The bot's: it should send `Cache-Control: no-store`" },
+            { "id": "token", "text": "Nobody's, as long as the link includes a CSRF token" }
+          ],
+          "answer": "server",
+          "explanation": "Safe methods exist so that crawlers, prefetchers and preview bots can follow links without harm. RFC 9110 puts the burden on the resource owner: if parameters in the URL select an unsafe action, the owner MUST disable that action for safe methods. No header or token changes that — the bot was allowed to send that `GET`."
+        },
+        {
+          "id": "key-inside-loop",
+          "prompt": "A retry loop runs `const key = crypto.randomUUID()` *inside* the loop, then sends `POST /payments` with `Idempotency-Key: key`. The first attempt charges the card but its response is lost; the second succeeds. How many charges?",
+          "options": [
+            { "id": "two", "text": "Two — each attempt carries a new key, so the server sees two different operations" },
+            { "id": "one-header", "text": "One — the server dedupes any request that has an `Idempotency-Key` header" },
+            { "id": "one-http", "text": "One — HTTP dedupes retried `POST`s on the same connection" },
+            { "id": "zero", "text": "Zero — the server rejects a payment whose key changed" }
+          ],
+          "answer": "two",
+          "explanation": "The key only works if it's the **same** on every attempt of one operation: the server stores \"key `k1` → this response\" and recognises the retry by `k1`. Minting a key per attempt gives each retry a fresh identity, so the header is present and protects nothing. Generate the key once, before the loop (or once per user action). HTTP itself never dedupes anything."
+        },
+        {
+          "id": "same-key-different-body",
+          "prompt": "Your server completed `Idempotency-Key: k1` for `{\"amount\": 40}`. Now `k1` arrives again with `{\"amount\": 50}`. What should it do?",
+          "options": [
+            { "id": "reject-422", "text": "Reject it (the IETF draft says `422`): one key must never be reused for a different request" },
+            { "id": "replay", "text": "Replay the stored `201` for the 40 charge" },
+            { "id": "process", "text": "Process the 50 charge as a new payment" },
+            { "id": "conflict-409", "text": "`409 Conflict`, the same answer as a retry that arrives while the first is still running" }
+          ],
+          "answer": "reject-422",
+          "explanation": "A key identifies one operation, so a different payload under the same key is a client bug. Replaying the 40 response would tell the client its 50 charge succeeded; processing it would make keys meaningless. The Idempotency-Key Internet-Draft reserves `409` for \"the original request is still being processed\" and `422` for key reuse with a different payload — and it's why servers store a fingerprint of the request alongside the key."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-anatomy",
+      "prompts": [
+        {
+          "id": "raw-get",
+          "prompt": "Write the request line's method, and the header that asks for JSON back.",
+          "code": [
+            "___ /orders/42 HTTP/1.1",
+            "Host: api.example.com",
+            "___: application/json"
+          ],
+          "blanks": [
+            { "id": "a1", "accept": ["GET"] },
+            { "id": "a2", "accept": ["Accept"] }
+          ],
+          "explanation": "The request line is `method target version`. `Accept` is the request header for \"what I want back\"; `Content-Type` would describe a body, and this `GET` has none."
+        },
+        {
+          "id": "raw-201",
+          "prompt": "The server created order 43. Fill in the status code and the header that gives the new resource's URL.",
+          "code": [
+            "HTTP/1.1 ___ Created",
+            "Content-Type: application/json",
+            "___: /orders/43",
+            "",
+            "{\"id\":43,\"sku\":\"TEA-1\"}"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["201"] },
+            { "id": "b2", "accept": ["Location"] }
+          ],
+          "explanation": "RFC 9110 (section 9.3.3): when a `POST` creates a resource, the server SHOULD send `201 Created` with a `Location` header identifying it. The empty line before the JSON is what ends the headers."
+        },
+        {
+          "id": "fetch-json",
+          "prompt": "Without this header, `fetch` labels the string body `text/plain;charset=UTF-8` and a JSON body parser skips it.",
+          "code": [
+            "await fetch(\"/api/orders\", {",
+            "  method: \"POST\",",
+            "  headers: { \"___\": \"application/json\" },",
+            "  body: JSON.stringify(order),",
+            "});"
+          ],
+          "blanks": [{ "id": "c1", "accept": ["Content-Type"] }],
+          "explanation": "The Fetch standard gives a string body the type `text/plain;charset=UTF-8`; it never inspects the string. Express 5's `express.json()` only parses a matching `Content-Type`, so without this line `req.body` is `undefined`."
+        },
+        {
+          "id": "fetch-ok",
+          "prompt": "`fetch` resolved with a 500. Turn that into an error.",
+          "code": [
+            "const res = await fetch(\"/api/orders\");",
+            "if (!res.___) throw new Error(`HTTP ${res.status}`);"
+          ],
+          "blanks": [{ "id": "d1", "accept": ["ok"] }],
+          "explanation": "`res.ok` is `true` only for 200–299. `fetch` rejects when it has no response to give (network failure, CORS block, abort) — a `404` or `500` resolves normally and must be checked."
+        },
+        {
+          "id": "retry-headers",
+          "prompt": "Make the retry safe, and wait as long as the server asked.",
+          "code": [
+            "const key = crypto.randomUUID(); // once per operation",
+            "for (let attempt = 1; attempt <= 3; attempt++) {",
+            "  const res = await fetch(\"/payments\", {",
+            "    method: \"POST\",",
+            "    headers: { \"Content-Type\": \"application/json\", \"___\": key },",
+            "    body,",
+            "  });",
+            "  if (res.status !== 503) return res;",
+            "  await sleep(Number(res.headers.get(\"___\") ?? 1) * 1000);",
+            "}"
+          ],
+          "blanks": [
+            { "id": "e1", "accept": ["Idempotency-Key"] },
+            { "id": "e2", "accept": ["Retry-After"] }
+          ],
+          "explanation": "The same `Idempotency-Key` on every attempt lets the server recognise the retry. `Retry-After` (RFC 9110, section 10.2.3) on a `503` or `429` says how long to wait; its value is either seconds (as assumed here) or an HTTP date."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-anatomy",
+      "snippets": [
+        {
+          "id": "string-body-express",
+          "code": [
+            "// Server: Express 5",
+            "app.use(express.json());",
+            "app.post(\"/api/orders\", (req, res) => res.json({ got: req.body }));",
+            "",
+            "// Client",
+            "const res = await fetch(\"/api/orders\", {",
+            "  method: \"POST\",",
+            "  body: JSON.stringify({ sku: \"TEA-1\" }),",
+            "});",
+            "console.log(await res.text());"
+          ],
+          "question": "What does the client log?",
+          "answer": "{}",
+          "acceptable": ["an empty object", "{} (req.body is undefined)"],
+          "explanation": "No `Content-Type` was set, so `fetch` sent the string as `text/plain;charset=UTF-8`. `express.json()` skips anything that isn't `application/json`, leaving `req.body` as `undefined` (Express 5), and `JSON.stringify({ got: undefined })` drops the key — the response is `{}`. No error anywhere: the request \"worked\". Add `headers: { \"Content-Type\": \"application/json\" }` and the server echoes `{\"got\":{\"sku\":\"TEA-1\"}}` (checked against Express 5.3.0)."
+        },
+        {
+          "id": "content-length-chars",
+          "code": [
+            "// A hand-rolled Node server",
+            "const body = JSON.stringify({ name: \"café\" });",
+            "res.writeHead(200, {",
+            "  \"Content-Type\": \"application/json\",",
+            "  \"Content-Length\": body.length,",
+            "});",
+            "res.end(body);",
+            "",
+            "// Client",
+            "const text = await (await fetch(url)).text();"
+          ],
+          "question": "What string does the client receive?",
+          "answer": "{\"name\":\"café\"",
+          "acceptable": ["the JSON without its closing brace", "one byte short — the final } is missing", "a truncated body"],
+          "explanation": "`body.length` counts UTF-16 code units: 15. `Content-Length` counts bytes, and `é` is two bytes in UTF-8, so the body is 16 bytes. The client reads exactly the 15 it was promised and stops — the closing `}` never arrives, and `JSON.parse` fails on the client, far from the bug. Use `Buffer.byteLength(body)` (or let the framework set the length). Verified with Node 24 and both `fetch` and curl."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-retry", "challengeSlug": "retry-safe-client" }
+  ]
+}

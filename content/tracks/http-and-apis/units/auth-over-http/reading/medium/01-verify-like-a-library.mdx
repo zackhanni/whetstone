@@ -1,0 +1,87 @@
+---
+id: verify-like-a-library
+title: Verifying an access token — the order of the checks is the security
+---
+
+Decoding reads the claims. **Verifying** decides whether to believe them. A server that decodes
+an incoming token and trusts the `sub` inside has no authentication at all: anyone can write
+`{"sub":"admin"}`, base64url it, and send it.
+
+Here are the checks a JWT library performs, written out with Web Crypto (available in browsers
+and in Node as the global `crypto`) so nothing is hidden:
+
+```ts
+const ACCEPTED_ALG = "HS256";
+
+async function verifyAccessToken(token: string, secret: string, nowSeconds: number) {
+  const [h, p, s, extra] = token.split(".");
+  if (!h || !p || !s || extra !== undefined) return null;      // exactly three parts
+
+  // 1. Pin the algorithm. The header is attacker-controlled: never let it choose.
+  const header = decodeSegment(h) as { alg?: string };
+  if (header.alg !== ACCEPTED_ALG) return null;
+
+  // 2. Check the signature over the exact text "header.payload".
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
+  );
+  const signed = new TextEncoder().encode(`${h}.${p}`);
+  if (!(await crypto.subtle.verify("HMAC", key, base64urlToBytes(s), signed))) return null;
+
+  // 3. Only now read the claims — and check exp, which is in SECONDS.
+  const claims = decodeSegment(p) as { sub?: string; exp?: number };
+  if (typeof claims.exp !== "number" || nowSeconds >= claims.exp) return null;
+  return claims;
+}
+```
+
+(`decodeSegment` is the helper from the previous example; `base64urlToBytes` is the same
+conversion without the JSON parse.) Run against the token from the curl unit: a fresh token
+returns its claims; the same token at its `exp` second, a copy with an edited payload, and a token
+whose header says `"alg":"none"` all return `null`.
+
+## Why each line is there
+
+- **Pinning `alg`.** RFC 8725 (JWT best practices) lists the classic attacks: libraries that
+  accepted `"alg":"none"` and skipped the signature, and ones that let an attacker switch `RS256`
+  to `HS256` so a *public* key became the HMAC secret. A verifier that runs whatever the header
+  names has handed the decision to the attacker.
+- **Signature before claims.** Until the signature checks out, every claim is just text someone
+  typed — checking `exp` or `scope` on an unverified payload checks the attacker's own claims.
+- **`exp` in seconds.** RFC 7519 defines it as a NumericDate: seconds since the epoch. The token
+  is invalid "on or after" that instant, hence `>=`. Comparing it with `Date.now()` (milliseconds)
+  makes every token look a thousand times older — or, the other way round, never expire.
+
+In production, use a maintained library and **tell it the algorithm**. With `jose` v6:
+
+```ts
+import { jwtVerify } from "jose";
+
+const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+  algorithms: ["HS256"],
+  issuer: "https://auth.example.com",
+  audience: "orders-api",
+  requiredClaims: ["exp"],
+});
+```
+
+`jose` never accepts unsecured (`"alg":"none"`) tokens, rejects an expired one, and with `issuer`
+and `audience` also rejects tokens minted for a different service. It throws on failure — there is
+no "decode and hope" path. One default to know: it checks `exp` and `nbf` only when they're
+*present*, so a token with no `exp` at all verifies — `requiredClaims: ["exp"]` is what refuses it
+(checked with `jose` 6.2).
+
+<!--more-->
+
+**`iss` and `aud`.** If one identity provider signs tokens for several APIs with keys your API
+can verify, a token for `billing-api` is a valid signature to `orders-api` too. Checking `aud`
+(and `iss`) is what keeps tokens in their lane.
+
+**Clock skew.** Servers' clocks drift by seconds. Libraries offer a small tolerance (`jose`'s
+`clockTolerance`) so a token issued "in the future" by a slightly fast auth server isn't rejected.
+Keep it to seconds, not minutes.
+
+**Comparing signatures.** `crypto.subtle.verify` does the comparison for you. If you compute an
+HMAC and compare strings yourself, use a constant-time comparison (Node's
+`crypto.timingSafeEqual`), not `===`, which can return early at the first differing byte.

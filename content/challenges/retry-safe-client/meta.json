@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "retry-safe-client",
+  "title": "Make the retry helper safe for POST",
+  "skills": ["http", "idempotency"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "send-with-retry.ts",
+  "acceptanceCriteria": [
+    "Every attempt of one `POST` carries the same `idempotency-key`, made once with `newKey()`",
+    "A `PATCH` gets a key too; `GET`, `HEAD`, `OPTIONS`, `PUT` and `DELETE` are retried without one",
+    "A key the caller already set is kept, not replaced",
+    "Only a dropped connection, `408`, `429`, `502`, `503` and `504` are retried; any other status is returned after one attempt",
+    "A numeric `retry-after` (seconds) sets the wait; otherwise the wait is `baseDelayMs`, then double each time",
+    "After `maxAttempts`, the last response is returned or the last network error is rethrown"
+  ]
+}

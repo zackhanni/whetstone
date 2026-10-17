@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 3,
+  "slug": "auth-over-http",
+  "title": "Auth over HTTP: sessions, bearer tokens and JWTs",
+  "skills": ["http", "auth", "jwt"],
+  "difficulty": "core",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Trace how credentials travel in a cookie session and with a bearer access token, and say where the state lives in each",
+    "Decode a JWT's three parts by hand, and explain why a signed token is readable by anyone who holds it",
+    "Verify an access token the way a library does: pin the algorithm, check the signature, then `exp` in seconds",
+    "Answer with 401 + `WWW-Authenticate` or 403 per RFC 9110 and RFC 6750, and react to each as a client",
+    "Explain refresh-token rotation and reuse detection, and read `Set-Cookie` attributes as mechanics"
+  ],
+  "sources": [
+    { "title": "RFC 9110: HTTP Semantics (401, 403, WWW-Authenticate)", "url": "https://www.rfc-editor.org/rfc/rfc9110" },
+    { "title": "RFC 6750: OAuth 2.0 Bearer Token Usage", "url": "https://www.rfc-editor.org/rfc/rfc6750" },
+    { "title": "RFC 7519: JSON Web Token (JWT)", "url": "https://www.rfc-editor.org/rfc/rfc7519" },
+    { "title": "RFC 7515: JSON Web Signature (JWS)", "url": "https://www.rfc-editor.org/rfc/rfc7515" },
+    { "title": "RFC 8725: JWT Best Current Practices", "url": "https://www.rfc-editor.org/rfc/rfc8725" },
+    { "title": "RFC 9700: OAuth 2.0 Security Best Current Practice (refresh token rotation)", "url": "https://www.rfc-editor.org/rfc/rfc9700" },
+    { "title": "RFC 6265: HTTP State Management (cookies)", "url": "https://www.rfc-editor.org/rfc/rfc6265" },
+    { "title": "MDN: Set-Cookie", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie" },
+    { "title": "MDN: Window.atob()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/atob" },
+    { "title": "MDN: SubtleCrypto.verify()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/verify" },
+    { "title": "jose v6: jwtVerify verification options", "url": "https://github.com/panva/jose/blob/main/docs/jwt/verify/interfaces/JWTVerifyOptions.md" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-auth", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-auth",
+      "questions": [
+        {
+          "id": "who-attaches-cookie",
+          "prompt": "In a cookie-session app, what puts the session id on each request to the API?",
+          "options": [
+            { "id": "browser", "text": "The browser, automatically, on requests that match the cookie's domain, path and other attributes" },
+            { "id": "wrapper", "text": "Your `fetch` wrapper, which copies it into a `Cookie` header" },
+            { "id": "storage", "text": "Your code, which reads it from `localStorage` and adds an `Authorization` header" },
+            { "id": "url", "text": "The server, which appends it to every link it renders" }
+          ],
+          "answer": "browser",
+          "explanation": "After `Set-Cookie`, the browser owns the cookie and attaches it to matching requests by itself — your code doesn't (and with `HttpOnly`, can't) touch it. A bearer token is the opposite: your code stores it and adds `Authorization: Bearer …` on every call. Which of the two is safer in a browser is a Web Security question; *who attaches it* is the mechanical difference."
+        },
+        {
+          "id": "ban-takes-time",
+          "prompt": "You ban a user. With server-side sessions their next request fails; with 15-minute JWT access tokens they keep working for up to 15 minutes. Why?",
+          "options": [
+            { "id": "self-contained", "text": "The JWT carries its own claims and is verified without a lookup, so it stays valid until `exp` unless you add a denylist check" },
+            { "id": "browser-cache", "text": "Browsers cache JWTs and replay the old responses" },
+            { "id": "propagation", "text": "A new signing key takes 15 minutes to propagate to all servers" },
+            { "id": "https", "text": "TLS session resumption keeps the old identity alive" }
+          ],
+          "answer": "self-contained",
+          "explanation": "A session id means nothing without its row in the store, so deleting the row revokes it instantly. A JWT is verified by checking its signature and `exp` — nothing asks \"is this user still allowed?\". That's the speed-for-revocation trade, and why access tokens are kept short, with revocation applied at the next refresh. Rotating the signing key would work, but it logs out *everyone*."
+        },
+        {
+          "id": "jwt-not-secret",
+          "prompt": "A teammate puts the user's email and billing plan in the JWT payload: \"it's fine, the token is encrypted with HS256\". Is it?",
+          "options": [
+            { "id": "readable", "text": "No — the payload is base64url-encoded JSON. HS256 *signs* it; anyone holding the token can read it" },
+            { "id": "encrypted", "text": "Yes — HS256 encrypts the payload with the secret" },
+            { "id": "need-secret", "text": "Yes — decoding requires the server's secret" },
+            { "id": "tls", "text": "Yes — HTTPS encrypts it, so nobody else can read it" }
+          ],
+          "answer": "readable",
+          "explanation": "A three-part JWT is a JWS: header and payload are just base64url, decodable with no key at all. The HMAC only proves nobody *changed* them. TLS protects the token in transit, but it is readable wherever it rests — browser storage, logs, a decoder pasted into by support. Encrypted JWTs (JWE) exist and have five parts; login endpoints almost never hand those out."
+        },
+        {
+          "id": "alg-gated-check",
+          "prompt": "A verifier runs `if (header.alg === \"HS256\" && !(await verifySignature(token))) reject();` and accepts anything else. What does an attacker send?",
+          "options": [
+            { "id": "none", "text": "A token whose header says `\"alg\":\"none\"`, with any payload and an empty signature" },
+            { "id": "replay", "text": "A copy of a valid token captured earlier" },
+            { "id": "bruteforce", "text": "Millions of HS256 tokens until one secret guess matches" },
+            { "id": "nothing", "text": "Nothing works — the payload is signed" }
+          ],
+          "answer": "none",
+          "explanation": "The condition rejects only tokens that *claim* HS256 and fail. Claim anything else and the signature is never checked, so `{\"sub\":\"admin\"}` walks in. RFC 8725 lists exactly this (`alg: none`, and switching `RS256` to `HS256`). Pin the algorithm: reject unless the header is the one you issue *and* the signature verifies. Libraries like `jose` take an `algorithms` list for this reason."
+        },
+        {
+          "id": "missing-scope-status",
+          "prompt": "A valid, unexpired access token with `scope: \"orders:read\"` calls `DELETE /orders/7`, which needs `orders:write`. What should the API answer?",
+          "options": [
+            { "id": "403", "text": "`403` with `WWW-Authenticate: Bearer error=\"insufficient_scope\"` (optionally naming the scope)" },
+            { "id": "401", "text": "`401` with `error=\"invalid_token\"`" },
+            { "id": "401-bare", "text": "`401` with no `WWW-Authenticate` header" },
+            { "id": "400", "text": "`400` with `error=\"invalid_request\"`" }
+          ],
+          "answer": "403",
+          "explanation": "The token proved who the caller is; the answer is still no. RFC 6750 maps `insufficient_scope` to `403`, and RFC 9110 says the client shouldn't retry `403` with the same credentials. `invalid_token`/`401` would send a well-behaved client off to refresh — and get the same scopes back, forever. A `401` must always carry `WWW-Authenticate`, and `invalid_request` is for malformed requests."
+        },
+        {
+          "id": "client-on-401",
+          "prompt": "Your single-page app gets `401` with `error=\"invalid_token\"` on `GET /me`. What should it do?",
+          "options": [
+            { "id": "refresh-once", "text": "Get a new access token (one shared refresh for all waiting calls), retry once, and send the user to log in if that still fails" },
+            { "id": "backoff", "text": "Retry the same request with exponential backoff" },
+            { "id": "no-access", "text": "Show \"you don't have access to this\"" },
+            { "id": "loop", "text": "Refresh and retry until the request succeeds" }
+          ],
+          "answer": "refresh-once",
+          "explanation": "`invalid_token` means the credential (usually an expired access token) is the problem, so a new one may fix it — but only once: if the fresh token fails too, something else is wrong. Retrying the same token gets the same `401`. \"No access\" is the `403` message. An unbounded refresh loop hammers the auth server, and with refresh-token rotation, parallel refreshes can trigger reuse detection."
+        },
+        {
+          "id": "two-tabs-rotation",
+          "prompt": "The server rotates refresh tokens and revokes the whole family when a used one comes back. Two tabs notice an expired access token and both call `/auth/refresh` with the same refresh token at the same moment. What happens?",
+          "options": [
+            { "id": "logout", "text": "One refresh succeeds; the other presents a just-used token, the server treats it as theft and revokes the family — the user is logged out" },
+            { "id": "both", "text": "Both succeed; the server dedupes identical requests" },
+            { "id": "same-token", "text": "Both receive the same new refresh token" },
+            { "id": "ignored", "text": "The second request is ignored and the tab keeps its old token" }
+          ],
+          "answer": "logout",
+          "explanation": "Reuse detection can't tell an attacker from your own second tab: a used refresh token arriving again means \"two parties hold it\", so per RFC 9700 the server revokes the active token too. The fix is on the client — make refreshing single-flight (and coordinate across tabs) so one refresh serves everyone waiting."
+        },
+        {
+          "id": "httponly-meaning",
+          "prompt": "`Set-Cookie: sid=9f2c1e; HttpOnly`. Which statement is true?",
+          "options": [
+            { "id": "js-cant-read", "text": "JavaScript can't read it through `document.cookie`, but the browser still sends it — including on `fetch` requests" },
+            { "id": "not-fetch", "text": "It's sent on page navigations but never with `fetch`" },
+            { "id": "https-only", "text": "It's only sent over HTTPS" },
+            { "id": "same-site", "text": "It's only sent on requests from the same site" }
+          ],
+          "answer": "js-cant-read",
+          "explanation": "`HttpOnly` controls *reading*, not *sending*: MDN notes the cookie \"will still be sent with JavaScript-initiated requests\". HTTPS-only is `Secure`; same-site-only is `SameSite=Strict`. Each attribute answers one question, which is why a sensitive cookie usually carries several."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-auth",
+      "prompts": [
+        {
+          "id": "challenge-header",
+          "prompt": "The access token expired. Write the status code and the header a `401` must carry.",
+          "code": [
+            "HTTP/1.1 ___ Unauthorized",
+            "___: Bearer realm=\"api\", error=\"invalid_token\""
+          ],
+          "blanks": [
+            { "id": "a1", "accept": ["401"] },
+            { "id": "a2", "accept": ["WWW-Authenticate"] }
+          ],
+          "explanation": "RFC 9110: a `401` MUST include `WWW-Authenticate` with at least one challenge. RFC 6750's `error=\"invalid_token\"` tells the client the token itself is the problem — refreshing may help."
+        },
+        {
+          "id": "scope-error",
+          "prompt": "The token is fine; the user just isn't an admin.",
+          "code": [
+            "HTTP/1.1 403 Forbidden",
+            "WWW-Authenticate: Bearer realm=\"api\", error=\"___\", scope=\"admin\""
+          ],
+          "blanks": [{ "id": "b1", "accept": ["insufficient_scope"] }],
+          "explanation": "RFC 6750's `insufficient_scope` goes with `403`, and the optional `scope` attribute names what would have been needed."
+        },
+        {
+          "id": "exp-check",
+          "prompt": "Reject the token from its expiry second on. `exp` is a NumericDate.",
+          "code": [
+            "const nowSeconds = Math.floor(Date.now() / ___);",
+            "if (typeof claims.exp !== \"number\" || nowSeconds ___ claims.exp) return invalid;"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["1000", "1e3", "1_000"] },
+            { "id": "c2", "accept": [">="] }
+          ],
+          "explanation": "`Date.now()` is milliseconds; `exp` is seconds since the epoch (RFC 7519). The token must not be accepted \"on or after\" `exp`, so the comparison is `>=`."
+        },
+        {
+          "id": "refresh-cookie",
+          "prompt": "Keep the refresh token away from scripts, and send it only to the `/auth` endpoints.",
+          "code": "Set-Cookie: refresh_token=pi1B33Pk; ___; Secure; SameSite=Strict; ___=/auth; Max-Age=1209600",
+          "blanks": [
+            { "id": "d1", "accept": ["HttpOnly"] },
+            { "id": "d2", "accept": ["Path"] }
+          ],
+          "explanation": "`HttpOnly` hides the cookie from `document.cookie` (it is still sent); `Path=/auth` limits which URLs it's sent to. `Secure` and `SameSite=Strict` restrict *how* and *from where* it's sent."
+        },
+        {
+          "id": "jose-pin",
+          "prompt": "With `jose` v6, pin the accepted algorithm and the intended audience.",
+          "code": [
+            "const { payload } = await jwtVerify(token, key, {",
+            "  ___: [\"HS256\"],",
+            "  issuer: \"https://auth.example.com\",",
+            "  ___: \"orders-api\",",
+            "});"
+          ],
+          "blanks": [
+            { "id": "e1", "accept": ["algorithms"] },
+            { "id": "e2", "accept": ["audience"] }
+          ],
+          "explanation": "`algorithms` stops the token's own header from choosing how it's checked (and `jose` never accepts `alg: none`). `audience` rejects a correctly signed token that was minted for a different API."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-auth",
+      "snippets": [
+        {
+          "id": "atob-base64url",
+          "code": [
+            "// The payload segment of a token for a user named \"Zoë\"",
+            "const segment = \"eyJzdWIiOiJ1XzEiLCJuYW1lIjoiWm_DqyJ9\";",
+            "console.log(JSON.parse(atob(segment)));"
+          ],
+          "question": "What happens?",
+          "answer": "It throws InvalidCharacterError",
+          "acceptable": ["InvalidCharacterError", "atob throws", "an exception — the _ isn't valid base64"],
+          "explanation": "JWT segments are base64**url**: `-` and `_` replace `+` and `/`. `atob` only accepts the classic alphabet, so the `_` in `Wm_D` throws a `DOMException` named `InvalidCharacterError`. Most tokens happen to decode — it depends on the bytes — so code that \"worked in testing\" breaks for some users. (Run in Node 24.)"
+        },
+        {
+          "id": "atob-utf8",
+          "code": [
+            "const segment = \"eyJzdWIiOiJ1XzEiLCJuYW1lIjoiWm_DqyJ9\";",
+            "const base64 = segment.replace(/-/g, \"+\").replace(/_/g, \"/\");",
+            "console.log(JSON.parse(atob(base64)).name);"
+          ],
+          "question": "The alphabet is fixed. What name is logged?",
+          "answer": "ZoÃ«",
+          "acceptable": ["garbled: ZoÃ« instead of Zoë", "mojibake"],
+          "explanation": "`atob` returns a \"binary string\" — one character per **byte**. `ë` is two bytes in UTF-8 (`0xC3 0xAB`), which come back as the two characters `Ã` and `«`. Turn the string into bytes and decode them as UTF-8: `new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.charCodeAt(0)))` gives `Zoë`."
+        },
+        {
+          "id": "exp-in-milliseconds",
+          "code": [
+            "// Issuer, at login on 2026-10-17:",
+            "const exp = Date.now() + 15 * 60 * 1000;   // \"15 minutes\"",
+            "",
+            "// Verifier, on every request:",
+            "const nowSeconds = Math.floor(Date.now() / 1000);",
+            "if (nowSeconds >= claims.exp) return reject(\"expired\");"
+          ],
+          "question": "Roughly when does the verifier first reject this token as expired?",
+          "answer": "Effectively never — read as seconds, exp is in the year 58,763",
+          "acceptable": ["never", "in tens of thousands of years", "year 58763"],
+          "explanation": "The issuer wrote milliseconds into a claim that RFC 7519 defines in **seconds**. The verifier is correct, so it reads `1792220194000` seconds: `new Date(exp * 1000)` is in the year 58,763. Every token from this issuer is valid for good — and nothing errors. When a check involves `exp`, `iat` or `nbf`, look at the units on both sides."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-bearer", "challengeSlug": "bearer-token-guard" }
+  ]
+}

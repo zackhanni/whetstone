@@ -1,0 +1,58 @@
+---
+id: cors-is-not-a-firewall
+title: CORS is not a firewall — what it protects, and the allow-lists that break it
+---
+
+CORS protects **the user's browser** from other sites reading responses *as that user*. It does
+not protect **your server** from requests. Three consequences that catch people out:
+
+## 1. Simple requests run before anyone checks
+
+In the browser test from the first example, the request to an endpoint with **no** CORS headers
+reached the server and its handler ran; the browser only withheld the answer from the page. A
+simple `POST` behaves the same way — a `text/plain` or form body needs no preflight — so a
+cross-site form or `fetch` can trigger a state-changing `POST` on your API whatever your CORS
+headers say. Stopping *that* is CSRF protection (Web Security track), not CORS.
+
+## 2. `Origin` is just a header
+
+```console
+$ curl -i -H 'Origin: https://app.example.com' https://api.example.com/cart
+```
+
+Anything that isn't a browser can send any `Origin` it likes. A browser sets it honestly for the
+page's own origin — which is the only reason it's useful — so "only answer requests from our
+origin" is never authentication. Every request still needs real credentials checked on the
+server.
+
+## 3. A sloppy allow-list hands your users' data to any site
+
+With credentials allowed, every origin on the list can read responses made with the user's
+cookies. These all look like allow-lists and aren't:
+
+| Check | Lets in |
+| --- | --- |
+| `origin.startsWith("https://app.example.com")` | `https://app.example.com.evil.test` |
+| `origin.endsWith("example.com")` | `https://evilexample.com` |
+| `/https:\/\/.*\.example\.com/.test(origin)` (no anchors) | `https://app.example.com.evil.test` |
+| `/^https:\/\/.*.example.com$/.test(origin)` (unescaped dots) | `https://evilexample.com` — an unescaped `.` matches any character |
+| reflect whatever `Origin` arrives | every site on the internet |
+| `"null"` on the list | any page that can make its origin opaque — a sandboxed `iframe`, a `data:` document |
+
+The safe shape is boring: a `Set` of exact, full origins (scheme, host and port, no trailing
+slash), checked with `Set.has` — exact string equality. If you truly need every subdomain, parse the origin with
+`new URL(origin)` and compare `url.protocol` and `url.hostname` (`=== "example.com"` or
+`.endsWith(".example.com")` — with the leading dot) rather than matching the raw string.
+
+## When it's not your API
+
+You can't fix CORS from the browser side. If a third-party API doesn't allow your origin, call it
+from your own server — a route handler or backend-for-frontend endpoint on *your* origin — where
+CORS doesn't apply, and keep any API key there instead of in the page.
+
+<!--more-->
+
+**`Origin: null` is real.** MDN lists when browsers send it: documents with opaque origins
+(sandboxed `iframe`s without `allow-same-origin`, `data:` documents, `file:` pages), cross-origin
+redirects, and more. Because an attacker can arrange several of those, allow-listing `null` is
+allow-listing the attacker.

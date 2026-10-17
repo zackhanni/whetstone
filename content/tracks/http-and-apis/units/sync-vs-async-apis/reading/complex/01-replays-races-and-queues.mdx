@@ -1,0 +1,59 @@
+---
+id: replays-races-and-queues
+title: Replays, racing duplicates, and the queue behind the 202
+---
+
+The webhook handler from the last example is correct for one delivery at a time. Production
+delivers neither one at a time nor only from the provider.
+
+## A retry is not a replay — tell them apart by id and time
+
+Stripe generates a **new timestamp and a new signature for every delivery attempt**. So:
+
+- Deduping on the signature (or on the whole header) treats each retry as a new event — the
+  duplicate gets processed. Dedupe on the **event id**.
+- A captured delivery replayed by an attacker carries an **old** timestamp, and changing it breaks
+  the signature. The tolerance window (Stripe's libraries default to five minutes) is what rejects
+  it — before the id check, and without storing anything.
+
+Order the checks: verify the signature over `timestamp.rawBody` → reject a stale timestamp → then
+dedupe by id → then do the work. Each check only trusts what the previous one proved.
+
+## Two copies at the same moment
+
+```ts
+if (await processedEvents.has(event.id)) return 200;   // both deliveries see "no"...
+await markOrderPaid(event.data.orderId);              // ...and both do the work
+await processedEvents.add(event.id);
+```
+
+A retry can overlap a slow first attempt, and two workers can pull the same message. Check-then-act
+is a race. Let the database decide instead: insert the event id first into a table with a **unique**
+key and a status (`processing`), let the losing insert fail, and run the work in the same
+transaction as marking it `done` — or roll the row back if the work fails, so a retry can try
+again. The rule from the last example still holds: nothing is "done" until the work is.
+
+## The queue between accepted and done
+
+The same shape sits behind every `202 Accepted`: the request handler writes a job to a queue (a
+table, Redis, a managed queue) and returns; a worker picks the job up later. Most queues also
+deliver **at least once** — a worker that crashes mid-job, or acknowledges too late, gets the job
+redelivered. So the worker needs the same discipline as the webhook handler:
+
+- an idempotency key per job (the job id, or the client's `Idempotency-Key` from the request that
+  created it), checked under a unique constraint;
+- side effects that are safe to repeat, or recorded together with the key;
+- a retry limit, then a **dead-letter** place for jobs that keep failing, so one poisoned message
+  doesn't block the queue or retry forever;
+- the job's status written where the polling endpoint can read it.
+
+That's the end-to-end picture: the client's `Idempotency-Key` makes its `POST` safe to retry, the
+`202` hands back a status URL, the queue delivers at least once, and every consumer — worker or
+webhook handler — dedupes by id and records success only after the work.
+
+<!--more-->
+
+**Exactly-once is a property of the handler, not the network.** No HTTP retry policy or queue
+setting removes duplicates end to end: the sender can't distinguish "lost before" from "lost after"
+your code ran. Deduplication at the consumer is what turns at-least-once delivery into
+exactly-once *effect*.

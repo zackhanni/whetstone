@@ -1,0 +1,69 @@
+---
+id: 401-or-403
+title: 401 or 403 — and what the client should do next
+---
+
+The two codes answer different questions, and a client reacts to them differently.
+
+- **`401 Unauthorized`** — "I don't know who you are": no credentials, or credentials that
+  didn't check out. RFC 9110 says a server sending `401` **MUST** include a `WWW-Authenticate`
+  header with at least one challenge — how to authenticate.
+- **`403 Forbidden`** — "I know who you are, and the answer is no." The client SHOULD NOT
+  automatically repeat the request with the same credentials.
+
+(Despite its name, `401 Unauthorized` is about *authentication*: RFC 9110 defines it as a request
+that "lacks valid authentication credentials".)
+
+## The bearer-token versions, from RFC 6750
+
+The same local API as the curl unit, three ways:
+
+```console
+$ curl -i http://localhost:4123/me
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="api"
+…
+{"error":"missing bearer token"}
+
+$ curl -i -H "Authorization: Bearer $EXPIRED" http://localhost:4123/me
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="api", error="invalid_token"
+…
+{"error":"invalid or expired token"}
+
+$ curl -i -H "Authorization: Bearer $TOKEN" http://localhost:4123/admin/stats
+HTTP/1.1 403 Forbidden
+WWW-Authenticate: Bearer realm="api", error="insufficient_scope", scope="admin"
+…
+{"error":"admin scope required"}
+```
+
+RFC 6750 defines the `error` values: `invalid_token` (expired, revoked, malformed — answer `401`),
+`insufficient_scope` (valid token, not enough privilege — answer `403`, optionally naming the
+`scope` needed) and `invalid_request` (malformed request — `400`). When the request carried **no**
+credentials at all, the server SHOULD NOT include an error code — just the challenge, as in the
+first response.
+
+## What the client does with each
+
+| Response | Client's next move |
+| --- | --- |
+| `401` + `error="invalid_token"` | Get a new access token (refresh), then retry **once** |
+| `401` with no error code | Authenticate: send the user to login, or attach the token you forgot |
+| `403` | Stop. Show "you don't have access". Refreshing gets the same identity and the same answer |
+
+Getting these backwards has visible symptoms: a server that sends `403` for an expired token
+leaves users stuck until they log out by hand; one that sends `401` for a missing permission
+sends clients into refresh → retry → `401` → refresh loops.
+
+<!--more-->
+
+**`404` instead of `403`.** RFC 9110 allows an origin server to answer `404` when it would rather
+not reveal that a forbidden resource exists — `GET /orgs/acme/invoices/7` from someone outside
+`acme` shouldn't confirm invoice 7 exists.
+
+**Where the decision lives.** "Is this token valid?" (→ `401`) is authentication and usually sits
+in middleware or a guard in front of every route. "May *this* user do *this*?" (→ `403`) is
+authorization and often needs the resource itself (whose invoice is it?), so it lives closer to
+the handler. In NestJS terms both are typically guards — the first one global — and the NestJS
+request-lifecycle unit shows the guard code (throw `UnauthorizedException` vs return `false`).

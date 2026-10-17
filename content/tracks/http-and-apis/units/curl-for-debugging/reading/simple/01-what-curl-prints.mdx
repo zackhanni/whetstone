@@ -1,0 +1,90 @@
+---
+id: what-curl-prints
+title: What curl prints, and where it prints it
+---
+
+curl takes a URL, sends one request, and prints the response **body** to stdout. That's all,
+until you ask for more. Every output below is real, from curl 8.7.1 against a local API.
+
+```console
+$ curl http://localhost:4123/orders/42
+{"id":42,"status":"open"}
+```
+
+No URL scheme tricks, no `-X GET`: a bare URL is a `GET`.
+
+## `-i`: the response headers, in the same stream as the body
+
+```console
+$ curl -i http://localhost:4123/orders/42
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 26
+Date: Sat, 17 Oct 2026 06:40:29 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"id":42,"status":"open"}
+```
+
+Status line, response headers, the empty line, the body — the response exactly as the
+previous unit described it. All of it goes to **stdout**, so `curl -i … > out.txt` puts the
+headers in the file too.
+
+## `-v`: both directions, plus curl's own notes
+
+```console
+$ curl -v http://localhost:4123/orders/42
+* Host localhost:4123 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:4123...
+* Connected to localhost (::1) port 4123
+> GET /orders/42 HTTP/1.1
+> Host: localhost:4123
+> User-Agent: curl/8.7.1
+> Accept: */*
+>
+* Request completely sent off
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Content-Length: 26
+< Date: Sat, 17 Oct 2026 06:40:37 GMT
+< Connection: keep-alive
+< Keep-Alive: timeout=5
+<
+{"id":42,"status":"open"}
+* Connection #0 to host localhost left intact
+```
+
+The prefixes are the whole trick: `>` is what curl **sent**, `<` is what it **received**,
+`*` is curl narrating (DNS, connection, TLS). This is the flag for "did my header actually go
+out?" — `-i` can't answer that, because it shows only the response.
+
+The `*`, `>` and `<` lines go to **stderr**; only the body goes to stdout. So
+`curl -v … > body.json` still shows you the conversation on screen while the file gets just
+the JSON.
+
+## `-s`, `-o`: quiet and saved
+
+When stdout isn't a terminal (you pipe into `jq` or redirect to a file), curl draws a progress
+meter on stderr. `-s` turns that off — and also hides error messages, so scripts usually say
+`-sS` to keep the errors. `-o file` writes the body to a file instead of stdout.
+
+```console
+$ curl -sS http://localhost:4123/orders/42 | jq .status
+"open"
+```
+
+<!--more-->
+
+**`-v` doesn't print the request body.** For a `POST` it says
+`* upload completely sent off: 23 bytes` instead. To see bytes on the wire use `--trace-ascii -`
+(or `-vvv`, which since curl 8.10 adds transfer content to the trace).
+
+**`-i` was called `--include`** before curl 8.10.0; the long name is now `--show-headers`, and
+the old name still works.
+
+**`-I` is not "`-i` without the body".** `-I` sends a different request — `HEAD` — and some
+servers answer `HEAD` differently from `GET` (or not at all). To see the headers of the real
+`GET`, use `-i` and ignore the body, or `-s -o /dev/null -D -` to dump only the headers.
