@@ -1,0 +1,39 @@
+---
+id: samesite
+title: SameSite decides when the cookie travels cross-site
+---
+
+`SameSite` is a `Set-Cookie` attribute that tells the browser whether to attach the cookie to
+requests that **another site** started:
+
+```http
+Set-Cookie: session=abc123; Path=/; HttpOnly; Secure; SameSite=Lax
+```
+
+| Request started on `evil.example` to your site | `Strict` | `Lax` | `None` (requires `Secure`) |
+| --- | --- | --- | --- |
+| User clicks a link to you (top-level `GET`) | not sent | sent | sent |
+| Auto-submitted `<form method="POST">` (top-level) | not sent | not sent | sent |
+| `<img>`, `<iframe>`, `fetch(…, { credentials: "include" })` | not sent | not sent | sent, unless the browser's third-party-cookie protection withholds it* |
+
+\* MDN: Safari's tracking prevention and Firefox's Total Cookie Protection restrict third-party
+cookies by default; Chrome doesn't block them by default.
+
+`Lax` sends the cookie cross-site only when the request is a **top-level navigation** (the address
+bar changes) **and** uses a **safe method** such as `GET` — MDN's wording. So `Lax` stops the
+auto-submitting form from the previous reading, and keeps "follow a link from an email and arrive
+logged in" working. `Strict` stops even that — users arriving from a link look logged out on the
+first page.
+
+**The default is not the same everywhere.** When `SameSite` is omitted, Chromium browsers
+(Chrome 80+, Edge 86+) treat the cookie as `Lax`. MDN's compatibility data lists Firefox as
+supporting Lax-by-default only behind a preference, and Safari not at all. A cookie you didn't
+label is protected for some of your users and not others — **always set `SameSite` explicitly.**
+
+**"Site" is broader than "origin."** For `SameSite`, a site is the scheme plus the registrable
+domain: `https://app.example.com` and `https://uploads.example.com` are the **same site**. A
+request from a sibling subdomain is not cross-site, so `SameSite` does nothing against it. If any
+subdomain hosts user content or a forgotten old app, that's a gap `SameSite` can't close.
+
+That's why OWASP calls `SameSite` "a defense-in-depth control" that "does not replace a proper
+CSRF defense in most deployments". The server-side check comes next.

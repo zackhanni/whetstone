@@ -1,0 +1,39 @@
+---
+id: the-browser-brings-the-cookie
+title: CSRF — the browser brings the cookie along
+---
+
+Cross-site request forgery needs no bug in your HTML and no script on your page. It uses one
+browser behaviour: **cookies are attached to requests by destination, not by who started the
+request.** (How cookie sessions and bearer tokens work as mechanisms is the `auth-over-http` unit;
+this one is about the attack.)
+
+You're logged in to `bank.example`, so your browser holds its session cookie. You then visit a page
+on `evil.example` that contains:
+
+```html
+<form action="https://bank.example/transfer" method="POST">
+  <input type="hidden" name="to" value="attacker" />
+  <input type="hidden" name="amount" value="5000" />
+</form>
+<script>document.forms[0].submit();</script>
+```
+
+The form posts to the bank. Unless the cookie's `SameSite` setting stops it (next reading), the
+browser attaches your bank session cookie, the bank sees an authenticated request from you, and
+the transfer goes through.
+
+Three facts define the attack:
+
+- **The attacker can make the request but can't read the response.** CSRF is write-only: it
+  changes state (transfer, change email, delete) and gains nothing from what comes back.
+- **It needs credentials the browser adds on its own** — cookies (or HTTP auth). An API that
+  authenticates with an `Authorization: Bearer …` header that *your* JavaScript adds isn't exposed
+  this way: `evil.example` can't make the browser add that header.
+- **It needs a request the attacker can predict.** A `POST /transfer` with `to` and `amount` is
+  fully predictable; a request that must carry a secret the attacker can't know (a CSRF token) is
+  not.
+
+And one rule everything else builds on — OWASP: "Do not use GET requests for state changing
+operations." A link, an image tag or a redirect can all trigger a GET. If `GET /logout` or
+`GET /posts/42/delete` changes state, an `<img src>` on any site is enough.

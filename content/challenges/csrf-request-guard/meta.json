@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "csrf-request-guard",
+  "title": "Close the holes in the CSRF guard",
+  "skills": ["security", "csrf", "cookies"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "csrf-guard.ts",
+  "acceptanceCriteria": [
+    "`GET`, `HEAD` and `OPTIONS` pass; `POST`, `PUT`, `PATCH` and `DELETE` from another site are rejected",
+    "With `Sec-Fetch-Site`, only `same-origin` is accepted; `same-site`, `cross-site` and `none` are rejected",
+    "Without `Sec-Fetch-Site`, `Origin` must exactly equal a trusted origin; `https://app.example.com.evil.test`, `https://app.example.co` and `null` are rejected",
+    "A state-changing request with neither header is rejected",
+    "A same-origin `POST` is allowed",
+    "`sessionCookie` sets `HttpOnly`, `Secure` and an explicit `SameSite=Lax`, and keeps the value, `Path=/` and `Max-Age`"
+  ]
+}
