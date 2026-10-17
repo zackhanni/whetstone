@@ -272,7 +272,7 @@ export const TAXONOMY: TagNode[] = [
   // ── http-and-apis ──
   { slug: "security", label: "Security", parents: [] },
   { slug: "tooling", label: "Tooling", parents: [] },
-  { slug: "idempotency", label: "Idempotency & Retries", parents: ["http"] },
+  { slug: "idempotency", label: "Idempotency & Retries", parents: ["http", "messaging"] },
   { slug: "curl", label: "curl", parents: ["http", "tooling"] },
   { slug: "rest", label: "REST", parents: ["http"] },
   { slug: "rpc", label: "RPC, gRPC & tRPC", parents: ["http"] },
@@ -292,6 +292,13 @@ export const TAXONOMY: TagNode[] = [
   { slug: "revalidation", label: "Revalidation", parents: ["caching"] },
   { slug: "streaming", label: "Streaming", parents: ["nextjs", "http"] },
   { slug: "suspense", label: "Suspense", parents: ["rendering"] },
+
+  // ── backend-nestjs ──
+  { slug: "api-versioning", label: "API Versioning", parents: ["http"] },
+  { slug: "redis", label: "Redis", parents: ["caching", "backend"] },
+  { slug: "rate-limiting", label: "Rate Limiting", parents: ["backend", "security"] },
+  { slug: "messaging", label: "Messaging & Events", parents: ["backend"] },
+  { slug: "microservices", label: "Microservices", parents: ["backend", "architecture"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
