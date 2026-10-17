@@ -1,0 +1,259 @@
+{
+  "schemaVersion": 3,
+  "slug": "immutable-updates",
+  "title": "Immutable updates: change the data, not the copy",
+  "skills": ["javascript", "immutability", "state"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Explain that spread copies one level, and write nested updates that copy every level on the path to the change",
+    "Choose copying array methods (`map`, `filter`, `toSorted`, `toSpliced`, `with` — ES2023) over mutating ones (`push`, `splice`, `sort`, `reverse`)",
+    "Choose between a targeted update, `structuredClone` and `Object.freeze`, knowing what `structuredClone` can't clone and that `freeze` is shallow",
+    "Predict how mutation breaks React: the `Object.is` bail-out skips the update, and StrictMode's double reducer call doubles a `push`"
+  ],
+  "sources": [
+    { "title": "MDN: Array — copying methods and mutating methods", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array" },
+    { "title": "MDN: Array.prototype.toSorted()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/toSorted" },
+    { "title": "MDN: structuredClone()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/structuredClone" },
+    { "title": "MDN: The structured clone algorithm", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm" },
+    { "title": "MDN: Object.freeze()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/freeze" },
+    { "title": "MDN: Strict mode", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Strict_mode" },
+    { "title": "React docs: Updating Arrays in State", "url": "https://react.dev/learn/updating-arrays-in-state" },
+    { "title": "React docs: Updating Objects in State", "url": "https://react.dev/learn/updating-objects-in-state" },
+    { "title": "React docs: useReducer", "url": "https://react.dev/reference/react/useReducer" },
+    { "title": "React docs: useState", "url": "https://react.dev/reference/react/useState" }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-immutable",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-immutable",
+      "questions": [
+        {
+          "id": "spread-shallow",
+          "prompt": "`const next = { ...state, count: 2 }; next.user.name = \"Grace\";` — what is `state.user.name` now?",
+          "options": [
+            { "id": "grace", "text": "`\"Grace\"` — the spread copied the reference to `user`, so both point at one object" },
+            { "id": "unchanged", "text": "Unchanged — spread makes a deep copy" },
+            { "id": "throws", "text": "It throws, because spread freezes the copied properties" },
+            { "id": "unchanged-count", "text": "Unchanged, because only `count` was overridden in `next`" }
+          ],
+          "answer": "grace",
+          "explanation": "Spread creates one new outer object and copies each property's value into it — and for `user` that value is a reference. `next.user` and `state.user` are the same object, so writing through either changes both. To change a nested field, copy that level too: `{ ...state, user: { ...state.user, name: \"Grace\" } }`."
+        },
+        {
+          "id": "push-returns",
+          "prompt": "In plain JavaScript, `setTags(tags.push(\"new\"))`. What does the component render next?",
+          "options": [
+            { "id": "number", "text": "Broken: `push` returns the new length, so `tags` becomes a number (and the old array was mutated too)" },
+            { "id": "works", "text": "The tags plus `\"new\"` — `push` returns the updated array" },
+            { "id": "nothing", "text": "The old tags — `push` returns `undefined`, which React ignores" },
+            { "id": "copy", "text": "The tags plus `\"new\"`, because `push` returns a copy" }
+          ],
+          "answer": "number",
+          "explanation": "`push` mutates the array in place and returns its new **length**. The state becomes a number (`tags.map` then throws), while the original array silently gained an item. TypeScript would reject the call (`number` isn't `string[]`), which is one reason to type state. The copy that says what you mean: `setTags([...tags, \"new\"])`."
+        },
+        {
+          "id": "sort-in-render",
+          "prompt": "A component renders `{users.sort(byName).map(…)}`, where `users` is a prop. What's wrong?",
+          "options": [
+            { "id": "mutates-prop", "text": "`sort` reorders the parent's array in place, during render; use `users.toSorted(byName)` (ES2023) or `[...users].sort(byName)`" },
+            { "id": "returns-undefined", "text": "`sort` returns `undefined`, so `.map` throws" },
+            { "id": "slow", "text": "Nothing is wrong, it's only slow — wrap it in `useMemo`" },
+            { "id": "strings", "text": "`sort` without a comparator sorts by string, so it needs `localeCompare`" }
+          ],
+          "answer": "mutates-prop",
+          "explanation": "`sort` sorts in place and returns the same array, so this mutates data the parent owns — every other reader of `users` now sees it sorted — and if `users` is the parent's state, that state changed without a `setState`. `useMemo` would cache the mutation, not prevent it. (A comparator *is* passed here, and `sort` returns the array, not `undefined`.) `toSorted` returns a sorted copy."
+        },
+        {
+          "id": "structured-clone-function",
+          "prompt": "`structuredClone(form)`, where `form` holds a `Date`, a `Map`, and an `onSave` callback. What happens?",
+          "options": [
+            { "id": "throws", "text": "It throws a `DataCloneError` — functions can't be cloned" },
+            { "id": "drops-function", "text": "It copies everything except `onSave`, which is silently dropped" },
+            { "id": "copies-all", "text": "It copies everything, the callback included" },
+            { "id": "date-string", "text": "It copies everything, but the `Date` becomes an ISO string" }
+          ],
+          "answer": "throws",
+          "explanation": "The structured clone algorithm can't duplicate functions (or DOM nodes); MDN says attempting it throws a `DataCloneError`, so the whole call fails. Silently dropping functions and turning dates into strings is what the old `JSON.parse(JSON.stringify(x))` trick does. `structuredClone` keeps `Date` and `Map` as real `Date` and `Map` objects."
+        },
+        {
+          "id": "clone-everything",
+          "prompt": "A teammate writes every reducer case as `const next = structuredClone(state); /* mutate next */ return next;`. It's correct. What does it cost?",
+          "options": [
+            { "id": "identity", "text": "Every object gets a new identity, changed or not, so every `memo` child, selector and effect sees a change" },
+            { "id": "nothing", "text": "Nothing: React compares state by contents, so unchanged parts are detected" },
+            { "id": "async", "text": "`structuredClone` is asynchronous, so the update lands a frame late" },
+            { "id": "strict", "text": "StrictMode's double call would clone twice and duplicate items" }
+          ],
+          "answer": "identity",
+          "explanation": "React and its ecosystem compare by identity (`Object.is`), not contents. A targeted update keeps unchanged parts as the same objects, which is what lets them skip work; a deep clone makes everything look changed, on every action. Cloning is synchronous, and a pure function that clones is safe to call twice. Keep `structuredClone` for independent snapshots — a draft, an undo entry."
+        },
+        {
+          "id": "freeze-shallow",
+          "prompt": "In an ES module: `const config = Object.freeze({ api: { retries: 3 } }); config.api.retries = 5;` — what happens?",
+          "options": [
+            { "id": "changes", "text": "`retries` becomes 5 — `freeze` only froze the outer object" },
+            { "id": "typeerror", "text": "A `TypeError`, because modules are strict and `config` is frozen" },
+            { "id": "ignored", "text": "The write is silently ignored" },
+            { "id": "copy", "text": "`retries` becomes 5 on a copy; `freeze` returned a frozen clone" }
+          ],
+          "answer": "changes",
+          "explanation": "`Object.freeze` is shallow: `config`'s own properties are locked, but `config.api` is a separate object that was never frozen. The `TypeError` (modules are strict) would come from writing `config.api = …` or `config.x = …`; in sloppy-mode scripts that write would be silently ignored instead. And `freeze` returns the same object, not a copy. Freezing deeply needs a recursive walk."
+        },
+        {
+          "id": "react-same-ref",
+          "prompt": "`items.push(item); setItems(items);` — the list on screen doesn't change. Why?",
+          "options": [
+            { "id": "object-is", "text": "React compares the new state with `Object.is`; it's the same array, so React skips the re-render" },
+            { "id": "async", "text": "State updates are asynchronous; it will appear after the next tick" },
+            { "id": "deep-compare", "text": "React deep-compares the arrays and found them equal" },
+            { "id": "push-copy", "text": "`push` created a new array that was never passed to `setItems`" }
+          ],
+          "answer": "object-is",
+          "explanation": "The array was mutated, but `setItems` received the very same array, and React's `Object.is` check treats \"same reference\" as \"no change\". React never deep-compares. The update isn't merely delayed — it shows up only when something else re-renders the component. Pass a new array: `setItems([...items, item])`."
+        },
+        {
+          "id": "strict-double-push",
+          "prompt": "A reducer does `state.todos.push(action.todo); return { ...state };`. In development every Add shows the todo twice; in production, once. Why?",
+          "options": [
+            { "id": "strict", "text": "StrictMode calls reducers twice in development; both calls push into the one shared array" },
+            { "id": "react-bug", "text": "It's a React development-build bug; production is correct" },
+            { "id": "double-click", "text": "The dev server registers each click twice" },
+            { "id": "spread-twice", "text": "`{ ...state }` copies the todos array twice" }
+          ],
+          "answer": "strict",
+          "explanation": "React's docs: in Strict Mode, React calls your reducer twice (development only) and keeps one result, to surface impure reducers. A pure reducer returns the same answer both times. This one mutates `state.todos`, which both calls share, so the second push lands on top of the first. The duplicate is StrictMode working as intended — fix the reducer: `todos: [...state.todos, action.todo]`."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-immutable",
+      "prompts": [
+        {
+          "id": "map-toggle",
+          "prompt": "Toggle one todo without mutating: a new array, a new object for the changed todo, and the same objects for the rest.",
+          "code": [
+            "const todos = state.todos.___((t) =>",
+            "  t.id === id ? { ___t, done: !t.done } : t,",
+            ");"
+          ],
+          "blanks": [
+            { "id": "m1", "accept": ["map"] },
+            { "id": "m2", "accept": ["..."] }
+          ],
+          "explanation": "`map` returns a new array; the callback returns a spread copy for the todo that changes and the original object for every other one, so unchanged todos keep their identity."
+        },
+        {
+          "id": "to-sorted",
+          "prompt": "Get the users in name order without reordering the array you were given (ES2023).",
+          "code": "const byName = users.___((a, b) => a.name.localeCompare(b.name));",
+          "blanks": [{ "id": "s1", "accept": ["toSorted"] }],
+          "explanation": "`toSorted` returns a sorted copy. `sort` sorts in place and returns the same array, so it would reorder `users` for everyone holding it. Before ES2023: `[...users].sort(…)`."
+        },
+        {
+          "id": "with-replace",
+          "prompt": "Replace the row at `index` with `updatedRow`, returning a new array (ES2023).",
+          "code": "const nextRows = rows.___(index, updatedRow);",
+          "blanks": [{ "id": "w1", "accept": ["with"] }],
+          "explanation": "`with(index, value)` is the copying version of `rows[index] = value`. It throws a `RangeError` for an index outside the array, where an assignment on a copy would silently grow it. `toSpliced(index, 1, updatedRow)` also works."
+        },
+        {
+          "id": "remove-by-id",
+          "prompt": "Remove the todo with this `id`, returning a new array.",
+          "code": "const nextTodos = todos.___((t) => t.id !== id);",
+          "blanks": [{ "id": "r1", "accept": ["filter"] }],
+          "explanation": "`filter` keeps the items for which the callback returns `true` and builds a new array. `splice` would cut the item out of the original array in place."
+        },
+        {
+          "id": "structured-clone",
+          "prompt": "Take an independent deep copy of a saved form for a draft — one that keeps `Date` and `Map` values as they are.",
+          "code": "const draft = ___(savedForm);",
+          "blanks": [{ "id": "c1", "accept": ["structuredClone", "window.structuredClone", "globalThis.structuredClone"] }],
+          "explanation": "`structuredClone` copies every level and keeps `Date`, `Map`, `Set` and cycles, which a JSON round trip loses. It throws on functions, and class instances come back without their methods."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-immutable",
+      "snippets": [
+        {
+          "id": "spread-shares-nested",
+          "code": [
+            "const state = { user: { name: \"Ada\" }, count: 1 };",
+            "const next = { ...state, count: 2 };",
+            "next.user.name = \"Grace\";",
+            "console.log(state.user.name, state.count);"
+          ],
+          "question": "What is logged?",
+          "answer": "Grace 1",
+          "acceptable": ["\"Grace\" 1", "Grace, 1"],
+          "explanation": "`count` was overridden on the new outer object, so `state.count` stays 1. But `user` was copied as a reference: `next.user` *is* `state.user`, so renaming through `next` renames the original. One level copied, the rest shared."
+        },
+        {
+          "id": "sort-returns-same",
+          "code": [
+            "const original = [3, 1, 2];",
+            "const sorted = original.sort();",
+            "console.log(original, sorted === original);"
+          ],
+          "question": "What is logged?",
+          "answer": "[1, 2, 3] true",
+          "acceptable": ["[ 1, 2, 3 ] true", "1,2,3 true"],
+          "explanation": "`sort` sorts the array in place and returns that same array, so `original` is now sorted and `sorted` is just another name for it. `original.toSorted()` (ES2023) would return a new sorted array and leave `original` as `[3, 1, 2]`. (`sort` with no comparator compares as strings — `[10, 9, 1].sort()` gives `[1, 10, 9]`.)"
+        },
+        {
+          "id": "structured-clone-class",
+          "code": [
+            "class Money {",
+            "  constructor(cents) { this.cents = cents; }",
+            "  format() { return \"$\" + (this.cents / 100).toFixed(2); }",
+            "}",
+            "const copy = structuredClone({ at: new Date(0), price: new Money(250) });",
+            "console.log(copy.at instanceof Date, copy.price instanceof Money, typeof copy.price.format);"
+          ],
+          "question": "What is logged?",
+          "answer": "true false undefined",
+          "acceptable": ["true, false, \"undefined\""],
+          "explanation": "`Date` is one of the built-in types the structured clone algorithm knows, so it comes back as a real `Date`. A class instance doesn't: the prototype chain isn't copied, so `price` is a plain `{ cents: 250 }` — not a `Money`, and with no `format` method. Rebuild class instances after cloning (`new Money(copy.price.cents)`), or keep plain data in state."
+        },
+        {
+          "id": "strict-mode-double-push",
+          "code": [
+            "function reducer(state, action) {",
+            "  state.todos.push(action.text); // mutates the current state",
+            "  return { ...state };",
+            "}",
+            "",
+            "function Todos() {",
+            "  const [state, dispatch] = useReducer(reducer, { todos: [] });",
+            "  return (",
+            "    <>",
+            "      <button onClick={() => dispatch({ text: \"milk\" })}>Add</button>",
+            "      <p>{state.todos.join(\", \")}</p>",
+            "    </>",
+            "  );",
+            "}",
+            "",
+            "// Rendered inside <StrictMode>, in development (React 19). The user clicks Add once."
+          ],
+          "question": "What does the paragraph show?",
+          "answer": "milk, milk",
+          "acceptable": ["milk twice", "\"milk, milk\""],
+          "explanation": "In Strict Mode, development builds call the reducer twice with the same `state` and keep one result. Both calls push into the same `state.todos` array, so it ends up with two items, and the new outer object makes React render them. In production the reducer runs once and you'd see `milk` — which is why this bug \"only happens locally\". With `todos: [...state.todos, action.text]` both calls build their own array from the untouched original."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-immutable",
+      "challengeSlug": "todo-reducer-mutations"
+    }
+  ]
+}

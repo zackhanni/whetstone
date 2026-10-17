@@ -1,0 +1,61 @@
+---
+id: microtask-starvation
+title: Microtasks can starve everything else
+---
+
+"Drain the microtask queue until it's empty" has a sharp edge: if each microtask queues
+another, the queue never empties, and the event loop never gets to the next task or the next
+render.
+
+```js
+let n = 0;
+function spin() {
+  n += 1;
+  if (n < 1_000_000) queueMicrotask(spin);
+}
+setTimeout(() => console.log("timer sees n =", n), 0);
+spin();
+// timer sees n = 1000000
+```
+
+The 0 ms timer was due almost immediately, but it waits for **all million** microtasks. Run
+that in a page and, for as long as the chain lasts, nothing paints and no input is handled. Make
+the chain unbounded and the tab hangs exactly like `while (true) {}`.
+
+The same thing happens in disguise:
+
+```js
+// ❌ Looks asynchronous, and still never yields to rendering or input
+async function pump(queue) {
+  while (queue.length > 0) {
+    handle(queue.shift());
+    await null; // a microtask hop, not a yield
+  }
+}
+```
+
+Every `await` here resumes as a microtask, so the whole loop runs inside one microtask
+checkpoint. "It has `await` in it" is not the same as "it lets the page breathe". Only a task
+boundary does that: a timer, `scheduler.yield()`, or a message from a `MessageChannel`.
+
+When is a microtask the right tool? When you want something to run **after the current
+synchronous code but before anything else can observe the state**: batching several
+synchronous updates into one flush, or making a callback consistently asynchronous. That's
+what `queueMicrotask` is for. A microtask is never the way to give the browser a turn.
+
+<!--more-->
+
+### Checkpoints happen whenever the stack empties, not only after a task
+
+The HTML spec runs a microtask checkpoint whenever a callback returns and the JavaScript stack
+is empty ("clean up after running script"), not only at the end of a task. That's visible with
+two `click` listeners on one button, each of which queues a microtask:
+
+- **A real user click**: the browser calls listener 1, the stack empties, its microtask runs,
+  then listener 2 runs, then its microtask. Output: `l1, m1, l2, m2`.
+- **`button.click()` from your own script**: your script is still on the stack while both
+  listeners run, so no checkpoint happens between them. Output: `l1, l2, m1, m2`.
+
+Same listeners, different order, depending on who dispatched the event. It matters for tests
+that simulate clicks and assert on promise-driven state in between: a synthetic click doesn't
+reproduce the timing of a real one.

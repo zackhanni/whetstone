@@ -1,0 +1,50 @@
+---
+id: what-abort-cannot-undo
+title: What aborting can't undo
+---
+
+`abort()` is a client-side decision: "I no longer want this result." It doesn't reach back in
+time, and it doesn't make the server forget.
+
+**The server may already have done the work.** By the time you abort, the request may have
+arrived, been processed and committed. The server might notice the closed connection (often it
+doesn't, or notices too late). For a `GET` that only costs some wasted work. For a `POST` or
+`PUT`, the write may well have happened. So:
+
+- **Never use abort as "undo".** Cancelling a "Delete" request a moment after sending it doesn't
+  mean nothing was deleted.
+- **After an aborted or timed-out write, the outcome is unknown.** Re-read the resource before
+  telling the user anything, or retry with an idempotency key so a duplicate is harmless (the HTTP
+  track covers idempotency keys).
+- **Only retry a timed-out request automatically if repeating it is safe.**
+
+**Abort doesn't order writes.** The `debounced-input-and-autosave` unit's out-of-order saves are
+not fixed by aborting the older save: the older one may already be at the server, queued behind
+nothing. Ordering is the server's job. Send a version or `updatedAt`, and have the server reject
+stale writes. Or serialise the saves on the client, so the next one waits for the current one to
+settle.
+
+**Pick the tool by the question:**
+
+| Question | Tool |
+| --- | --- |
+| Stop wasting network and CPU on a result nobody wants | abort the request |
+| Make sure a stale result never reaches the UI or state | identity / request-id check |
+| Make sure an old write can't overwrite a newer one on the server | versions or serialised writes |
+| Give up after N seconds | `AbortSignal.timeout(N * 1000)`, combined with `AbortSignal.any` |
+
+<!--more-->
+
+### Recognising your own cancellation, one more time
+
+The checks that hold up in production, from most to least reliable:
+
+1. **Compare against your own bookkeeping.** Ask whether this controller is still the current
+   one, or whether `controller.signal.aborted` is true; for a deadline, whether the
+   `AbortSignal.timeout()` signal you kept has aborted. That works whatever the reason, and
+   whatever error the request wrapped it in.
+2. **`err === signal.reason`.** Exact, but only if every layer rethrows the reason unchanged, as
+   the DOM Standard asks of abortable APIs.
+3. **`err.name === "AbortError"` / `"TimeoutError"`.** Fine at the edges, for errors straight from
+   `fetch`, but it breaks with custom reasons, with libraries that wrap errors, and on Chrome
+   103–123 (whose `AbortSignal.timeout()` used `AbortError`).

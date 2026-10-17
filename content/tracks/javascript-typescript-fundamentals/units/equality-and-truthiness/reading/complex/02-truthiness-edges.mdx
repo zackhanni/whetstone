@@ -1,0 +1,54 @@
+---
+id: truthiness-edges
+title: Truthiness edges that reach production
+---
+
+## `filter(Boolean)` drops real zeros
+
+`list.filter(Boolean)` is a popular way to remove `null`s and `undefined`s. It removes every
+falsy value — including the ones you meant to keep:
+
+```js
+const scores = [0, 7, null, 3, undefined];
+scores.filter(Boolean);              // [7, 3]  — the 0 score is gone
+scores.filter((s) => s != null);     // [0, 7, 3]
+```
+
+Same story for `""` in a list of strings and `false` in a list of flags. When the data can hold
+`0`, `""` or `false`, filter on what you actually mean (`!= null`, `!== undefined`). Since
+TypeScript 5.5 the arrow version also narrows the result: TypeScript infers `(s) => s != null` as
+a type predicate, so the filtered array is `number[]`. `filter(Boolean)` gets no such inference —
+its result keeps the `null | undefined` in its type, on top of dropping the zeros.
+
+## Wrappers are objects, so they're truthy
+
+`new Boolean(false)`, `new Number(0)` and `new String("")` are objects, and every object (except
+`document.all`) is truthy. You'll rarely write them, but you can receive them from old libraries.
+`Boolean(x)` and `!!x` — without `new` — are the conversions you want.
+
+## The strings `"0"` and `"false"` are truthy
+
+Values from query strings, form fields, `localStorage` and environment variables are strings, and
+any non-empty string is truthy:
+
+```ts
+const beta = searchParams.get("beta");  // "false"
+if (beta) enableBeta();                 // runs — "false" is truthy
+
+const showBeta = searchParams.get("beta") === "true";  // parse, then test
+if (showBeta) enableBeta();
+```
+
+## `-0` exists, and it's nearly invisible
+
+`Math.round(-0.4)` is `-0`. It is `=== 0`, prints as `0`, and `JSON.stringify(-0)` is `"0"`, so
+you almost never notice it. It surfaces through division (`1 / -0` is `-Infinity`) and through
+`Object.is(x, 0)`, which is `false` for `-0`. If a chart axis or a sign check ever reads "-0",
+this is why.
+
+<!--more-->
+
+**Which equality does what use?** `===`, `indexOf`, `lastIndexOf` and `switch`/`case` use strict
+equality. `includes`, and `Map`/`Set` keys, use SameValueZero (`NaN` equals `NaN`, `-0` equals
+`0`). `Object.is` is SameValue (`NaN` equals `NaN`, `-0` differs from `0`) and is what React uses
+for state and dependency comparisons.

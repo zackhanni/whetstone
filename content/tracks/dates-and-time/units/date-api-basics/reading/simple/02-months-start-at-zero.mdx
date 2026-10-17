@@ -1,0 +1,37 @@
+---
+id: months-start-at-zero
+title: Months start at zero, days don't
+---
+
+The constructor has a few forms. The one with separate numbers has the trap:
+
+```js
+new Date(1773154800000);           // from epoch milliseconds
+new Date(2026, 2, 10);             // year, monthIndex, day: local midnight on MARCH 10
+new Date(2026, 2, 10, 9, 30);      // ...plus hours and minutes, local time
+new Date("2026-03-10T15:00:00Z");  // from an ISO string (parsing gets its own unit)
+```
+
+`monthIndex` runs **0 to 11**: `0` is January, `2` is March, `11` is December. The day of the
+month runs **1 to 31** as you'd expect. The getters mirror this, and there are two "day"
+methods that are easy to swap:
+
+```js
+const d = new Date(2026, 2, 10); // Tuesday, March 10, 2026
+
+d.getFullYear(); // 2026
+d.getMonth();    // 2   ← March, not February
+d.getDate();     // 10  ← day of the MONTH (1–31)
+d.getDay();      // 2   ← day of the WEEK (0 = Sunday … 6 = Saturday)
+```
+
+So printing a date by hand needs a `+ 1` on the month and padding:
+
+```js
+const pad = (n) => String(n).padStart(2, "0");
+`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; // "2026-03-10"
+```
+
+Two more names to avoid: `getYear()` is deprecated and returns the year minus 1900 (`126`), so
+use `getFullYear()`. And `Date()` called without `new` ignores its arguments and returns the
+current time as a string.

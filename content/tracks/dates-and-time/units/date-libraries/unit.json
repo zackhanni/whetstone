@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 3,
+  "slug": "date-libraries",
+  "title": "Date libraries: when, which, and where Temporal stands",
+  "skills": ["javascript", "dates", "date-libraries", "time-zones"],
+  "difficulty": "core",
+  "estimatedMinutes": 10,
+  "objectives": [
+    "Recall which jobs `Date` + `Intl` already cover, and which justify a library: wall-clock arithmetic in a named zone, durations, many input formats",
+    "Recall how date-fns v4 (plain functions on `Date`, in the machine's zone unless you pass `in: tz(…)`) differs from Luxon (an immutable `DateTime` that carries its zone)",
+    "Recall Temporal's types (`Instant`, `ZonedDateTime`, `PlainDate`) and its status in October 2026: Stage 4, shipped in Chrome/Edge 144, Firefox 139 and Node 26, not yet in Safari",
+    "Recall why Moment.js is not for new code: a legacy project in maintenance mode, with a mutable API"
+  ],
+  "sources": [
+    { "title": "MDN: Temporal", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Temporal" },
+    { "title": "MDN: Date (the note on Temporal)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date" },
+    { "title": "TC39: Temporal proposal — status, implementations, polyfills", "url": "https://github.com/tc39/proposal-temporal" },
+    { "title": "TC39: finished proposals", "url": "https://github.com/tc39/proposals/blob/main/finished-proposals.md" },
+    { "title": "date-fns docs: Time zones (v4)", "url": "https://github.com/date-fns/date-fns/blob/main/pkgs/core/docs/timeZones.md" },
+    { "title": "Luxon docs: Why does Luxon exist?", "url": "https://github.com/moment/luxon/blob/master/docs/why.md" },
+    { "title": "Luxon docs: Math (calendar math vs time math)", "url": "https://github.com/moment/luxon/blob/master/docs/math.md" },
+    { "title": "Moment.js: project status updates", "url": "https://momentjs.com/news/" }
+  ],
+  "blocks": [{ "type": "cards", "id": "cards-date-libraries", "dir": "cards" }]
+}

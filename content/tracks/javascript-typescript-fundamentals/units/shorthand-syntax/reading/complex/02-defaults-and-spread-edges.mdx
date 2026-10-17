@@ -1,0 +1,57 @@
+---
+id: defaults-and-spread-edges
+title: Defaults and spread at the edges
+---
+
+## Defaults are evaluated lazily, left to right
+
+A default expression runs only when it's needed, and can read the bindings to its left:
+
+```js
+const { width = 100, height = width / 2 } = {}; // width 100, height 50
+const { config = loadConfig() } = options;      // loadConfig runs only if config is undefined
+
+function resize(w, h = w) { … } // resize(10) → h is 10
+```
+
+That makes a default a reasonable place for an expensive fallback. It also means a default never
+runs for `null` — `resize(10, null)` gives `h = null`.
+
+## Present-but-`undefined` beats the default, and TypeScript misses it
+
+Merging saved settings over defaults with spread is the usual pattern:
+
+```ts
+type Settings = { autoplay?: boolean; startAt?: number };
+const DEFAULTS = { autoplay: true, startAt: 0 };
+
+const merged = { ...DEFAULTS, ...saved };
+merged.autoplay; // TypeScript says boolean
+```
+
+If `saved` is `{ autoplay: undefined }` — a form field that was cleared, a partial update — the
+spread copies the key, and `merged.autoplay` is `undefined` at runtime. TypeScript's spread type
+assumes an optional property is *absent*, not present with `undefined`, so it still reports
+`boolean`.
+
+The fix at the type level is `exactOptionalPropertyTypes` (TS 4.4+). It is **not** part of
+`strict`; with it on, `autoplay?: boolean` no longer accepts an explicit `undefined`, and
+`{ autoplay: undefined }` stops compiling. The fix at the value level is to merge field by field:
+`autoplay: saved.autoplay ?? DEFAULTS.autoplay`.
+
+## Spread copies own enumerable data, shallowly
+
+- **Shallow.** `{ ...order }` is a new outer object, but `order.items` is the *same* array in both.
+  Push into the copy's `items` and the original changes too. (The immutable-updates unit is about
+  exactly this.)
+- **No prototype.** Spreading a class instance keeps its fields and drops its methods:
+  `{ ...new Money(250) }` is `{ cents: 250 }` with no `format()`. `{ ...new Date() }` is `{}` —
+  a `Date` keeps its time in an internal slot, not a property.
+- **`...rest` in a pattern** follows the same rules: own enumerable properties, one level deep.
+
+<!--more-->
+
+The TypeScript `exactOptionalPropertyTypes` error on `{ autoplay: undefined }` reads
+"Consider adding 'undefined' to the types of the target's properties" — which is the decision the
+flag forces: either the property may be explicitly `undefined` (`autoplay?: boolean | undefined`)
+and your merge must handle it, or it may only be absent.

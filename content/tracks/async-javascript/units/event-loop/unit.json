@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 3,
+  "slug": "event-loop",
+  "title": "The event loop: tasks, microtasks and rendering",
+  "skills": ["async", "event-loop"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Explain run-to-completion and one turn of the event loop: one task, then every queued microtask, then maybe a render",
+    "Predict the log order of synchronous code, `setTimeout(…, 0)`, `.then`, `queueMicrotask` and the code after `await`",
+    "Explain why a long task or a self-requeuing microtask chain freezes input and paint, and split the work with a task-boundary yield",
+    "Tell orderings every host guarantees from host-specific ones: `setImmediate` and `process.nextTick` in Node, `requestAnimationFrame` in browsers"
+  ],
+  "sources": [
+    { "title": "MDN: JavaScript execution model", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Execution_model" },
+    { "title": "MDN: In depth — microtasks and the JavaScript runtime environment", "url": "https://developer.mozilla.org/en-US/docs/Web/API/HTML_DOM_API/Microtask_guide/In_depth" },
+    { "title": "MDN: await", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/await" },
+    { "title": "MDN: Scheduler.yield()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Scheduler/yield" },
+    { "title": "HTML Standard: Event loops", "url": "https://html.spec.whatwg.org/multipage/webappapis.html#event-loops" },
+    { "title": "Node.js: The Node.js event loop", "url": "https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick" },
+    { "title": "Node.js API: process.nextTick()", "url": "https://nodejs.org/api/process.html#processnexttickcallback-args" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-event-loop", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-event-loop",
+      "questions": [
+        {
+          "id": "settimeout-zero",
+          "prompt": "What does `setTimeout(fn, 0)` actually do?",
+          "options": [
+            { "id": "queue-task", "text": "Queues `fn` as a **task** once at least 0 ms have passed, so it runs after the current code and after every pending microtask" },
+            { "id": "now", "text": "Runs `fn` synchronously, because the delay is zero" },
+            { "id": "microtask", "text": "Runs `fn` as a microtask, ahead of pending promise callbacks, because a 0 ms delay means \"immediately\"" },
+            { "id": "next-frame", "text": "Runs `fn` just before the browser's next paint" }
+          ],
+          "answer": "queue-task",
+          "explanation": "A timer never interrupts running code and never becomes a microtask: when it expires, the host queues a task. The event loop only takes that task after the current task finishes **and** the microtask queue is empty, so every `.then` queued in the meantime runs first. \"Just before the next paint\" is `requestAnimationFrame`, a different mechanism that runs during the rendering update."
+        },
+        {
+          "id": "which-are-microtasks",
+          "prompt": "Which of these run as **microtasks**? (Select all that apply.)",
+          "options": [
+            { "id": "then", "text": "A `.then` callback on an already-resolved promise" },
+            { "id": "after-await", "text": "The rest of an `async` function after `await somePromise`" },
+            { "id": "queue-microtask", "text": "A `queueMicrotask(fn)` callback" },
+            { "id": "timeout-zero", "text": "A `setTimeout(fn, 0)` callback" },
+            { "id": "user-click", "text": "A `click` listener, fired by a real user click" },
+            { "id": "raf", "text": "A `requestAnimationFrame` callback" }
+          ],
+          "answer": ["then", "after-await", "queue-microtask"],
+          "explanation": "Promise reactions, `await` continuations and `queueMicrotask` all use the one microtask queue. Timers and user input events arrive as **tasks**: one per turn of the loop, and only after the microtask queue has drained. `requestAnimationFrame` is neither: its callbacks run inside the browser's rendering update, just before style, layout and paint."
+        },
+        {
+          "id": "await-semantics",
+          "prompt": "Which statement about `await` inside an `async` function is true?",
+          "options": [
+            { "id": "sync-until-await", "text": "The body runs synchronously up to the first `await`; the rest resumes as a microtask, even when the awaited value isn't a promise" },
+            { "id": "starts-later", "text": "The whole body starts on a later tick, so the caller's next line always runs before any of it" },
+            { "id": "non-promise-sync", "text": "`await` on a value that isn't a promise, or a promise that's already resolved, continues synchronously" },
+            { "id": "resumes-as-task", "text": "The code after `await` resumes as a task, after any timers that are already due" }
+          ],
+          "answer": "sync-until-await",
+          "explanation": "Calling an async function runs its body immediately, up to the first `await`. That's why `load: before await` logs before the caller's next line. At the `await`, the function always pauses, and once the awaited value has settled its continuation is queued as a microtask, even for `await null` or an already-resolved promise (MDN: \"execution doesn't return to the current function until all other already-scheduled microtasks are processed\"). Because it's a microtask, it resumes ahead of any timer task that's waiting, never behind it."
+        },
+        {
+          "id": "working-never-shows",
+          "prompt": "In a browser, this click handler sets `status.textContent = \"Working…\"`, runs ~2 s of synchronous work, then sets `\"Done\"`. The user never sees \"Working…\". Why?",
+          "options": [
+            { "id": "no-paint-mid-task", "text": "The DOM did change, but the browser only paints between tasks, and when this task ends the text already says \"Done\"" },
+            { "id": "dom-async", "text": "DOM writes are asynchronous and batched, so the first write was still pending when the second replaced it" },
+            { "id": "too-brief", "text": "It was painted, but for less than one frame, too briefly to see" },
+            { "id": "dedupe", "text": "The browser notices two writes to the same property in a row and drops the first" }
+          ],
+          "answer": "no-paint-mid-task",
+          "explanation": "DOM writes are synchronous: read `status.textContent` straight after the first write and you get \"Working…\". What's deferred is **rendering**, which happens between tasks at a rendering opportunity, never in the middle of a running task. The handler is one task, so the first paint after it shows the final state. It was never painted at all, not painted briefly. To show progress, end the task before the heavy work (or between chunks of it) so the browser gets a turn."
+        },
+        {
+          "id": "chunking-fix",
+          "prompt": "`processAll(rows)` freezes the tab for 3 s. Which change lets the page paint progress and respond to clicks while it works?",
+          "options": [
+            { "id": "timer-yield", "text": "Process a few milliseconds' worth of rows, then `await new Promise((r) => setTimeout(r, 0))` before the next batch" },
+            { "id": "async-keyword", "text": "Declare `processAll` as an `async` function" },
+            { "id": "microtask-per-row", "text": "Wrap each row's work in `queueMicrotask` so it runs asynchronously" },
+            { "id": "promise-all", "text": "`await Promise.all(rows.map(async (row) => processRow(row)))`" }
+          ],
+          "answer": "timer-yield",
+          "explanation": "Only a **task boundary** lets the browser render and dispatch input, and awaiting a timer creates one: the loop resumes in a new task. `async` alone changes nothing, since the body runs synchronously until an `await`. `queueMicrotask` makes things worse in a subtle way: every microtask runs before the next render, so it's still one frozen stretch. `Promise.all` over async callbacks starts every callback synchronously in the same task (each runs until its first `await`, and `processRow` never awaits), so all the work still happens in one go."
+        },
+        {
+          "id": "host-specific",
+          "prompt": "Which of these orderings can you **not** rely on?",
+          "options": [
+            { "id": "timeout-vs-immediate", "text": "In a Node main module, `setTimeout(a, 0)` then `setImmediate(b)`: `a` runs before `b`" },
+            { "id": "then-before-timer", "text": "`Promise.resolve().then(a)` then `setTimeout(b, 0)`: `a` runs before `b`" },
+            { "id": "task-microtasks-first", "text": "A timer callback that queues microtask `m`: `m` runs before the next timer callback" },
+            { "id": "caller-before-continuation", "text": "The caller's next line runs before the code after an async function's first `await`" }
+          ],
+          "answer": "timeout-vs-immediate",
+          "explanation": "Node's docs call the main-module order of `setTimeout(…, 0)` vs `setImmediate` non-deterministic, \"bound by the performance of the process\": it depends on how quickly the loop reaches the timers phase, so either can come first. Inside an I/O callback `setImmediate` always wins. The other three follow from the task/microtask model that browsers and Node share: microtasks before the next task, and a paused async function resuming only after the caller's synchronous code finishes."
+        },
+        {
+          "id": "nexttick-in-esm",
+          "prompt": "At the top level of an ES module (`.mjs`) in Node you write `Promise.resolve().then(a)` and then `process.nextTick(b)`. What runs first?",
+          "options": [
+            { "id": "a-first", "text": "`a`: an ES module's top-level code already runs inside the microtask queue, so queued promise callbacks drain before the next-tick queue" },
+            { "id": "b-first-always", "text": "`b`: the next-tick queue is always drained before promise callbacks" },
+            { "id": "b-sync", "text": "`b`: `process.nextTick` runs its callback synchronously" },
+            { "id": "random", "text": "It varies from run to run, like `setTimeout` vs `setImmediate`" }
+          ],
+          "answer": "a-first",
+          "explanation": "Node's docs: in a CommonJS file the next-tick queue runs first, but \"since ESM modules are processed already as part of the microtask queue, there `queueMicrotask()` callbacks are always executed before `process.nextTick()` ones\". The same holds for `.then` callbacks: `.mjs` prints `a, b`, `.cjs` prints `b, a`. It's deterministic, just module-type dependent. `nextTick` is never synchronous. Node's docs mark `process.nextTick` as Legacy (since v22.7.0 / v20.18.0) and recommend `queueMicrotask`, which shares the promise queue and so orders the same way in both module types and in browsers."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-event-loop",
+      "prompts": [
+        {
+          "id": "one-turn",
+          "prompt": "Name the three steps of one turn of the browser's event loop.",
+          "code": [
+            "// 1. run one ___ to completion",
+            "// 2. run every queued ___, including ones queued while doing this",
+            "// 3. if a rendering opportunity has come up, ___ the page"
+          ],
+          "blanks": [
+            { "id": "t1", "accept": ["task", "macrotask"] },
+            { "id": "t2", "accept": ["microtask", "microtasks"] },
+            { "id": "t3", "accept": ["render", "paint", "repaint", "re-render", "rerender", "update"] }
+          ],
+          "explanation": "One task (a timer, an event, the script itself), then the whole microtask queue until it's empty, then, only if the browser has a rendering opportunity (roughly once per display refresh), style, layout and paint. Most tasks are not followed by a paint, and no paint ever happens in the middle of a task."
+        },
+        {
+          "id": "defer-before-timers",
+          "prompt": "Run `flush` after the current synchronous code finishes but before any pending timer, without creating a promise yourself.",
+          "code": "___(flush);",
+          "blanks": [
+            { "id": "q1", "accept": ["queueMicrotask", "window.queueMicrotask", "globalThis.queueMicrotask", "self.queueMicrotask"] }
+          ],
+          "explanation": "`queueMicrotask` puts `flush` on the same microtask queue that promise callbacks use, so it runs as soon as the stack empties and before the next task. That suits batching several synchronous updates into one flush. `setTimeout(flush, 0)` would let a pending timer, an event or a render run first."
+        },
+        {
+          "id": "yield-to-browser",
+          "prompt": "Make this loop end its task between batches so the browser can paint and handle input.",
+          "code": [
+            "for (let i = 0; i < rows.length; i += 500) {",
+            "  rows.slice(i, i + 500).forEach(summarise);",
+            "  ___ new Promise((resolve) => ___(resolve, 0));",
+            "}"
+          ],
+          "blanks": [
+            { "id": "y1", "accept": ["await"] },
+            { "id": "y2", "accept": ["setTimeout", "window.setTimeout", "globalThis.setTimeout"] }
+          ],
+          "explanation": "Awaiting a promise that a **timer** resolves ends the current task; the loop resumes in a later one, and in between the browser can render and dispatch input. `await Promise.resolve()` or `queueMicrotask` here would resume as a microtask, before any render, so the page would stay frozen. (The enclosing function must be `async` for the `await`.)"
+        },
+        {
+          "id": "immediate-in-io",
+          "prompt": "In Node, inside an I/O callback such as `fs.readFile`'s, schedule `next` so it always runs before a 0 ms timer queued from the same callback.",
+          "code": [
+            "fs.readFile(path, () => {",
+            "  setTimeout(() => console.log(\"timeout\"), 0);",
+            "  ___(next);",
+            "});"
+          ],
+          "blanks": [
+            { "id": "i1", "accept": ["setImmediate"] }
+          ],
+          "explanation": "After the poll phase (I/O callbacks) Node's loop moves to the check phase, where `setImmediate` callbacks run, before it wraps around to the timers phase. So inside an I/O callback `setImmediate` always beats `setTimeout(…, 0)`. From the main module the same pair is non-deterministic, so don't rely on it there."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-event-loop",
+      "snippets": [
+        {
+          "id": "task-then-its-microtask",
+          "code": [
+            "setTimeout(() => {",
+            "  console.log(\"t1\");",
+            "  Promise.resolve().then(() => console.log(\"m1\"));",
+            "}, 0);",
+            "setTimeout(() => console.log(\"t2\"), 0);",
+            "console.log(\"sync\");"
+          ],
+          "question": "What is logged, in order? (Same in browsers and Node.)",
+          "answer": "sync, t1, m1, t2",
+          "acceptable": ["sync t1 m1 t2"],
+          "explanation": "`sync` first: the script is the current task. Both timers then queue tasks. The first timer task logs `t1` and queues microtask `m1`. When that task ends the microtask queue drains, so `m1` logs **before** the second timer task gets its turn, even though `t2` was already due. The tempting `sync, t1, t2, m1` treats all timers as one batch; each timer callback is its own task, with a microtask checkpoint after it."
+        },
+        {
+          "id": "await-null-yields",
+          "code": [
+            "async function run() {",
+            "  console.log(\"1\");",
+            "  await null;",
+            "  console.log(\"2\");",
+            "}",
+            "",
+            "setTimeout(() => console.log(\"3\"), 0);",
+            "run();",
+            "console.log(\"4\");"
+          ],
+          "question": "What is logged, in order?",
+          "answer": "1, 4, 2, 3",
+          "acceptable": ["1 4 2 3"],
+          "explanation": "`run()` executes synchronously up to the `await`, so `1` logs first. `await null` still pauses: the rest of `run` is queued as a microtask and control returns to the caller, which logs `4`. When the script ends, microtasks drain (`2`), and only then does the timer task run (`3`). Two common wrong answers: `1, 2, 4, 3` (assuming `await` on a non-promise doesn't yield) and `4, 1, 2, 3` (assuming an async function doesn't start until later)."
+        },
+        {
+          "id": "interleaved-chains",
+          "code": [
+            "Promise.resolve()",
+            "  .then(() => console.log(\"a1\"))",
+            "  .then(() => console.log(\"a2\"));",
+            "",
+            "Promise.resolve()",
+            "  .then(() => console.log(\"b1\"))",
+            "  .then(() => console.log(\"b2\"));"
+          ],
+          "question": "What is logged, in order?",
+          "answer": "a1, b1, a2, b2",
+          "acceptable": ["a1 b1 a2 b2"],
+          "explanation": "A `.then` callback is queued when **its** promise settles. Both first callbacks are attached to already-resolved promises, so `a1` and `b1` are queued at once. `a2` is attached to the promise `a1` returns, so it's queued only when `a1` finishes, behind `b1`. The chains interleave one step at a time. Reading each chain as a block (`a1, a2, b1, b2`) is the classic mistake, and code that depends on two independent chains finishing in a particular order is fragile anyway: chain or `await` explicitly."
+        },
+        {
+          "id": "promise-loop-starves-timer",
+          "code": [
+            "const start = Date.now();",
+            "let hops = 0;",
+            "",
+            "setTimeout(() => console.log(\"timer after\", Date.now() - start, \"ms\"), 0);",
+            "",
+            "function loop() {",
+            "  hops += 1;",
+            "  if (Date.now() - start < 100) return Promise.resolve().then(loop);",
+            "}",
+            "loop();"
+          ],
+          "question": "Roughly when does the 0 ms timer's callback run?",
+          "answer": "After about 100 ms, once the promise chain stops",
+          "acceptable": ["~100 ms", "after 100 ms", "after the chain finishes", "only when loop stops scheduling itself"],
+          "explanation": "Each `loop` call queues the next one as a microtask, and the microtask queue must be **empty** before the event loop takes the next task. So the timer, due almost immediately, waits for the entire 100 ms chain (hundreds of thousands of hops in Node). In a browser nothing paints and no input is handled during that time either. Promises are not a way to yield: only a task boundary (a timer, `scheduler.yield()`, a message) gives timers, input and rendering a turn."
+        }
+      ]
+    }
+  ]
+}

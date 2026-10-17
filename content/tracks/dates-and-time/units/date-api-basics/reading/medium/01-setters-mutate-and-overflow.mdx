@@ -1,0 +1,68 @@
+---
+id: setters-mutate-and-overflow
+title: Setters change the Date in place, and overflow
+---
+
+Every `set…` method **changes the Date it's called on** and returns the new timestamp (a
+number), not a new Date. Two habits from other APIs break here:
+
+```js
+const due = new Date(2026, 2, 10);
+const nextWeek = due.setDate(due.getDate() + 7);
+// nextWeek is a NUMBER (the new timestamp), not a Date
+// due itself is now March 17: the "original" moved
+
+const start = new Date(2026, 2, 10);
+const end = start;                 // the same object, not a copy
+end.setDate(end.getDate() + 7);
+start.getDate();                   // 17: start moved too
+```
+
+Copy first, then mutate the copy: `const end = new Date(start); end.setDate(...)`.
+
+## Out-of-range values roll over
+
+A setter (or the constructor) given a value outside its range carries the excess into the next
+field, the way `65` minutes becomes an hour and 5 minutes:
+
+```js
+const d = new Date(2026, 2, 31); d.setDate(32);  // April 1
+const e = new Date(2026, 2, 10); e.setDate(0);   // February 28: day 0 is the day before the 1st
+const f = new Date(2026, 5, 15); f.setMonth(12); // January 15, 2027
+```
+
+That makes "add n days" easy: `d.setDate(d.getDate() + n)` crosses month and year ends for you.
+It also makes "add a month" wrong at the end of a month. `setMonth` keeps the day number, and
+February 31 doesn't exist, so it rolls on:
+
+```js
+const renews = new Date(2026, 0, 31);
+renews.setMonth(renews.getMonth() + 1); // March 3, 2026 (Feb 31 = Feb 28 + 3 days)
+// In 2028, a leap year, the same code lands on March 2.
+```
+
+If your rule is "same day next month, or the last day of a shorter month", write that rule down
+in code:
+
+```js
+function addMonthsClamped(date, n) {
+  const d = new Date(date);           // never mutate the caller's Date
+  const day = d.getDate();
+  d.setDate(1);                       // park on the 1st so changing the month can't overflow
+  d.setMonth(d.getMonth() + n);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, lastDay));
+  return d;
+}
+
+addMonthsClamped(new Date(2026, 0, 31), 1); // February 28, 2026
+addMonthsClamped(new Date(2028, 0, 31), 1); // February 29, 2028
+```
+
+`new Date(year, month + 1, 0)` is the idiom for "last day of `month`": day 0 of the next month.
+
+<!--more-->
+
+Overflow is also why `+ 30 * 86_400_000` is not "a month": January 31 plus 30 days is March 2.
+A month is a calendar rule, not a fixed length, so pick the rule (clamp, roll over, or "same
+weekday") explicitly and test the 31st.

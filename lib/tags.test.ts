@@ -12,7 +12,11 @@ import {
 
 describe("taxonomy structure", () => {
   it("exposes the roots as dimensions", () => {
-    expect(dimensions()).toEqual(["frontend", "backend"]);
+    // New tracks add roots (docs/tags-design.md → "Planned dimensions"), so pin the first two
+    // and the rule, not the whole list.
+    expect(dimensions().slice(0, 2)).toEqual(["frontend", "backend"]);
+    expect(dimensions().every((slug) => depthOf(slug) === 0)).toBe(true);
+    expect(dimensions()).not.toContain("react");
   });
 
   it("computes depth as the shortest path to a root", () => {

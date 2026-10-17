@@ -1,0 +1,21 @@
+---
+id: not-moment
+title: Not Moment, for new code
+---
+
+Moment.js still has millions of downloads, and coding assistants still suggest it. Its own team
+calls it "a legacy project" in maintenance mode (project status update, August 2026): no new
+features, and no redesign of its **mutable** API. The 2020 status post it replaced asked new
+projects to choose something else, also citing bundle size, since Moment doesn't tree-shake.
+
+Mutation is the bug it's famous for:
+
+```js
+const start = moment("2026-03-10");
+const end = start.add(7, "days"); // add() changes start and returns it
+start.format("YYYY-MM-DD");       // "2026-03-17": the start date moved
+end === start;                    // true
+```
+
+For new code use the built-ins, date-fns, Luxon or Temporal. In existing code, Moment isn't an
+emergency; migrate the parts you touch, and clone (`start.clone().add(…)`) until then.

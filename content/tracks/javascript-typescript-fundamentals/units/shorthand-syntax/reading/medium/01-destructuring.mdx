@@ -1,0 +1,55 @@
+---
+id: destructuring
+title: Destructuring, line by line
+---
+
+A component's props, an API response and a function's options object are all unpacked the same
+way. One line that does five things:
+
+```ts
+function OrderRow({ order, currency = "USD", onSelect, ...rest }: OrderRowProps) { … }
+
+const { data: orders = [], error } = await fetchOrders();
+
+const { id: orderId, customer: { name } } = order;
+
+const [first, , third = "n/a"] = lines;
+```
+
+Read each piece as the property access it replaces:
+
+- **`{ order }`** — `const order = props.order`.
+- **`currency = "USD"`** — `const currency = props.currency === undefined ? "USD" : props.currency`.
+  The default applies **only when the value is `undefined`** — missing, or explicitly `undefined`.
+  A `null` is a value, and you get `null`.
+- **`...rest`** — a new object holding every own enumerable property that wasn't named
+  (`className`, `aria-*`, …), ready to spread onto a DOM element. It must come last.
+- **`data: orders = []`** — rename *and* default: read `data`, call it `orders`, use `[]` if it's
+  `undefined`. The colon in a pattern means "rename", not "type" — TypeScript annotations go after
+  the whole pattern (`}: OrderRowProps`).
+- **`customer: { name }`** — nested: read `order.customer`, then its `name`. This throws a
+  `TypeError` if `order.customer` is `undefined`; there is no `?.` inside a pattern. Give the
+  middle level a default (`customer: { name } = {}`) if it can be missing.
+- **`[first, , third = "n/a"]`** — arrays destructure by position; an empty slot skips one.
+
+## The null trap, side by side
+
+APIs and databases often send `null` for "no value", and `JSON.parse` keeps it. Destructuring
+defaults won't catch it:
+
+```ts
+const response = JSON.parse('{"pageSize": null}');
+
+const { pageSize = 20 } = response;
+pageSize; // null — the default was skipped
+
+const size = response.pageSize ?? 20;
+size;     // 20 — ?? treats null and undefined alike
+```
+
+TypeScript models this exactly: for `pageSize?: number | null`, the destructured `pageSize` is
+typed `number | null`, so the compiler tells you the default didn't cover everything.
+
+Function parameters follow the same rule. `function paginate({ page = 1 } = {})` works when called
+with nothing or `undefined`, but `paginate(null)` throws: the `= {}` default only replaces
+`undefined`, and destructuring `null` is a `TypeError`.

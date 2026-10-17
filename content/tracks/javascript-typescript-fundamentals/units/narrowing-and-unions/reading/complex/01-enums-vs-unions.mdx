@@ -1,0 +1,72 @@
+---
+id: enums-vs-unions
+title: Enums vs unions — what an enum costs at runtime and in tooling
+---
+
+Almost everything in TypeScript is erased: types, interfaces, `as`, `!`. **`enum` is the
+exception** — it compiles to a real JavaScript object. The handbook says so plainly: "Enums are
+real objects that exist at runtime."
+
+```ts
+enum Direction { Up, Down }
+// emits roughly:
+// var Direction; (function (Direction) {
+//   Direction[Direction["Up"] = 0] = "Up";
+//   Direction[Direction["Down"] = 1] = "Down";
+// })(Direction || (Direction = {}));
+
+Object.keys(Direction); // ["0", "1", "Up", "Down"]
+```
+
+A numeric enum gets **reverse mappings** (value → name), so iterating it yields twice as many keys
+as you declared, half of them numeric strings. String enums (`Admin = "admin"`) get no reverse
+mapping, but they're *nominal*: a plain `"admin"` from an API isn't assignable to `Role.Admin`
+without a cast.
+
+## Where enums collide with modern tooling
+
+- **`const enum`** promises no runtime object: without `isolatedModules`, `tsc` inlines each
+  member (`Level.Low` becomes `1 /* Level.Low */`) and deletes the declaration. Under
+  `isolatedModules` — the setting for code compiled one file at a time — TypeScript forces
+  `preserveConstEnums` on, so the object is emitted after all; and reading a `const enum` declared
+  in a `.d.ts` file (an *ambient* one, as libraries publish them) is an error: `Cannot access
+  ambient const enums when 'isolatedModules' is enabled`. The handbook's advice is to avoid
+  publishing const enums, or avoid them entirely.
+- **TS 5.8's `erasableSyntaxOnly`** errors on the constructs that aren't just erasable type
+  syntax: `enum` (const or not), namespaces with runtime code, constructor parameter properties,
+  `import =`/`export =`, and old-style `<Type>value` assertions (write `value as Type`).
+- **Node's built-in type stripping** — on by default since Node 23.6 and 22.18, stable since 25.2
+  and 24.12 — runs `.ts` files by deleting the types, with no type checking. It can't delete an
+  enum, so it refuses the file: `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX: TypeScript enum is not
+  supported in strip-only mode`. Node's docs recommend TS 5.8+ with `erasableSyntaxOnly` and
+  `verbatimModuleSyntax` so the compiler reports this before Node does. (The opt-in
+  `--experimental-transform-types` flag that compiled enums was removed in Node 26.)
+
+## The alternatives the handbook suggests
+
+A union of string literals covers most uses with zero runtime cost:
+
+```ts
+type Role = "admin" | "editor" | "viewer";
+```
+
+When you also need the values at runtime — to loop over them, or validate input — declare them
+once as an `as const` object (or array) and derive the type:
+
+```ts
+const Role = { Admin: "admin", Editor: "editor", Viewer: "viewer" } as const;
+type Role = (typeof Role)[keyof typeof Role]; // "admin" | "editor" | "viewer"
+
+Role.Admin;          // reads like an enum member
+Object.values(Role); // ["admin", "editor", "viewer"], no reverse-mapping noise
+```
+
+Same name for the value and the type is legal (they live in different namespaces) and reads like
+an enum at the call site. A plain `"admin"` from an API *is* assignable to this `Role`.
+
+<!--more-->
+
+Numeric enums are also loosely typed in the other direction: a literal like `42` is rejected for a
+`Direction`, but any variable typed `number` is accepted, so `move(someNumber)` compiles whatever
+the number is. Since TS 5.0 all enums are union enums, which is what rejects the out-of-range
+literal — it doesn't reject a `number`.

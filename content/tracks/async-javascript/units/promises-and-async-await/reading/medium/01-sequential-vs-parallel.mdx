@@ -1,0 +1,68 @@
+---
+id: sequential-vs-parallel
+title: Sequential vs parallel await, and the dependency that decides
+---
+
+An `await` pauses only its own async function, but it pauses it completely. An `await` inside a
+loop means each request starts only after the previous one has finished:
+
+```js
+// ❌ Sequential: three 100 ms requests take ~300 ms
+const users = [];
+for (const id of [1, 2, 3]) {
+  users.push(await fetchUser(id));
+}
+```
+
+Requests start the moment you **call** the function, not when you `await` it. So start them all,
+then wait for all of them:
+
+```js
+// ✅ Parallel: ~100 ms, the slowest single request
+const users = await Promise.all([1, 2, 3].map((id) => fetchUser(id)));
+```
+
+`Promise.all` keeps the input order (`users[0]` is user 1, whichever finished first) and rejects
+as soon as any request rejects (the next reading covers the alternatives).
+
+**The rule: a step waits only for what it actually needs.** Real loaders mix both shapes. Here
+the panels need the user's `accountId`, but not each other:
+
+```js
+async function loadDashboard(userId) {
+  const user = await getUser(userId);              // must come first: the others need it
+  const [orders, alerts] = await Promise.all([     // independent: start together
+    getOrders(user.accountId),
+    getAlerts(user.accountId),
+  ]);
+  return { user, orders, alerts };
+}
+```
+
+Sequential is still correct when steps really depend on each other, when order matters (applying
+migrations), or when you must not hit a server with N requests at once. For the last case, use a
+small concurrency limit rather than all-or-one-at-a-time.
+
+**`forEach` doesn't wait.** It calls your async callback, ignores the promise it returns, and moves
+on:
+
+```js
+// ❌ "Done" logs before any user has loaded, and failures become unhandled rejections
+ids.forEach(async (id) => {
+  users.push(await fetchUser(id));
+});
+console.log("done", users.length); // done 0
+```
+
+Use `for…of` with `await` (sequential) or `await Promise.all(ids.map(…))` (parallel). Don't pass
+an async callback to `forEach` (it returns `undefined`, so there's nothing to wait for) or to
+`filter` (it tests the promise, which is always truthy, so it keeps every element). An async
+`reduce` runs in order only if each step `await`s the accumulator first.
+
+<!--more-->
+
+### `map` with an async callback returns promises
+
+`ids.map(async (id) => …)` gives you an **array of promises**, not values. That's exactly what
+`Promise.all` wants. Forget the `Promise.all` and you're rendering `[object Promise]`, or checking
+`if (results[0])`, which is always true because a promise object is truthy.

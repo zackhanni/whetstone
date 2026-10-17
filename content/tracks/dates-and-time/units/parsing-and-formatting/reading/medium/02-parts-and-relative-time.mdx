@@ -1,0 +1,61 @@
+---
+id: parts-and-relative-time
+title: formatToParts for machine strings, RelativeTimeFormat for "2 days ago"
+---
+
+## Never slice localized output
+
+`toLocaleDateString()` output is for reading, not parsing. MDN warns it "may vary between
+implementations, even within the same locale", may contain non-breaking spaces or bidirectional
+control characters, and should not be compared to hardcoded constants. That rules out
+`toLocaleDateString().split("/")` and snapshot tests of locale strings.
+
+When you need specific pieces, for example the user's calendar date as `YYYY-MM-DD` in their
+zone, ask for **parts**:
+
+```js
+function dateInZone(instant, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(instant);
+  const get = (type) => parts.find((p) => p.type === type).value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+const late = new Date("2026-03-10T23:30:00Z");
+dateInZone(late, "Asia/Tokyo");       // "2026-03-11"
+dateInZone(late, "America/New_York"); // "2026-03-10"
+late.toISOString().slice(0, 10);      // "2026-03-10": the date in UTC, not the user's
+```
+
+Each part is `{ type, value }`. Look parts up by `type` (`"year"`, `"month"`, `"day"`, `"hour"`, …)
+rather than by position, because the order and the literals between them depend on the locale.
+
+## Relative time: you do the arithmetic
+
+`Intl.RelativeTimeFormat` only **formats** a number and a unit. It doesn't know what time it is:
+
+```js
+const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+rtf.format(-1, "day");  // "yesterday"
+rtf.format(2, "week");  // "in 2 weeks"
+new Intl.RelativeTimeFormat("en").format(-1, "day"); // "1 day ago" (numeric: "always" is the default)
+```
+
+Picking the value and unit is your code:
+
+```js
+function timeAgo(instant, now = new Date()) {
+  const seconds = Math.round((instant.getTime() - now.getTime()) / 1000);
+  const units = [["year", 31_536_000], ["month", 2_592_000], ["week", 604_800],
+                 ["day", 86_400], ["hour", 3_600], ["minute", 60]];
+  for (const [unit, size] of units) {
+    if (Math.abs(seconds) >= size) return rtf.format(Math.round(seconds / size), unit);
+  }
+  return rtf.format(seconds, "second");
+}
+```
+
+This measures **elapsed** time, with a 30-day "month". 25 hours ago is "yesterday" here even if
+it was two calendar days ago in the user's zone. If "yesterday" must mean the previous calendar
+date, compare date-only values instead (next unit).

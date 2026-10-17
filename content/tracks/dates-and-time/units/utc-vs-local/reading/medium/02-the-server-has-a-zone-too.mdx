@@ -1,0 +1,45 @@
+---
+id: the-server-has-a-zone-too
+title: The server has a time zone too
+---
+
+In a Next.js App Router app (Next.js 16, React 19), the same component code can run in two
+places, and each place uses its own zone:
+
+- A **Server Component** renders once, on the server. A date it formats without a `timeZone`
+  shows the **server's** zone to every visitor. Nothing errors: it's just wrong for everyone not
+  in that zone.
+- A **Client Component** renders twice: on the server to prerender HTML, then in the browser to
+  hydrate it. If the two renders produce different text, React reports a **hydration
+  mismatch**. Next.js lists "time-dependent APIs such as the `Date()` constructor in your
+  rendering logic" as a common cause.
+
+```tsx
+"use client";
+
+export function PlacedAt({ iso }: { iso: string }) {
+  // iso = "2026-03-10T15:00:00Z". Server in UTC: "3:00 PM". Browser in New York: "11:00 AM".
+  return <time dateTime={iso}>{new Date(iso).toLocaleTimeString("en-US", { timeStyle: "short" })}</time>;
+}
+```
+
+Fixes, best first:
+
+1. **Make both renders agree: pass the zone.** If you know the user's zone on the server
+   (profile, cookie), format with `timeZone: userZone` and an explicit locale. Same input, same
+   output, on both sides, and Server Components get it right too.
+2. **Render the local text only in the browser.** Render something zone-free first (the ISO
+   date, or a placeholder), then swap in the local string after hydration with the two-pass
+   `useEffect` pattern from the React docs. Costs one extra render.
+3. **`suppressHydrationWarning` on the `<time>`.** An escape hatch for exactly this case, but
+   read the fine print: it works one level deep, and React **does not patch** the mismatched
+   text. The warning goes away and the visitor keeps seeing the server's 3:00 PM.
+
+Leaving out the locale has the same effect as leaving out the zone. `toLocaleString()` with no
+locale uses the runtime's default, and the server's (often `en-US`) need not match a browser set
+to German.
+
+<!--more-->
+
+Statically prerendered pages add a third clock: the build machine's zone, at build time. Any
+date formatted during the build is frozen into the HTML until the next build or revalidation.

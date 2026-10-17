@@ -1,0 +1,65 @@
+---
+id: latest-only-requests
+title: Latest-only requests — abort and an identity check, together
+---
+
+A reusable wrapper that makes any signal-taking request "latest only". Each call aborts the one
+before it, adds an optional deadline, and reports the outcome as data, so callers never need a
+`try`/`catch` to tell "superseded" from "failed":
+
+```js
+function latestOnly(request, { timeoutMs } = {}) {
+  let current; // the controller of the newest call
+
+  return async function run(...args) {
+    current?.abort();                    // 1. the previous call is stale now
+    const controller = new AbortController();
+    current = controller;
+    const deadline = timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined;
+    const signal = deadline ? AbortSignal.any([controller.signal, deadline]) : controller.signal;
+
+    try {
+      const value = await request(...args, signal);
+      if (controller !== current) return { status: "superseded" }; // 2. finished, but too late
+      return { status: "ok", value };
+    } catch (error) {
+      if (controller !== current) return { status: "superseded" }; // 3. aborted by a newer call
+      if (deadline?.aborted) return { status: "timeout" };         // 4. our deadline passed
+      return { status: "error", error };
+    }
+  };
+}
+
+const search = latestOnly(
+  (q, signal) => fetchJson(`/search?q=${encodeURIComponent(q)}`, { signal }),
+  { timeoutMs: 5000 },
+);
+const outcome = await search("rea");
+if (outcome.status === "ok") render(outcome.value);
+```
+
+**Why both mechanisms?** The abort (1) stops the network work, but it can only stop steps that
+take the signal. Anything else in `request` still runs to completion: a cache lookup, a
+third-party SDK call, a `JSON.parse` of a big payload, an `await enrich(data)` that ignores the
+signal. And an abort can't un-fulfil a promise that has already fulfilled. The identity check (2,
+3) is what guarantees that **only the newest call's result is ever used**, whatever the request
+does with its signal.
+
+**Why compare controllers instead of checking `error.name`?** "Was this superseded?" is a question
+about _our_ bookkeeping, not about the error. A newer call might abort with a custom reason, and a
+request may wrap the abort in its own error type. The controller identity answers it exactly.
+"Did it time out?" is bookkeeping too: keep the timeout signal and ask whether it aborted (4). A
+wrapped error has no `TimeoutError` name to find.
+
+**Superseded is not an error.** Return it as its own status, and have the UI ignore it. Shown as
+an error, every fast typist sees a "Search failed" flash.
+
+<!--more-->
+
+### Cancelling a whole workflow
+
+Signals compose downwards. Give a screen one controller, aborted when the user navigates away, and
+combine it into every request the screen makes:
+`AbortSignal.any([screen.signal, perRequest.signal])`. One `abort()` on the screen then cancels
+everything still in flight, and each request can still be cancelled on its own. That's the same
+idea as an effect cleanup in React, without React.

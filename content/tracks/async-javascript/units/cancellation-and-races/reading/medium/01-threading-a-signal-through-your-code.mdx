@@ -1,0 +1,63 @@
+---
+id: threading-a-signal-through-your-code
+title: Threading a signal through your own functions
+---
+
+`fetch` honours a signal because it was written to. Your own async functions only become
+cancellable if you write them the same way. The DOM Standard spells out the contract for any
+promise-returning API that can be aborted: take the signal as a `signal` option, reject
+immediately if it's already aborted, and otherwise reject with `signal.reason` when it aborts.
+
+**Pass it down to everything that waits.**
+
+```js
+async function loadReport(id, { signal } = {}) {
+  const res = await fetch(`/api/reports/${id}`, { signal });
+  const report = await res.json(); // also aborted by the same signal
+  await sleep(250, signal);        // your own wait: make it abortable too
+  signal?.throwIfAborted();        // a checkpoint before expensive CPU work
+  return summarise(report);
+}
+```
+
+Each step that doesn't receive the signal is a hole: an abort during that step goes unnoticed
+until the next step that does check.
+
+**Make your own waits abortable.**
+
+```js
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    signal?.throwIfAborted(); // already aborted: reject right away
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort); // done: stop listening
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);   // stop the work itself…
+      reject(signal.reason); // …and settle with the caller's reason
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+```
+
+The details carry the weight:
+
+- **`throwIfAborted()` first.** A listener added to a signal that's already aborted never
+  fires, so without this check the promise would wait out the whole delay.
+- **`reject(signal.reason)`, not `new Error("aborted")`.** The caller chose the reason (an
+  `AbortError` by default, a `TimeoutError` from `AbortSignal.timeout`, or their own value). Pass
+  it through unchanged so their checks still work.
+- **Stop the work, not just the promise.** `clearTimeout` (or `abort` on an inner request) is the
+  part that saves resources. Rejecting alone just means nobody waits for the result.
+- **Remove the listener when you finish normally.** A long-lived signal (one per page, say)
+  would otherwise collect a listener from every call.
+
+<!--more-->
+
+### CPU loops check the flag
+
+A synchronous loop can't be interrupted. The `abort()` call can't even run until the loop yields
+(the `event-loop` unit). Long CPU work that should be cancellable has to be chunked, and must
+check `signal.aborted` (or call `signal.throwIfAborted()`) between chunks.

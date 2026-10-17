@@ -1,0 +1,37 @@
+---
+id: format-for-people
+title: Format for people with Intl.DateTimeFormat
+---
+
+`toISOString()` is for machines. For people, `Intl.DateTimeFormat` takes three decisions apart:
+the **locale** (language, order, words), the **time zone** (whose wall clock) and the
+**options** (which parts to show).
+
+```js
+const d = new Date("2026-03-10T15:00:00Z");
+
+new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium", timeStyle: "short", timeZone: "America/New_York",
+}).format(d); // "Mar 10, 2026, 11:00 AM"
+
+new Intl.DateTimeFormat("de-DE", { dateStyle: "long", timeZone: "Europe/Berlin" }).format(d);
+// "10. März 2026"
+
+new Intl.DateTimeFormat("en-GB", {
+  weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Tokyo",
+}).format(d); // "Wed 11 Mar": already Wednesday in Tokyo
+```
+
+- **`dateStyle` / `timeStyle`** (`"full"`, `"long"`, `"medium"`, `"short"`) are presets that
+  the locale fills in. You can combine the two presets, but not a preset with individual parts
+  like `hour` or `month`.
+- **Individual parts** (`year`, `month`, `day`, `weekday`, `hour`, `minute`, …) when you need
+  a specific shape.
+- **`timeZone`** takes an IANA name (`"America/New_York"`) or `"UTC"`. Current engines also
+  accept a fixed offset such as `"+05:30"`, but an offset has no daylight saving rules, so prefer
+  the name. Leave it out and you get the runtime's zone, which on a server is not the user's.
+
+`d.toLocaleDateString(locale, options)` and `d.toLocaleString(...)` are the same machinery: MDN
+notes they delegate to `Intl.DateTimeFormat`. When you format many dates (a table, a list),
+create the formatter once and call `.format` in the loop; each `toLocale…` call has to look the
+locale data up again.

@@ -92,7 +92,7 @@ export const TAXONOMY: TagNode[] = [
 
   // frontend → areas
   { slug: "react", label: "React", parents: ["frontend"] },
-  { slug: "async", label: "Async & Timing", parents: ["frontend"] },
+  { slug: "async", label: "Async & Timing", parents: ["frontend", "javascript"] },
   {
     slug: "state-management",
     label: "State Management",
@@ -176,7 +176,7 @@ export const TAXONOMY: TagNode[] = [
   {
     slug: "AbortController",
     label: "AbortController",
-    parents: ["data-fetching"],
+    parents: ["data-fetching", "async"],
   },
 
   // state-management
@@ -234,6 +234,31 @@ export const TAXONOMY: TagNode[] = [
     label: "DTOs & Contracts",
     parents: ["validation", "architecture"],
   },
+
+  // ── javascript-typescript-fundamentals ──
+  { slug: "languages", label: "Languages", parents: [] },
+  { slug: "javascript", label: "JavaScript", parents: ["languages"] },
+  { slug: "typescript", label: "TypeScript", parents: ["languages"] },
+  { slug: "collections", label: "Map, Set & Collections", parents: ["javascript"] },
+  { slug: "syntax", label: "Modern Syntax", parents: ["javascript"] },
+  { slug: "equality", label: "Equality & Truthiness", parents: ["javascript"] },
+  { slug: "null-and-undefined", label: "null vs undefined", parents: ["equality", "typescript"] },
+  { slug: "narrowing", label: "Narrowing & Unions", parents: ["typescript"] },
+  { slug: "enums", label: "Enums", parents: ["typescript"] },
+  // Immutable updates are a language skill that every state owner (React state, a store) relies on.
+  { slug: "immutability", label: "Immutability", parents: ["javascript", "state-management"] },
+
+  // ── dates-and-time ──
+  { slug: "dates", label: "Dates & Time", parents: ["javascript"] },
+  { slug: "time-zones", label: "Time Zones", parents: ["dates"] },
+  { slug: "date-arithmetic", label: "Date Arithmetic", parents: ["dates"] },
+  { slug: "date-libraries", label: "Date Libraries", parents: ["dates"] },
+  // Intl formats numbers, lists and plural rules too, so it sits under the language, not under dates.
+  { slug: "intl", label: "Intl", parents: ["javascript"] },
+
+  // ── async-javascript ──
+  { slug: "event-loop", label: "Event Loop", parents: ["async"] },
+  { slug: "promises", label: "Promises & async/await", parents: ["async"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

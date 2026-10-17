@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 3,
+  "slug": "promises-and-async-await",
+  "title": "Promises & async/await: chaining, errors and concurrency",
+  "skills": ["async", "promises"],
+  "difficulty": "core",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Explain promise states and chaining: a promise settles once, and `then`/`catch` return new promises shaped by what their callbacks return or throw",
+    "Place a `catch` (or a `try` around `await`) where it really handles the failure, and spot a swallowed error, a missing `return`/`await`, or `return` without `await` inside `try`",
+    "Choose sequential or parallel `await`, and `Promise.all`, `allSettled`, `race` or `any`, from the dependencies and failure rules of the work",
+    "Predict when a rejection goes unhandled, and what browsers and Node 15+ do then"
+  ],
+  "sources": [
+    { "title": "MDN: Promise", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise" },
+    { "title": "MDN: Using promises", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises" },
+    { "title": "MDN: async function", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function" },
+    { "title": "MDN: Promise.allSettled()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled" },
+    { "title": "MDN: Promise.any()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/any" },
+    { "title": "Node.js CLI: --unhandled-rejections", "url": "https://nodejs.org/api/cli.html#--unhandled-rejectionsmode" },
+    { "title": "typescript-eslint: no-floating-promises", "url": "https://typescript-eslint.io/rules/no-floating-promises/" },
+    { "title": "typescript-eslint: no-misused-promises", "url": "https://typescript-eslint.io/rules/no-misused-promises/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-promises", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-promises",
+      "questions": [
+        {
+          "id": "then-returns-new",
+          "prompt": "What does `p.then(callback)` return?",
+          "options": [
+            { "id": "new-promise", "text": "A **new** promise, settled by what `callback` returns or throws" },
+            { "id": "same-promise", "text": "`p` itself, so each `.then` adds to the same promise" },
+            { "id": "callback-value", "text": "Whatever `callback` returns, once `p` has fulfilled" },
+            { "id": "undefined", "text": "`undefined`: `then` only registers the callback" }
+          ],
+          "answer": "new-promise",
+          "explanation": "Every `then` (and `catch`, and `finally`) creates a new promise. If the callback returns a value, the new promise fulfils with it. If it returns a promise, the new one follows it. If it throws, the new one rejects. That's why chains work, and why `p` itself never changes: it settled once. `then` can't hand back the callback's value directly, because the callback hasn't run yet."
+        },
+        {
+          "id": "async-plus-one",
+          "prompt": "`async function getCount() { return 3; }` — what is `getCount() + 1`?",
+          "options": [
+            { "id": "string", "text": "`\"[object Promise]1\"`" },
+            { "id": "four", "text": "`4`" },
+            { "id": "nan", "text": "`NaN`" },
+            { "id": "type-error", "text": "It throws a `TypeError`" }
+          ],
+          "answer": "string",
+          "explanation": "An async function **always** returns a promise, even when its body returns a plain `3` with no `await`. `+` turns the promise object into its string form, `\"[object Promise]\"`, and concatenates `1`. Nothing throws, which is why a missing `await` slips through. You need `(await getCount()) + 1`. TypeScript flags this one, because `Promise<number> + number` doesn't type-check."
+        },
+        {
+          "id": "catch-recovers",
+          "prompt": "`const user = await fetchUser(id).catch((err) => console.error(err)); render(user.name);` — `fetchUser` rejects with \"user service down\". What reaches the error tracker?",
+          "options": [
+            { "id": "type-error", "text": "A `TypeError` about reading `name` of `undefined`. The real error was logged and swallowed" },
+            { "id": "original", "text": "\"user service down\", because `console.error` rethrows what it logs" },
+            { "id": "nothing", "text": "Nothing: the `catch` handled it, so `render` is skipped" },
+            { "id": "unhandled", "text": "An unhandled rejection carrying \"user service down\"" }
+          ],
+          "answer": "type-error",
+          "explanation": "A `catch` callback that returns normally **recovers**: its return value (here `console.error`'s `undefined`) fulfils the next promise. So `user` is `undefined`, the code carries on, and `render` throws a `TypeError` that points at the wrong line. The real cause only exists as a console log. Catch only where you can act: show an error, return a real fallback, or rethrow."
+        },
+        {
+          "id": "return-await-in-try",
+          "prompt": "`async function getSettings() { try { return fetchSettings(); } catch { return DEFAULTS; } }` — when `fetchSettings` rejects, the defaults are never returned. Why?",
+          "options": [
+            { "id": "left-try", "text": "The function returns the pending promise and leaves the `try`. The rejection comes later, outside it. `return await` keeps it inside" },
+            { "id": "bare-catch", "text": "A `catch` without a binding (`catch {}`) doesn't catch promise rejections" },
+            { "id": "no-return-in-try", "text": "An async function can't `return` from inside a `try` block" },
+            { "id": "sync-throw", "text": "`fetchSettings` throws synchronously, which skips the `catch`" }
+          ],
+          "answer": "left-try",
+          "explanation": "`try` covers what happens while the function is running. `return fetchSettings()` hands back a still-pending promise, and the function (and the `try`) is finished. When that promise rejects, the caller sees the rejection. `return await fetchSettings()` waits **inside** the `try`, so the rejection is thrown there and caught. A bare `catch {}` catches everything: it just doesn't bind the error to a name."
+        },
+        {
+          "id": "parallel-with-dependency",
+          "prompt": "You need `user`, then `orders` and `alerts`. Both need `user.accountId`, but not each other. Which is the fastest correct shape?",
+          "options": [
+            { "id": "user-then-all", "text": "`await getUser()`, then `await Promise.all([getOrders(acct), getAlerts(acct)])`" },
+            { "id": "all-three", "text": "One `Promise.all` over all three calls" },
+            { "id": "three-awaits", "text": "Three `await`s in a row" },
+            { "id": "foreach", "text": "`await getUser()`, then `[getOrders, getAlerts].forEach(async (f) => results.push(await f(acct)))`" }
+          ],
+          "answer": "user-then-all",
+          "explanation": "A step waits only for what it needs. The panels need `accountId`, so the user comes first. They don't need each other, so they run together, and the total is user plus the slower panel. One `Promise.all` over all three can't work, because you don't have `accountId` yet. Three awaits make the panels sequential. `forEach` ignores the promises its callback returns, so the code after it runs before either panel has loaded, and failures go unhandled."
+        },
+        {
+          "id": "pick-combinator",
+          "prompt": "You fetch the same file from three mirrors. Use whichever **succeeds** first, and fail only if all three fail. Which combinator?",
+          "options": [
+            { "id": "any", "text": "`Promise.any`" },
+            { "id": "race", "text": "`Promise.race`" },
+            { "id": "all", "text": "`Promise.all`" },
+            { "id": "allSettled", "text": "`Promise.allSettled`" }
+          ],
+          "answer": "any",
+          "explanation": "`Promise.any` (ES2021) fulfils with the first **fulfilment** and ignores rejections unless every input rejects, in which case it rejects with an `AggregateError` listing them all. `race` settles with the first **settlement** of any kind, so one mirror failing fast fails the whole download. `all` needs every mirror to succeed. `allSettled` waits for the slowest mirror before you get anything."
+        },
+        {
+          "id": "start-then-await",
+          "prompt": "In a Node 22 request handler: `const a = slowQuery(); const b = fastFailingQuery(); const x = await a; try { await b; } catch { /* fallback */ }`. `b` rejects while the handler is still waiting on `a`. What happens?",
+          "options": [
+            { "id": "crash", "text": "The process exits: `b` rejected with no handler attached, and since Node 15 an unhandled rejection is raised as an uncaught exception" },
+            { "id": "handled", "text": "Nothing special: the `catch` handles it once execution reaches `await b`" },
+            { "id": "warning", "text": "Node prints a warning, then the `catch` handles it normally" },
+            { "id": "parked", "text": "The rejection is held until something awaits `b`, so nothing is reported" }
+          ],
+          "answer": "crash",
+          "explanation": "A rejection counts as unhandled if no handler is attached by the end of the current turn. Here `await b` comes about a whole query later. Node 15+ defaults to `--unhandled-rejections=throw`, so with no `unhandledRejection` listener the process exits, taking every other in-flight request with it. Before v15 it only warned, which is the third option. Browsers would report it (`unhandledrejection`) and carry on. Fix: `await Promise.all([a, b])` (or `allSettled`), which attaches handlers to both at once."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-promises",
+      "prompts": [
+        {
+          "id": "return-in-then",
+          "prompt": "Make the chain wait for the save, and carry a failed save to the next `catch`.",
+          "code": [
+            "loadDraft()",
+            "  .then((draft) => { ___ saveDraft(draft); })",
+            "  .then(() => showToast(\"Saved\"));"
+          ],
+          "blanks": [
+            { "id": "r1", "accept": ["return"] }
+          ],
+          "explanation": "Inside braces, an arrow function returns nothing unless you say `return`. Without it the `then` callback returns `undefined` straight away, so the toast shows before the save finishes, and a failed save is a floating promise nobody handles. (Dropping the braces, `(draft) => saveDraft(draft)`, returns it implicitly.)"
+        },
+        {
+          "id": "return-await",
+          "prompt": "Make the fallback catch a rejected fetch.",
+          "code": [
+            "async function getSettings() {",
+            "  try {",
+            "    return ___ fetchSettings();",
+            "  } catch {",
+            "    return DEFAULT_SETTINGS;",
+            "  }",
+            "}"
+          ],
+          "blanks": [
+            { "id": "a1", "accept": ["await"] }
+          ],
+          "explanation": "`return await` settles the promise while the function is still inside the `try`, so a rejection throws there and the `catch` runs. A plain `return` hands the pending promise to the caller and leaves the `try` behind."
+        },
+        {
+          "id": "parallel-map",
+          "prompt": "Fetch every user at once, and get the results in the same order as `ids`.",
+          "code": "const users = await ___(ids.map((id) => fetchUser(id)));",
+          "blanks": [
+            { "id": "p1", "accept": ["Promise.all"] }
+          ],
+          "explanation": "`ids.map(…)` starts every request immediately and gives back an array of promises. `Promise.all` waits for all of them and fulfils with their values in **input** order, whichever finished first. It rejects as soon as any one rejects."
+        },
+        {
+          "id": "allsettled-failures",
+          "prompt": "Run every request, then pick out the ones that failed.",
+          "code": [
+            "const results = await Promise.___(requests);",
+            "const failures = results.filter((r) => r.status === \"___\");"
+          ],
+          "blanks": [
+            { "id": "s1", "accept": ["allSettled"] },
+            { "id": "s2", "accept": ["rejected"] }
+          ],
+          "explanation": "`allSettled` never rejects. It waits for every input and describes each as `{ status: \"fulfilled\", value }` or `{ status: \"rejected\", reason }`, in input order. That's the shape for \"show what worked, report what didn't\"."
+        },
+        {
+          "id": "node-unhandled-event",
+          "prompt": "In Node, report unhandled rejections to monitoring. (Remember that adding the listener also replaces Node's default crash.)",
+          "code": "process.on(\"___\", (reason) => reportToMonitoring(reason));",
+          "blanks": [
+            { "id": "u1", "accept": ["unhandledRejection"] }
+          ],
+          "explanation": "Node emits `unhandledRejection` (capital R; the browser's window event is all lowercase, `unhandledrejection`). Without a listener, Node 15+ raises the rejection as an uncaught exception and exits. With one, it doesn't, so the listener must really report or deal with the error, or failures disappear silently."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-promises",
+      "snippets": [
+        {
+          "id": "settle-once-chain",
+          "code": [
+            "const p = new Promise((resolve, reject) => {",
+            "  console.log(\"executor\");",
+            "  resolve(1);",
+            "  reject(new Error(\"nope\"));",
+            "  resolve(2);",
+            "});",
+            "",
+            "p.then((v) => {",
+            "  console.log(\"then\", v);",
+            "  return v * 10;",
+            "}).then((v) => console.log(\"next\", v));",
+            "",
+            "console.log(\"sync end\");"
+          ],
+          "question": "What is logged, in order?",
+          "answer": "executor, sync end, then 1, next 10",
+          "acceptable": ["executor / sync end / then 1 / next 10"],
+          "explanation": "The executor runs synchronously, so `executor` logs first. The first `resolve(1)` settles the promise, and the later `reject` and `resolve(2)` are ignored: a promise settles once. `.then` callbacks always run as microtasks, after the synchronous `sync end`. The first returns `10`, which fulfils the promise the second `.then` is attached to."
+        },
+        {
+          "id": "foreach-async",
+          "code": [
+            "const fetchUser = (id) => new Promise((resolve) => setTimeout(() => resolve({ id }), 50));",
+            "",
+            "const users = [];",
+            "[1, 2, 3].forEach(async (id) => {",
+            "  users.push(await fetchUser(id));",
+            "});",
+            "console.log(\"after forEach:\", users.length);",
+            "",
+            "setTimeout(() => console.log(\"100 ms later:\", users.length), 100);"
+          ],
+          "question": "What is logged?",
+          "answer": "after forEach: 0, then 100 ms later: 3",
+          "acceptable": ["0 then 3"],
+          "explanation": "`forEach` calls each async callback, gets a promise back, ignores it, and returns at once. All three requests start, but nothing waits for them, so `users` is still empty on the next line. The pushes happen about 50 ms later. Use `for…of` with `await` (one at a time) or `await Promise.all(ids.map(fetchUser))` (all at once) when the next line depends on the results."
+        },
+        {
+          "id": "all-does-not-cancel",
+          "code": [
+            "const delay = (ms, label, fail) =>",
+            "  new Promise((resolve, reject) =>",
+            "    setTimeout(() => {",
+            "      console.log(\"finished\", label);",
+            "      fail ? reject(new Error(label + \" failed\")) : resolve(label);",
+            "    }, ms),",
+            "  );",
+            "",
+            "try {",
+            "  await Promise.all([delay(50, \"a\"), delay(10, \"b\", true), delay(30, \"c\")]);",
+            "} catch (err) {",
+            "  console.log(\"caught\", err.message);",
+            "}"
+          ],
+          "question": "What is logged, in order? (In an ES module, so top-level `await` works.)",
+          "answer": "finished b, caught b failed, finished c, finished a",
+          "acceptable": ["finished b / caught b failed / finished c / finished a"],
+          "explanation": "`Promise.all` rejects as soon as `b` fails at 10 ms, so the `catch` runs right away. It doesn't stop the other two: they were already running and finish at 30 ms and 50 ms, and their results are discarded. MDN: \"The other operations continue to run\". If abandoned work should stop (requests, timers), cancel it yourself with an `AbortController` (next unit)."
+        },
+        {
+          "id": "rethrow-in-last-catch",
+          "code": [
+            "// Run with Node 15 or later",
+            "Promise.reject(new Error(\"HTTP 500\"))",
+            "  .then((data) => console.log(\"data\", data))",
+            "  .catch((err) => {",
+            "    if (err.name !== \"AbortError\") throw err;",
+            "  });",
+            "",
+            "setTimeout(() => console.log(\"still running\"), 100);"
+          ],
+          "question": "What happens?",
+          "answer": "The process crashes with \"Error: HTTP 500\", and \"still running\" is never logged",
+          "acceptable": ["it crashes", "uncaught Error: HTTP 500, no \"still running\""],
+          "explanation": "The `.catch` returns a new promise, and rethrowing inside it rejects that promise. Nothing is attached after it, so the rejection is unhandled. Node 15+ raises it as an uncaught exception and exits before the timer fires. In a browser you'd get an \"Uncaught (in promise)\" console error and `still running` would log. Either way the error reaches no error boundary and no `try` up the stack. At the end of a chain, handle it (show it, store it, report it) instead of rethrowing."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-dashboard-loader",
+      "challengeSlug": "parallel-dashboard-loader"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+---
+id: truthy-and-falsy
+title: The falsy list is short — memorise it
+---
+
+`if (x)`, `!x`, `x && y`, `x || y` and `filter(Boolean)` don't ask "is `x` true?" — they ask
+"is `x` **truthy**?". Exactly these values are falsy:
+
+`false` · `0` · `-0` · `0n` · `""` · `null` · `undefined` · `NaN` · (and the browser's legacy
+`document.all`)
+
+**Everything else is truthy**, including the ones that look empty or false:
+
+```js
+Boolean("0");     // true — a non-empty string
+Boolean("false"); // true
+Boolean([]);      // true — every object is truthy, even an empty one
+Boolean({});      // true
+```
+
+Two bugs come straight from this list.
+
+**An empty array is truthy.** `if (!results)` never fires for a search with no matches — the
+array exists. Ask the question you mean:
+
+```js
+if (!results) …              // only catches null/undefined
+if (results.length === 0) …  // "no matches"
+```
+
+**`&&` returns its left side when that side is falsy — and React renders numbers.** React
+renders nothing for `false`, `null` and `undefined`, but `0` is a number, so it shows up:
+
+```tsx
+{unread && <Badge count={unread} />}      // renders "0" when unread is 0
+{unread > 0 && <Badge count={unread} />}  // renders nothing
+```
+
+React's docs put it as a rule: don't put numbers on the left side of `&&`. Make the condition a
+real boolean (`> 0`, `!== 0`, `Boolean(x)`), or use a ternary with `null`.

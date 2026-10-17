@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "todo-reducer-mutations",
+  "title": "Take the mutations out of a todo reducer",
+  "skills": ["javascript", "immutability", "state"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "todos.ts",
+  "acceptanceCriteria": [
+    "`added` returns the list with the new todo, and the previous state still has 2 todos",
+    "`toggled` flips `done` in the new state only, and the todo it didn't touch is still the same object",
+    "`tagged` adds the tag in the new state only — the previous todo's `tags` are unchanged",
+    "`removed` drops the todo without changing the previous state",
+    "`toggled` with an unknown id returns the very same `state` object",
+    "`selectByTitle` returns the todos A–Z and leaves `state.todos` in its original order"
+  ]
+}

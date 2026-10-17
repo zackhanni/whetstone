@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "slug": "debounce-throttle-from-scratch",
+  "title": "Finish a hand-rolled debounce and throttle",
+  "skills": ["async", "debounce", "timers"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "runner": "in-browser",
+  "entry": "rate-limit.ts",
+  "acceptanceCriteria": [
+    "`debounce` runs `fn` once, `wait` ms after the last call, with the **last** call's arguments",
+    "`debounce` passes `fn` the `this` it was called with",
+    "`debounced.cancel()` drops a pending run for good: it never fires, and a later `flush()` has nothing to run",
+    "`debounced.flush()` runs a pending call immediately and exactly once, and does nothing when nothing is pending",
+    "`throttle` runs the first call immediately and never runs twice within `wait`",
+    "`throttle`'s trailing run uses the **latest** call's `this` and arguments, and a single call runs only once",
+    "`throttled.cancel()` drops the pending trailing run"
+  ]
+}

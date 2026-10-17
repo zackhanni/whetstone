@@ -1,0 +1,17 @@
+---
+id: pick-one
+title: Picking one
+---
+
+| You need | Reach for |
+| --- | --- |
+| An instant in an API, log or database | `Date`, sent as `toISOString()` |
+| An instant shown to a person | `Intl.DateTimeFormat` with the person's `timeZone` |
+| Due dates, birthdays, holidays | UTC helpers, or `Temporal.PlainDate` where it ships |
+| 09:00 every Monday in New York | Luxon, date-fns + `@date-fns/tz`, or `Temporal.ZonedDateTime` |
+| Durations, intervals, many input formats | Luxon or Temporal |
+| A new project | anything here except Moment |
+
+Whatever you pick, the rules from this track don't change: store instants in UTC, keep
+calendar dates as date-only values, name the zone wherever a person's wall clock matters, and
+run the tests in a zone that isn't UTC.

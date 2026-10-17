@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 3,
+  "slug": "timers",
+  "title": "Timers in depth: setTimeout and setInterval",
+  "skills": ["async", "timers"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Explain why a timer's delay is only a minimum: a busy thread, nested-timeout clamping, background-tab throttling, and the 2³¹−1 ms overflow that fires early",
+    "Choose a recursive `setTimeout` over `setInterval` for async or slow work, and compute clocks from `Date.now()` instead of counting ticks",
+    "Write a polling loop that never overlaps, survives a failed poll and stops cleanly, even mid-request",
+    "Type and call timers correctly in both hosts: `ReturnType<typeof setTimeout>`, extra arguments, `this`, and Node's `unref()`"
+  ],
+  "sources": [
+    { "title": "MDN: setTimeout()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/setTimeout" },
+    { "title": "MDN: setInterval()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/setInterval" },
+    { "title": "MDN: clearTimeout()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/clearTimeout" },
+    { "title": "HTML Standard: Timers", "url": "https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timers" },
+    { "title": "Node.js API: Timers", "url": "https://nodejs.org/api/timers.html" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-timers", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-timers",
+      "questions": [
+        {
+          "id": "busy-thread",
+          "prompt": "`setTimeout(cb, 10)` is scheduled, then the same task does 50 ms of synchronous work. When does `cb` run?",
+          "options": [
+            { "id": "after-work", "text": "Shortly after the 50 ms of work ends: its task can't run until the thread is free" },
+            { "id": "at-10", "text": "At 10 ms, pausing the synchronous work while it runs" },
+            { "id": "at-60", "text": "At about 60 ms: the 10 ms countdown only starts once the thread is free" },
+            { "id": "dropped", "text": "Never: it expired while the thread was busy, so it's discarded" }
+          ],
+          "answer": "after-work",
+          "explanation": "The countdown starts when `setTimeout` is called and runs in the background, so the timer **expires** at 10 ms. Expiring only queues a task, though, and nothing can interrupt running code (run-to-completion). The task runs as soon as the thread frees up, just after 50 ms. It isn't dropped, and it doesn't wait another 10 ms: the delay is a minimum measured from scheduling, not from when the thread becomes idle."
+        },
+        {
+          "id": "nested-clamp",
+          "prompt": "In a browser, an animation advances one step per `setTimeout(step, 0)`, with each step scheduling the next. The steps themselves take almost no time. Roughly how long do 1,000 steps take?",
+          "options": [
+            { "id": "four-seconds", "text": "About 4 s: after five levels of nesting, browsers raise any delay under 4 ms to 4 ms" },
+            { "id": "instant", "text": "A few milliseconds: a 0 ms delay means the steps run back to back" },
+            { "id": "one-second", "text": "About 1 s: every timer is rounded up to at least 1 ms" },
+            { "id": "sixteen-seconds", "text": "About 16 s: timers wait for the next frame, one per 16.7 ms" }
+          ],
+          "answer": "four-seconds",
+          "explanation": "The HTML spec: \"after five such nested timers, however, the interval is forced to be at least four milliseconds.\" A timer scheduled from inside a timer callback counts as nested, so all but the first few steps cost at least 4 ms: about 4 s for 1,000. The 1 ms floor is Node's rule, and Node has no 4 ms nesting clamp. Timers aren't tied to frames. For per-frame animation use `requestAnimationFrame`. For chunked work, do more per step."
+        },
+        {
+          "id": "interval-overlap",
+          "prompt": "A dashboard polls with `setInterval(async () => render(await fetchStatus()), 1000)`. The API slows to 3 s per response. What happens?",
+          "options": [
+            { "id": "pile-up", "text": "About three requests are in flight at once, and an older response can render over a newer one" },
+            { "id": "waits", "text": "`setInterval` waits for the async callback's promise before starting the next tick" },
+            { "id": "skips", "text": "The browser skips ticks while the previous callback's promise is pending" },
+            { "id": "cancels", "text": "Each tick cancels the previous tick's request, so only the latest one survives" }
+          ],
+          "answer": "pile-up",
+          "explanation": "`setInterval` knows nothing about promises. The callback returns as soon as it hits `await`, so the interval's job is done and the next tick fires a second later regardless. With 3 s responses, three overlap. Responses can arrive in any order, so a stale status can overwrite a fresh one. Nothing is skipped or cancelled automatically. A recursive `setTimeout`, scheduled after `await` finishes, makes overlap impossible."
+        },
+        {
+          "id": "countdown-drift",
+          "prompt": "A checkout timer does `secondsLeft -= 1` inside `setInterval(…, 1000)`. After the user spends 10 minutes in another tab, it shows far too much time left. Best fix?",
+          "options": [
+            { "id": "from-deadline", "text": "Store the deadline once and render `Math.ceil((deadline - Date.now()) / 1000)` on each tick" },
+            { "id": "recursive", "text": "Switch to a recursive `setTimeout`, which keeps an accurate beat" },
+            { "id": "compensate", "text": "Use a 990 ms interval to make up for the lateness" },
+            { "id": "raf", "text": "Drive it with `requestAnimationFrame`, which keeps running in background tabs" }
+          ],
+          "answer": "from-deadline",
+          "explanation": "Every tick can be late, and background tabs are throttled to roughly once a second or (Chrome's intensive throttling, since Chrome 88) once a minute. Counting ticks therefore loses time. Reading the clock on each tick is correct whenever the tick runs. A recursive `setTimeout` is no more punctual, a fudge factor can't fix unbounded lateness, and `requestAnimationFrame` is the worst choice: it doesn't run at all in hidden tabs."
+        },
+        {
+          "id": "stop-mid-request",
+          "prompt": "A recursive-`setTimeout` poller's `stop()` only calls `clearTimeout(timer)`. The user clicks Stop while a request is in flight. What happens?",
+          "options": [
+            { "id": "keeps-going", "text": "The request finishes, the loop schedules a fresh timer, and polling carries on as if `stop()` never happened" },
+            { "id": "cancels-await", "text": "Nothing else runs: `clearTimeout` also cancels the pending `await`" },
+            { "id": "throws", "text": "`clearTimeout` throws, because that timer has already fired" },
+            { "id": "drops-last", "text": "Polling stops, and the in-flight response is discarded" }
+          ],
+          "answer": "keeps-going",
+          "explanation": "While a request is in flight there's no pending timer: the one that started this poll has already fired, and the next isn't scheduled until the `await` finishes. So `clearTimeout` clears a stale handle (a silent no-op, it never throws) and has no effect on the promise. When the request resolves, the loop schedules the next poll. `stop()` needs a `stopped` flag that the loop checks after the `await`, as well as `clearTimeout` for the waiting state."
+        },
+        {
+          "id": "handle-type",
+          "prompt": "In a Next.js project (the DOM lib plus `@types/node`), `const timer: number = setTimeout(save, 500)` doesn't compile. Which fix is right in both the browser and Node?",
+          "options": [
+            { "id": "return-type", "text": "`const timer: ReturnType<typeof setTimeout> = setTimeout(save, 500)`" },
+            { "id": "node-timeout", "text": "`const timer: NodeJS.Timeout = setTimeout(save, 500)`" },
+            { "id": "window", "text": "`const timer: number = window.setTimeout(save, 500)` everywhere" },
+            { "id": "cast", "text": "`const timer = setTimeout(save, 500) as unknown as number`" }
+          ],
+          "answer": "return-type",
+          "explanation": "With `@types/node` loaded, the global `setTimeout` is typed with Node's signature and returns `Timeout`. `ReturnType<typeof setTimeout>` reads whatever the loaded declarations say, so the same code compiles whichever ones a project loads. `NodeJS.Timeout` compiles here too (it's what `ReturnType` resolves to with `@types/node` loaded), but it hard-codes Node's type: the file stops compiling in a project with only the DOM lib, where the handle is a `number`. `window.setTimeout` throws a `ReferenceError` when the same code runs on the server. The cast just hides the mismatch."
+        },
+        {
+          "id": "unref-cli",
+          "prompt": "A Node CLI finishes its work but never exits. The only thing still pending is `setInterval(flushMetrics, 10_000)`. What's the smallest correct fix?",
+          "options": [
+            { "id": "unref", "text": "Call `.unref()` on the interval's handle so it doesn't keep the process alive" },
+            { "id": "exit", "text": "Call `process.exit()` as the CLI's last line" },
+            { "id": "timeout", "text": "Use `setTimeout` instead of `setInterval`" },
+            { "id": "microtask", "text": "Schedule `flushMetrics` with `queueMicrotask` instead" }
+          ],
+          "answer": "unref",
+          "explanation": "A pending, ref'd timer keeps Node's event loop alive. That's the point of a timer, and the bug for a housekeeping job. `unref()` says \"don't wait for this one\": the process exits when real work is done, and the interval still runs while it's alive. `process.exit()` can cut off pending writes. A `setTimeout` still holds the process open until it fires, and a microtask runs once, immediately, which isn't a periodic flush."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-timers",
+      "prompts": [
+        {
+          "id": "poll-tick",
+          "prompt": "Finish the poller's loop: bail out if `stop()` ran during the `await`, then schedule the next poll only now that this one has finished.",
+          "code": [
+            "const tick = async () => {",
+            "  try {",
+            "    await task();",
+            "  } catch (error) {",
+            "    onError(error);",
+            "  }",
+            "  if (___) return;",
+            "  timer = ___(tick, intervalMs);",
+            "};"
+          ],
+          "blanks": [
+            { "id": "p1", "accept": ["stopped"] },
+            { "id": "p2", "accept": ["setTimeout", "window.setTimeout", "globalThis.setTimeout"] }
+          ],
+          "explanation": "The flag covers the moment `stop()` can't reach with `clearTimeout`: a poll in flight, with no timer pending yet. Scheduling **after** the `try`/`catch` means a failed poll is reported and the loop still continues. Inside the `try`, a rejection would skip the scheduling line and polling would silently end."
+        },
+        {
+          "id": "portable-handle",
+          "prompt": "Type the handle so the same file compiles whether `setTimeout` returns a number (browsers) or a `Timeout` object (Node).",
+          "code": "let timer: ___<typeof setTimeout> | undefined;",
+          "blanks": [
+            { "id": "h1", "accept": ["ReturnType"] }
+          ],
+          "explanation": "`ReturnType<typeof setTimeout>` asks TypeScript what the loaded `setTimeout` declaration returns, instead of guessing. With `@types/node` that's `NodeJS.Timeout`; with only the DOM lib it's `number`."
+        },
+        {
+          "id": "bind-method",
+          "prompt": "Call `counter.increment` in one second with `this` still bound to `counter`, without writing an arrow function.",
+          "code": "setTimeout(counter.increment.___(counter), 1000);",
+          "blanks": [
+            { "id": "b1", "accept": ["bind"] }
+          ],
+          "explanation": "A timer calls its callback as a plain function, so a bare `counter.increment` runs with `this` set to `globalThis` (browsers) or the `Timeout` object (Node). `bind` returns a function with `this` fixed. `() => counter.increment()` is the equally good alternative."
+        },
+        {
+          "id": "max-delay",
+          "prompt": "The largest delay a timer honours, in milliseconds (about 24.8 days). Go past it and the delay overflows: a 30-day timer fires almost at once.",
+          "code": "const MAX_DELAY = 2 ** ___ - 1;",
+          "blanks": [
+            { "id": "m1", "accept": ["31"] }
+          ],
+          "explanation": "The delay is converted to a signed 32-bit integer, so the ceiling is 2,147,483,647 ms. In browsers a value just past it (30 days, say) wraps to a negative number, which counts as 0; far larger values wrap around to some other, shorter delay (MDN: `2 ** 32 + 5000` fires after about 5 s). Node sets any oversized delay to 1 ms and prints a `TimeoutOverflowWarning`. For waits of days, store the deadline and check it, rather than holding a timer."
+        },
+        {
+          "id": "unref-sweep",
+          "prompt": "In Node, run a cache sweep every minute without the sweep alone keeping the process alive.",
+          "code": [
+            "const sweep = setInterval(evictExpired, 60_000);",
+            "sweep.___();"
+          ],
+          "blanks": [
+            { "id": "u1", "accept": ["unref"] }
+          ],
+          "explanation": "`unref()` tells Node not to keep the event loop running for this timer. If nothing else is pending, the process exits, and the sweep keeps running for as long as the process is alive. It's a Node `Timeout` method: browser timer ids are plain numbers with no methods."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-timers",
+      "snippets": [
+        {
+          "id": "thirty-day-reminder",
+          "code": [
+            "const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000; // 2,592,000,000 ms",
+            "",
+            "setTimeout(() => console.log(\"reminder sent\"), THIRTY_DAYS);",
+            "setTimeout(() => console.log(\"100 ms passed\"), 100);",
+            "console.log(\"scheduled\");"
+          ],
+          "question": "What is logged, in order, in the first second? (Same in browsers and Node.)",
+          "answer": "scheduled, reminder sent, 100 ms passed",
+          "acceptable": ["scheduled reminder sent 100 ms passed"],
+          "explanation": "2,592,000,000 ms is more than the 32-bit maximum of 2,147,483,647 ms (about 24.8 days). Browsers wrap it to a negative number, treated as 0. Node sets it to 1 ms and prints a `TimeoutOverflowWarning` to stderr. Either way the \"30-day\" reminder fires almost immediately, before the 100 ms timer. Nothing throws, which is why this ships. Store the deadline and check it instead."
+        },
+        {
+          "id": "var-loop-vs-argument",
+          "code": [
+            "for (var i = 0; i < 3; i++) {",
+            "  setTimeout(() => console.log(\"closure\", i), 0);",
+            "}",
+            "for (var j = 0; j < 3; j++) {",
+            "  setTimeout((n) => console.log(\"argument\", n), 0, j);",
+            "}"
+          ],
+          "question": "What is logged?",
+          "answer": "closure 3, closure 3, closure 3, argument 0, argument 1, argument 2",
+          "acceptable": ["3 3 3 then 0 1 2", "closure 3 ×3, argument 0 1 2"],
+          "explanation": "The timers fire after both loops have finished. The first three callbacks share one `var i`, which is 3 by then. The second loop passes `j` as an extra argument to `setTimeout`, and arguments are evaluated when you **schedule**, so each callback gets its own value. (`let i` would also give 0, 1, 2, because `let` creates a new binding per iteration.)"
+        },
+        {
+          "id": "method-loses-this",
+          "code": [
+            "class Counter {",
+            "  count = 0;",
+            "  increment() {",
+            "    this.count += 1;",
+            "  }",
+            "}",
+            "",
+            "const counter = new Counter();",
+            "setTimeout(counter.increment, 0);",
+            "setTimeout(() => counter.increment(), 0);",
+            "setTimeout(() => console.log(counter.count), 10);"
+          ],
+          "question": "What is logged, and does anything throw?",
+          "answer": "1, and nothing throws",
+          "acceptable": ["1", "1 (no error)"],
+          "explanation": "`setTimeout(counter.increment, 0)` passes the function without its object. The timer calls it with `this` set to `globalThis` in a browser, or to the `Timeout` object in Node. `this.count += 1` then quietly writes `NaN` onto that object, so no error, and `counter` is untouched. Only the arrow-function version increments `counter`. Silent is worse than a crash: wrap the call in an arrow or `bind` the method."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-polling-loop",
+      "challengeSlug": "polling-loop-stops-cleanly"
+    }
+  ]
+}

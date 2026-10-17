@@ -1,0 +1,66 @@
+---
+id: production-traps
+title: The prefix trap, Feb 30, and times that never happen
+---
+
+## A date-only string compared with an ISO instant
+
+Strings compare character by character, and a string that is a prefix of another sorts first:
+
+```js
+"2026-03-10" < "2026-03-10T00:00:00.000Z";  // true
+"2026-03-10" >= "2026-03-10T05:00:00.000Z"; // false: ">=" drops its own day
+```
+
+So `tasks.filter((t) => t.due >= new Date().toISOString())`, meant as "due today or later",
+silently drops everything due today, and `due < now.toISOString()` marks every task overdue on
+its own due date. The same bug happens in a database query that compares a text date column
+with an ISO timestamp. Compare like with like: two date-only strings (which do sort
+chronologically), or two instants. For "overdue", that means today's date **in the user's zone**:
+
+```js
+const overdue = dateInZone(new Date(), user.timeZone) > task.due; // both "YYYY-MM-DD"
+```
+
+`dateInZone` is the `formatToParts` helper from the parsing unit. Slicing `toISOString()` instead
+gives today in UTC, which for a user in Los Angeles is already tomorrow from 5 p.m. (4 p.m. in
+winter).
+
+## A regex isn't a calendar
+
+`/^\d{4}-\d{2}-\d{2}$/` checks the shape. It accepts `"2026-02-30"`, and so does every step after
+it: `Date.UTC(2026, 1, 30)` rolls over to March 2, and V8's `new Date("2026-02-30")` does the same.
+Build the date, then check that what you asked for is what you got:
+
+```js
+const [y, m, d] = value.split("-").map(Number);
+const date = new Date(Date.UTC(y, m - 1, d));
+const real =
+  date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+```
+
+Reject at the boundary with a `RangeError`, so `"2026-02-30"` can't become a due date of March 2
+that nobody entered.
+
+## Local times that never happen, or happen twice
+
+On a spring-forward day, local times in the gap don't exist; on a fall-back day, an hour
+happens twice. `Date` doesn't fail on either. The spec reads a skipped time with the offset
+from before the change, and picks the earlier of two repeated times:
+
+```js
+// machine in America/New_York
+new Date(2026, 2, 8, 2, 30);  // 03:30 EDT: 2:30 a.m. didn't happen on March 8
+new Date(2026, 10, 1, 1, 30); // 01:30 EDT, the first of the two 1:30s (05:30 UTC)
+```
+
+A reminder scheduled for "2:30 a.m. local" quietly fires at 3:30 once a year. Store the wall
+time and zone, and decide explicitly what a skipped or repeated time should mean.
+
+<!--more-->
+
+Two more edges of the UTC approach. `Date.UTC` maps years 0–99 to 1900–1999, so the round-trip
+check rejects `"0026-01-01"`; fine for due dates, and `setUTCFullYear` handles real early years.
+And "due within 30 days" (a day count) and "due by the 1st of next month" (a calendar anchor) are
+different rules that agree most of the year: write the rule the business actually means, and
+test the 31st, February, and both DST weekends.

@@ -1,0 +1,53 @@
+---
+id: tasks-and-microtasks
+title: Two kinds of "later" — tasks and microtasks
+---
+
+There isn't one queue, there are two kinds, and they have different priority.
+
+| Kind | Who queues it |
+| --- | --- |
+| **Task** (often called a _macrotask_) | `setTimeout`/`setInterval` firing, a click or key event, a network or I/O callback, `postMessage` |
+| **Microtask** | a promise's `.then`/`.catch`/`.finally` callback, the rest of an `async` function after `await`, `queueMicrotask(fn)` |
+
+One turn of the event loop:
+
+1. Run **one task** to completion.
+2. Run **every microtask** in the microtask queue, including any queued while doing this,
+   until it's empty.
+3. If it's time, let the browser **render** (style, layout, paint).
+4. Go back to 1.
+
+So microtasks always jump ahead of the next task. That one rule explains most ordering puzzles:
+
+```js
+console.log("A");
+setTimeout(() => console.log("B"), 0);          // task
+Promise.resolve().then(() => console.log("C")); // microtask
+queueMicrotask(() => console.log("D"));         // microtask
+console.log("E");
+// A, E, C, D, B
+```
+
+- `A` and `E` are synchronous: they run now, as part of the current task (the script itself).
+- When the script finishes, the stack is empty, so the microtask queue drains: `C`, then `D`,
+  in the order they were queued.
+- Only then can the event loop take the next task: the timer, `B`.
+
+A delay of `0` doesn't promote a timer to a microtask. `setTimeout(fn, 0)` is still a task, and
+every pending microtask runs before it.
+
+<!--more-->
+
+### Where does `await` fit?
+
+`await x` pauses the async function and schedules the rest of it as a microtask for when `x`
+settles. It does this even when `x` is already resolved, or isn't a promise at all:
+`await null` still lets the caller carry on first. The next reading walks through exactly that.
+
+### Step 3 in the spec
+
+The current HTML Standard queues the rendering update as a task of its own (on a "rendering task
+source") whenever a rendering opportunity comes up. The rule you can observe is the same: the
+browser renders between tasks, after the microtask queue has drained, and never in the middle of
+a task.

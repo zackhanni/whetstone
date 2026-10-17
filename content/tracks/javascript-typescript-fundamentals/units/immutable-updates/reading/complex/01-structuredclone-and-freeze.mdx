@@ -1,0 +1,65 @@
+---
+id: structuredclone-and-freeze
+title: structuredClone and Object.freeze — what they really do
+---
+
+## `structuredClone`: a real deep copy, with limits
+
+`structuredClone(value)` (in every major browser since 2022, Node 17+) copies every level. Unlike
+the old `JSON.parse(JSON.stringify(x))` trick, it keeps `Date`, `Map`, `Set`, `RegExp`, typed
+arrays and `undefined` values, and handles circular references. It isn't magic, though. MDN's list
+of what the structured clone algorithm can't do:
+
+- **Functions throw.** An object holding a callback fails with a `DataCloneError` — the whole
+  call, not just that property.
+- **DOM nodes throw**, the same way.
+- **The prototype chain is not copied.** A class instance comes back as a plain object with its
+  fields and none of its methods: `structuredClone(new Money(250))` is `{ cents: 250 }`, and
+  `copy instanceof Money` is `false`.
+- **Getters, setters and property descriptors are not copied**: a getter is read once and stored
+  as a plain value; a read-only property comes back writable. Class private fields (`#x`) are
+  dropped.
+
+```js
+const copy = structuredClone({ at: new Date(0), price: new Money(250) });
+copy.at instanceof Date;    // true
+copy.price instanceof Money; // false — methods gone
+
+structuredClone({ onSave: () => {} }); // DataCloneError
+```
+
+## Deep copying is usually the wrong fix for a state update
+
+It's tempting to `structuredClone(state)`, mutate the clone freely, and return it. It works, but
+it gives **every** object in the state a new identity, changed or not. Every `memo` child sees new
+props, every selector returns a "new" value, every effect that depends on a slice re-runs. The
+targeted update — copy the changed path, reuse the rest — is what lets everything else skip work.
+Use `structuredClone` when you need an independent snapshot (a form draft, an undo history entry,
+data handed to code you don't trust), not as the default way to update.
+
+## `Object.freeze` is shallow, and returns the same object
+
+`Object.freeze(obj)` makes `obj`'s own properties read-only and stops new ones being added. It
+freezes **that one object**: nested objects stay writable. And it returns the same object, not a
+frozen copy.
+
+```js
+const config = Object.freeze({ retries: 3, api: { timeout: 1000 } });
+config.retries = 5;        // TypeError in strict mode; silently ignored otherwise
+config.api.timeout = 9999; // works — api itself isn't frozen
+```
+
+ES modules and class bodies are always strict, so in modern code the first line throws. Array
+methods throw on a frozen array in any mode: `Object.freeze([3, 1, 2]).sort()` is a `TypeError`,
+while `.toSorted()` works.
+
+<!--more-->
+
+A deep freeze (MDN shows a recursive `deepFreeze`) is a cheap way to *catch* mutation in tests:
+freeze the state you pass to a reducer, and any accidental write throws at the line that does it.
+Don't ship it as the protection — it costs a walk of the whole tree.
+
+TypeScript's `readonly`, `Readonly<T>` and `ReadonlyArray<T>` are the compile-time version: they
+reject `state.todos.push(x)` and `state.count = 1` while you type, and are erased at runtime.
+`Readonly<T>` is shallow too — `Readonly<State>` still allows `state.user.name = "x"` unless the
+nested types are also readonly.

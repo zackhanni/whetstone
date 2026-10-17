@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 3,
+  "slug": "narrowing-and-unions",
+  "title": "Narrowing, unions, and why not enums",
+  "skills": ["typescript", "narrowing", "enums"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Narrow a union with `typeof`, `in`, `instanceof` and equality checks, including the `typeof null === \"object\"` trap",
+    "Write a type guard for `unknown` data, and explain that TypeScript trusts a predicate without checking it",
+    "Model states as a discriminated union, with a `never` check that turns a newly added case into a compile error",
+    "Choose a union or an `as const` object (checked with `satisfies`) over an `enum`, citing enums' runtime objects, `isolatedModules`, TS 5.8 `erasableSyntaxOnly` and Node type stripping"
+  ],
+  "sources": [
+    { "title": "TypeScript Handbook: Narrowing", "url": "https://www.typescriptlang.org/docs/handbook/2/narrowing.html" },
+    { "title": "TypeScript Handbook: Enums", "url": "https://www.typescriptlang.org/docs/handbook/enums.html" },
+    { "title": "TSConfig reference: isolatedModules", "url": "https://www.typescriptlang.org/tsconfig/#isolatedModules" },
+    { "title": "TypeScript 5.8 release notes: --erasableSyntaxOnly", "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-8.html" },
+    { "title": "TypeScript 4.9 release notes: satisfies, and in narrowing", "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-9.html" },
+    { "title": "TypeScript 5.0 release notes: all enums are union enums", "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-0.html" },
+    { "title": "Node.js docs: Modules — TypeScript (type stripping)", "url": "https://nodejs.org/api/typescript.html" }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-narrowing",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-narrowing",
+      "questions": [
+        {
+          "id": "typeof-null",
+          "prompt": "`if (typeof value === \"object\") return Object.keys(value);` — written in plain JavaScript, which input still crashes it?",
+          "options": [
+            { "id": "null", "text": "`null`" },
+            { "id": "array", "text": "`[]`" },
+            { "id": "date", "text": "`new Date()`" },
+            { "id": "string", "text": "`\"text\"`" }
+          ],
+          "answer": "null",
+          "explanation": "`typeof null` is `\"object\"` — a historical accident JavaScript keeps for compatibility — so `null` enters the branch and `Object.keys(null)` throws. Arrays and dates are objects and work (`[]` gives `[]`); a string never enters the branch. In TypeScript the narrowed type is `object | null`, which is why the compiler rejects this line until you add `value !== null`."
+        },
+        {
+          "id": "catch-unknown",
+          "prompt": "Under `strict`, `catch (err)` gives `err: unknown`. Which check lets you read `err.message` safely?",
+          "options": [
+            { "id": "instanceof", "text": "`if (err instanceof Error)`" },
+            { "id": "typeof-error", "text": "`if (typeof err === \"Error\")`" },
+            { "id": "in-message", "text": "`if (\"message\" in err)`" },
+            { "id": "cast", "text": "`const e = err as Error;`" }
+          ],
+          "answer": "instanceof",
+          "explanation": "`instanceof` narrows to the class, and it's a real runtime check. `typeof` only ever returns primitive type names plus `\"object\"` and `\"function\"`, so `\"Error\"` never matches (TypeScript flags the comparison). `in` doesn't compile on `unknown`, and at runtime it throws a `TypeError` when someone throws a string. A cast checks nothing — a thrown string has no `message`."
+        },
+        {
+          "id": "predicate-trusted",
+          "prompt": "What does TypeScript verify about `function isUser(x: unknown): x is User { return true; }`?",
+          "options": [
+            { "id": "boolean-only", "text": "Only that it returns a boolean — every caller will narrow to `User`, whatever the body checks" },
+            { "id": "properties", "text": "That the body tests every property of `User`" },
+            { "id": "runtime", "text": "It generates runtime validation from the `User` type" },
+            { "id": "error", "text": "It's a compile error: a type guard must check something" }
+          ],
+          "answer": "boolean-only",
+          "explanation": "A type predicate is an assertion you make, like `as`: TypeScript trusts it and narrows at every call site. Types are erased, so nothing is generated at runtime either. A guard that checks too little (one key, not its type) makes bad data look typed — test guards like any other code, or derive the type from a schema library's check."
+        },
+        {
+          "id": "discriminated-model",
+          "prompt": "Which type makes \"loading **and** failed at the same time\" impossible to represent?",
+          "options": [
+            { "id": "union", "text": "`{ status: \"loading\" } | { status: \"success\"; data: Order[] } | { status: \"error\"; error: string }`" },
+            { "id": "bag", "text": "`{ loading: boolean; data?: Order[]; error?: string }`" },
+            { "id": "string-status", "text": "`{ status: string; data?: Order[]; error?: string }`" },
+            { "id": "flags", "text": "`{ isLoading: boolean; isError: boolean; data: Order[] | null }`" }
+          ],
+          "answer": "union",
+          "explanation": "A discriminated union lists the states that exist, each with its own fields, so `data` exists only on success and `error` only on error. The bag of optionals allows `{ loading: true, error: \"…\" }`; a free-form `status: string` can't be narrowed at all; and two booleans give four combinations for three states. Checking `state.status` narrows to exactly one member."
+        },
+        {
+          "id": "never-check",
+          "prompt": "You add `{ kind: \"refunded\" }` to the `Payment` union. What does `const unhandled: never = payment;` in a switch's `default` branch do?",
+          "options": [
+            { "id": "compile-error", "text": "Every switch that doesn't handle `\"refunded\"` stops compiling, at that line" },
+            { "id": "runtime-throw", "text": "Throws at runtime when a refunded payment reaches the `default`" },
+            { "id": "nothing", "text": "Nothing — `never` accepts any value" },
+            { "id": "autofix", "text": "TypeScript generates the missing `case` for you" }
+          ],
+          "answer": "compile-error",
+          "explanation": "When every member is handled, the narrowed type in `default` is `never`, so the assignment compiles. An unhandled member is left over, and it isn't assignable to `never`: `Type '{ kind: \"refunded\" }' is not assignable to type 'never'`. The assignment itself does nothing at runtime — add a `throw` after it for data that slips past the types. And it's the other way round: nothing is assignable *to* `never`."
+        },
+        {
+          "id": "enum-erasable",
+          "prompt": "Your team starts running `.ts` files directly with Node's built-in type stripping and turns on TS 5.8's `erasableSyntaxOnly`. Which declaration has to change?",
+          "options": [
+            { "id": "enum", "text": "`enum Role { Admin = \"admin\", Viewer = \"viewer\" }`" },
+            { "id": "union", "text": "`type Role = \"admin\" | \"viewer\";`" },
+            { "id": "as-const", "text": "`const Role = { Admin: \"admin\", Viewer: \"viewer\" } as const;`" },
+            { "id": "interface", "text": "`interface User { role: Role }`" }
+          ],
+          "answer": "enum",
+          "explanation": "Type stripping runs TypeScript by deleting the types — but an `enum` isn't only a type, it compiles to a runtime object, so it can't be deleted. Node rejects the file (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`), and `erasableSyntaxOnly` reports the same thing at compile time. Type aliases and interfaces are erased; an `as const` object is plain JavaScript plus an erasable assertion."
+        },
+        {
+          "id": "ambient-const-enum",
+          "prompt": "A library's `.d.ts` declares `export declare const enum Level { Low = 1, High = 2 }`. In your app, with `isolatedModules` on, you write `Level.Low`. What happens?",
+          "options": [
+            { "id": "error", "text": "Compile error: `Cannot access ambient const enums when 'isolatedModules' is enabled`" },
+            { "id": "inlined", "text": "It compiles, and `Level.Low` is inlined as `1`" },
+            { "id": "object", "text": "It compiles to a property read on the library's `Level` object" },
+            { "id": "runtime", "text": "It compiles, then throws at runtime because `Level` is undefined" }
+          ],
+          "answer": "error",
+          "explanation": "Inlining a `const enum` needs its values, and under `isolatedModules` each file must be compilable alone — a single-file transpiler can't read another package's `.d.ts`. So TypeScript makes it an error to reference an ambient const enum. Without `isolatedModules`, `tsc` would inline `1` — and could inline a value from a different version of the library than the one that runs, which is one of the handbook's const-enum pitfalls."
+        },
+        {
+          "id": "satisfies-keeps-type",
+          "prompt": "`const routes: Record<string, string | ((id: string) => string)> = { home: \"/\", user: (id: string) => \"/u/\" + id };` — then `routes.user(\"7\")` fails to compile. What fixes it while still checking the object?",
+          "options": [
+            { "id": "satisfies", "text": "Replace the annotation with `{ … } satisfies Record<string, string | ((id: string) => string)>`" },
+            { "id": "as", "text": "Replace the annotation with `{ … } as Record<string, string | ((id: string) => string)>`" },
+            { "id": "bang", "text": "Call it as `routes.user!(\"7\")`" },
+            { "id": "as-const", "text": "Add `as const` and keep the annotation" }
+          ],
+          "answer": "satisfies",
+          "explanation": "An annotation checks the value and then *replaces* its type, so `routes.user` becomes `string | function`, which isn't callable. `satisfies` (TS 4.9+) checks the same constraint but keeps the inferred type, so `user` stays a function. `as` keeps the same widened type (and checks less). `!` only removes `null`/`undefined`. With the annotation still in place, `as const` changes nothing about the declared type."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-narrowing",
+      "prompts": [
+        {
+          "id": "typeof-narrow",
+          "prompt": "Narrow `input: string | number` to a string before calling a string method.",
+          "code": "if (typeof input === ___) return input.trim();",
+          "blanks": [{ "id": "t1", "accept": ["\"string\""] }],
+          "explanation": "`typeof` returns a type-name string at runtime, and TypeScript narrows on the comparison. Inside the `if`, `input` is `string`; after it returns, the rest of the function sees `number`."
+        },
+        {
+          "id": "object-guard",
+          "prompt": "Write a type guard for `unknown` input: rule out `null`, then prove `id` exists and is a string.",
+          "code": [
+            "function isOrder(x: unknown): x ___ Order {",
+            "  return typeof x === \"object\" && x ___ null && \"id\" in x && typeof x.id === \"string\";",
+            "}"
+          ],
+          "blanks": [
+            { "id": "g1", "accept": ["is"] },
+            { "id": "g2", "accept": ["!==", "!="] }
+          ],
+          "explanation": "`x is Order` is the type predicate that makes callers narrow. `typeof null` is `\"object\"`, so `x !== null` is required before `in`, which throws on `null` at runtime. (A real guard checks every field it promises — TypeScript won't.)"
+        },
+        {
+          "id": "never-default",
+          "prompt": "Make the `default` branch a compile error whenever a `Shape` member isn't handled — and a loud failure at runtime.",
+          "code": [
+            "default: {",
+            "  const unhandled: ___ = shape;",
+            "  ___ new Error(`Unhandled shape: ${JSON.stringify(unhandled)}`);",
+            "}"
+          ],
+          "blanks": [
+            { "id": "n1", "accept": ["never"] },
+            { "id": "n2", "accept": ["throw"] }
+          ],
+          "explanation": "If every member was handled, `shape` is `never` here and the assignment compiles; a new member makes it an error at this line. The `throw` covers what the types can't: values from outside that carry a `kind` the code has never seen."
+        },
+        {
+          "id": "as-const-union",
+          "prompt": "Declare the roles once, as a readonly tuple of literals, and derive the union type from it.",
+          "code": [
+            "const ROLES = [\"admin\", \"editor\", \"viewer\"] as ___;",
+            "type Role = (typeof ROLES)[___];"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["const"] },
+            { "id": "c2", "accept": ["number"] }
+          ],
+          "explanation": "`as const` keeps each element's literal type (otherwise the array is `string[]`). Indexing the tuple type with `number` gives the union of its element types: `\"admin\" | \"editor\" | \"viewer\"`. The array still exists at runtime for dropdowns and validation; no enum needed."
+        },
+        {
+          "id": "satisfies-table",
+          "prompt": "Check that the label map covers every `Status` key (here `\"open\" | \"shipped\"`) while the object keeps its own inferred type, instead of taking a declared one.",
+          "code": "const LABELS = { open: \"Open\", shipped: \"Shipped\" } ___ Record<Status, string>;",
+          "blanks": [{ "id": "s1", "accept": ["satisfies", "as const satisfies"] }],
+          "explanation": "`satisfies` (TS 4.9+) reports a missing or misspelled key — so adding a member to `Status` breaks every map that lacks it — while the object keeps its own inferred type rather than the checked one. The string values still widen to `string`; `as const satisfies` keeps them as readonly literals."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-narrowing",
+      "snippets": [
+        {
+          "id": "enum-keys",
+          "code": [
+            "enum Direction { Up, Down }",
+            "console.log(Object.keys(Direction));"
+          ],
+          "question": "What is logged?",
+          "answer": "[\"0\", \"1\", \"Up\", \"Down\"]",
+          "acceptable": ["['0', '1', 'Up', 'Down']", "0, 1, Up, Down"],
+          "explanation": "An enum is a real object at runtime, and a numeric enum stores both directions: `Direction.Up === 0` and `Direction[0] === \"Up\"`. So it has four keys, and integer-like keys come first. Code that loops over an enum to build a dropdown shows `0` and `1` as options. String enums have no reverse mapping; an `as const` object has exactly the keys you wrote."
+        },
+        {
+          "id": "typeof-everything",
+          "code": [
+            "const values = [null, [], {}, \"x\"];",
+            "console.log(values.map((v) => typeof v));"
+          ],
+          "question": "What is logged?",
+          "answer": "[\"object\", \"object\", \"object\", \"string\"]",
+          "acceptable": ["['object', 'object', 'object', 'string']", "object, object, object, string"],
+          "explanation": "`typeof null` is `\"object\"` (a bug from JavaScript's first version, kept for compatibility), and arrays are objects too. So `typeof x === \"object\"` alone admits `null` and arrays. Add `x !== null`, and `!Array.isArray(x)` if arrays aren't welcome."
+        },
+        {
+          "id": "guard-lies",
+          "code": [
+            "type Money = { amount: number; currency: string };",
+            "function isMoney(x: unknown): x is Money {",
+            "  return typeof x === \"object\" && x !== null && \"amount\" in x;",
+            "}",
+            "const body: unknown = JSON.parse('{\"amount\": \"12\", \"currency\": \"EUR\"}');",
+            "if (isMoney(body)) console.log(body.amount + 1);"
+          ],
+          "question": "It compiles under `strict`. What is logged?",
+          "answer": "121",
+          "acceptable": ["\"121\"", "the string 121"],
+          "explanation": "The guard checks that `amount` exists, not that it's a number, and TypeScript believes its `x is Money` claim. So `body.amount` is typed `number` while holding the string `\"12\"`, and `\"12\" + 1` concatenates to `\"121\"`. Add `typeof x.amount === \"number\"` — a guard must prove everything its predicate promises."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-narrowing",
+      "challengeSlug": "narrow-unknown-events"
+    }
+  ]
+}

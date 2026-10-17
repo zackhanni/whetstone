@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 3,
+  "slug": "maps-sets-objects-arrays",
+  "title": "Maps, Sets, objects & arrays: choosing the collection",
+  "skills": ["javascript", "collections"],
+  "difficulty": "intro",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Choose a `Set` or `Map` over `includes`/`find` inside a loop, and explain why a scan per item is n × m work",
+    "Predict key behaviour: object keys become strings and integer-like keys sort first; `Map` keys keep their type and compare by identity",
+    "Spot plain-object dictionary traps — inherited keys like `\"constructor\"`, a `Map` serialising to `{}` — and fix them",
+    "Write the everyday moves: dedupe with `new Set`, index with `new Map(list.map(…))`, count, convert, and group with `Object.groupBy`/`Map.groupBy` (ES2024)"
+  ],
+  "sources": [
+    { "title": "MDN: Map", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map" },
+    { "title": "MDN: Set", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set" },
+    { "title": "V8 blog: Optimizing hash tables (Map and Set use hash tables)", "url": "https://v8.dev/blog/hash-code" },
+    { "title": "MDN: Object.groupBy()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/groupBy" },
+    { "title": "MDN: Map.groupBy()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/groupBy" },
+    { "title": "MDN: JSON.stringify()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify" },
+    { "title": "MDN: for...in (property order)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for...in" },
+    { "title": "MDN: WeakMap", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap" },
+    { "title": "TypeScript 5.7 release notes: --lib es2024", "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-7.html" }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-collections",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-collections",
+      "questions": [
+        {
+          "id": "blocked-ids",
+          "prompt": "For each of 10,000 incoming events you check whether `event.userId` is one of 5,000 blocked ids. What should `blocked` be?",
+          "options": [
+            { "id": "set", "text": "A `Set` built once from the ids, checked with `blocked.has(event.userId)`" },
+            { "id": "array-native", "text": "The array, checked with `includes` — it runs in native code, so it's effectively constant-time" },
+            { "id": "array-sorted", "text": "The array sorted ascending, so `includes` can binary-search it" },
+            { "id": "find-early", "text": "The array, checked with `find` — it stops at the first match, so it's fast" }
+          ],
+          "answer": "set",
+          "explanation": "`Set.has` doesn't scan: the spec requires sublinear access, and MDN notes it is on average faster than `includes` on an array of the same size. `includes` checks elements one by one however fast each check is — native code makes each comparison cheap, not the count smaller. It also has no idea the array is sorted, so sorting buys nothing. And `find` stops early only on a *hit*: most events aren't blocked, so most checks are misses that walk all 5,000 ids."
+        },
+        {
+          "id": "one-check",
+          "prompt": "A signup form checks once per submit that the chosen country code is in a 250-item array. A reviewer asks you to turn the array into a `Set`. Is it worth it?",
+          "options": [
+            { "id": "no-single", "text": "No — one `includes` per submit is a single short scan; the cost shows up only when the scan runs inside a loop" },
+            { "id": "yes-always", "text": "Yes — `includes` is always the wrong choice for membership" },
+            { "id": "yes-build-free", "text": "Yes — building the `Set` is free, so there is no downside" },
+            { "id": "no-set-slower", "text": "No — a `Set` is slower than an array until it holds about a million items" }
+          ],
+          "answer": "no-single",
+          "explanation": "The problem is n × m work: a scan inside a loop over another list. One check of 250 items per submit is nothing. Building a `Set` is itself one pass over the array, so it pays off only when you look things up repeatedly. There is no fixed size where `Set` becomes faster — what matters is how many lookups you do against it."
+        },
+        {
+          "id": "for-in-strings",
+          "prompt": "In plain JavaScript, users are indexed by numeric id in a plain object (`byId[user.id] = user`). Then `for (const id in byId) if (id === selectedId) …` never matches, though `selectedId` is `7` and user 7 is there. Why?",
+          "options": [
+            { "id": "strings", "text": "Object keys are strings: `id` is `\"7\"`, and `\"7\" === 7` is false" },
+            { "id": "skips-numeric", "text": "`for…in` skips numeric keys" },
+            { "id": "values", "text": "`for…in` iterates the values, so `id` is the user object" },
+            { "id": "hidden", "text": "Integer keys are stored in a hidden array, so `for…in` can't see them" }
+          ],
+          "answer": "strings",
+          "explanation": "An object's keys can only be strings or symbols, so `byId[7]` stores under `\"7\"`, and `for…in`, `Object.keys` and `Object.entries` all hand it back as a string. `for…in` does visit integer-like keys — first, in ascending order — and it yields keys, not values (`for…of` is the one that yields values, and plain objects aren't iterable with it). Fix: a `Map<number, User>`, or compare `Number(id)`. (In TypeScript the comparison doesn't compile: `string` and `number` have no overlap.)"
+        },
+        {
+          "id": "object-key-identity",
+          "prompt": "`cache.set({ page: 1 }, rows)`, and later `cache.get({ page: 1 })`, where `cache` is a `Map`. What does the `get` return, and why?",
+          "options": [
+            { "id": "undefined-identity", "text": "`undefined` — object keys match by identity, and this is a different object" },
+            { "id": "rows", "text": "`rows` — the keys have the same contents" },
+            { "id": "undefined-primitive", "text": "`undefined` — a `Map` only accepts primitive keys, so the object key was ignored" },
+            { "id": "throws", "text": "It throws a `TypeError` for an object key" }
+          ],
+          "answer": "undefined-identity",
+          "explanation": "`Map` keys can be any value, objects included, compared with SameValueZero — which for objects means the *same object*. Two literals with equal contents are two objects, so the lookup misses. The \"only primitive keys\" option has the right result for the wrong reason: the object key was stored fine (`cache.get(sameObject)` would work). For content-based keys, key by a string such as `` `page:${n}` `` or by an id."
+        },
+        {
+          "id": "map-through-json",
+          "prompt": "`fetch(url, { method: \"POST\", body: JSON.stringify({ totals }) })`, where `totals` is a `Map` with two entries. What does the server receive?",
+          "options": [
+            { "id": "empty-object", "text": "`{\"totals\":{}}`" },
+            { "id": "pairs", "text": "`{\"totals\":[[\"a\",1],[\"b\",2]]}`" },
+            { "id": "object", "text": "`{\"totals\":{\"a\":1,\"b\":2}}`" },
+            { "id": "throws", "text": "Nothing: `JSON.stringify` throws on a `Map`" }
+          ],
+          "answer": "empty-object",
+          "explanation": "`JSON.stringify` visits only own enumerable properties, and a `Map` keeps its entries elsewhere, so it becomes `{}` — silently, with no error (a `Set` does the same). Convert before sending: `[...totals]` for pairs (keys keep their type) or `Object.fromEntries(totals)` for an object (keys become strings), and rebuild with `new Map(…)` on the way back."
+        },
+        {
+          "id": "constructor-fix",
+          "prompt": "A word counter does `counts[w] = (counts[w] || 0) + 1` on `const counts = {}`. For the word `\"constructor\"` it stores `\"function Object() { [native code] }1\"`. Which change fixes it for **every** possible word?",
+          "options": [
+            { "id": "map", "text": "Count in a `Map`: `counts.set(w, (counts.get(w) ?? 0) + 1)`" },
+            { "id": "nullish", "text": "Replace `|| 0` with `?? 0`" },
+            { "id": "in-check", "text": "Write `w in counts ? counts[w] + 1 : 1`" },
+            { "id": "has-own", "text": "Write `Object.hasOwn(counts, w) ? counts[w] + 1 : 1`, keeping the `{}`" }
+          ],
+          "answer": "map",
+          "explanation": "`{}` inherits `constructor`, `toString` and more from `Object.prototype`, so `counts[\"constructor\"]` starts out as a function. `?? 0` doesn't help (a function isn't nullish), and `in` also sees inherited keys. `Object.hasOwn` fixes `\"constructor\"` but not `\"__proto__\"`: assigning `counts[\"__proto__\"] = 1` hits the prototype setter and is silently dropped. A `Map` has no inherited keys at all (so does `Object.create(null)`, which is what `Object.groupBy` returns)."
+        },
+        {
+          "id": "group-by-choice",
+          "prompt": "You want orders grouped by their `customer` **object** (not its id). Which call, and why?",
+          "options": [
+            { "id": "map-groupby", "text": "`Map.groupBy(orders, (o) => o.customer)` — a `Map` keeps object keys as objects" },
+            { "id": "object-groupby", "text": "`Object.groupBy(orders, (o) => o.customer)` — it compares keys with SameValueZero, like `Map`" },
+            { "id": "either", "text": "Either: `Object.groupBy` is shorthand for `Map.groupBy` plus `Object.fromEntries`" },
+            { "id": "neither", "text": "Neither: both throw when the callback returns an object" }
+          ],
+          "answer": "map-groupby",
+          "explanation": "`Object.groupBy` (ES2024) builds an object, so every key is converted to a string — and every customer object becomes `\"[object Object]\"`, putting all orders in one group. `Map.groupBy` keeps the key as returned. One catch from MDN: to read a group back you need the *same* customer object, so keep the references (or group by `o.customer.id`)."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-collections",
+      "prompts": [
+        {
+          "id": "dedupe",
+          "prompt": "Turn the list of tags into a list with each tag once, keeping first-seen order.",
+          "code": "const uniqueTags = [...new ___(tags)];",
+          "blanks": [{ "id": "d1", "accept": ["Set"] }],
+          "explanation": "A `Set` ignores a value it already holds, and iterates in insertion order — the order each value was *first* added. Spreading it (or `Array.from(set)`) turns it back into an array."
+        },
+        {
+          "id": "index-once",
+          "prompt": "Index customers by id once, then look each order's customer up in constant time on average.",
+          "code": [
+            "const customersById = new Map(customers.map((c) => [c.___, c]));",
+            "const name = customersById.___(order.customerId)?.name;"
+          ],
+          "blanks": [
+            { "id": "i1", "accept": ["id"] },
+            { "id": "i2", "accept": ["get"] }
+          ],
+          "explanation": "`new Map(…)` takes `[key, value]` pairs — here `[c.id, c]`. Building it is one pass over `customers`; after that each order costs one `get` instead of a `find` scan. `get` returns `undefined` for a missing key, which is why the `?.` is there."
+        },
+        {
+          "id": "count",
+          "prompt": "Count how often each word appears, starting from 0 the first time a word is seen.",
+          "code": [
+            "const counts = new Map<string, number>();",
+            "for (const w of words) counts.___(w, (counts.get(w) ___ 0) + 1);"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["set"] },
+            { "id": "c2", "accept": ["??", "||"] }
+          ],
+          "explanation": "`get` returns `undefined` for an unseen word, so fall back to 0 and add one. `??` (only `null`/`undefined` fall back) states the intent; `||` also works here because a stored count is never 0. Unlike a plain object, the `Map` has no inherited `\"constructor\"` entry to trip over."
+        },
+        {
+          "id": "serialize",
+          "prompt": "Save `customersById`, a `Map<number, Customer>`, to `localStorage` and load it back with numeric keys intact.",
+          "code": [
+            "localStorage.setItem(\"customers\", JSON.stringify(___));",
+            "const restored = new ___(JSON.parse(localStorage.getItem(\"customers\") ?? \"[]\"));"
+          ],
+          "blanks": [
+            { "id": "s1", "accept": ["[...customersById]", "Array.from(customersById)", "[...customersById.entries()]", "Array.from(customersById.entries())"] },
+            { "id": "s2", "accept": ["Map"] }
+          ],
+          "explanation": "Stringifying the `Map` itself writes `{}`. An array of `[key, value]` pairs survives JSON, and `new Map(pairs)` rebuilds it. Pairs also keep `7` a number; going through `Object.fromEntries` would bring it back as the string `\"7\"`, and `restored.get(7)` would miss."
+        },
+        {
+          "id": "group-by-object",
+          "prompt": "Group orders by the `customer` object itself, keeping object keys as objects (ES2024).",
+          "code": "const byCustomer = ___.groupBy(orders, (o) => o.customer);",
+          "blanks": [{ "id": "g1", "accept": ["Map"] }],
+          "explanation": "`Map.groupBy` returns a `Map` whose keys are whatever the callback returned. `Object.groupBy` would stringify every customer object to `\"[object Object]\"` and lump all orders into one group. Use `Object.groupBy` when the keys are naturally strings, like a status."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-collections",
+      "snippets": [
+        {
+          "id": "integer-keys-first",
+          "code": [
+            "const priority = { high: 3, 10: \"x\", low: 1, 2: \"y\" };",
+            "console.log(Object.keys(priority));"
+          ],
+          "question": "What is logged?",
+          "answer": "[\"2\", \"10\", \"high\", \"low\"]",
+          "acceptable": ["['2', '10', 'high', 'low']", "2, 10, high, low"],
+          "explanation": "Two surprises. The numeric keys come back as strings, because object keys are strings. And they come first, in ascending numeric order — integer-like keys always precede other string keys, which keep insertion order. That's why an object keyed by id iterates in id order, not the order you inserted. A `Map` iterates in insertion order, whatever the keys."
+        },
+        {
+          "id": "constructor-count",
+          "code": [
+            "const counts = {};",
+            "for (const w of [\"to\", \"constructor\", \"to\"]) {",
+            "  counts[w] = (counts[w] || 0) + 1;",
+            "}",
+            "console.log(counts.to, counts.constructor);"
+          ],
+          "question": "What is logged?",
+          "answer": "2 function Object() { [native code] }1",
+          "acceptable": ["2 and the string \"function Object() { [native code] }1\"", "2, then the Object function's source text with 1 appended"],
+          "explanation": "`counts.to` is 2 as expected. But `counts[\"constructor\"]` is not missing on a fresh `{}` — it is the inherited `Object` function. A function is truthy, so `|| 0` keeps it, and function + 1 converts the function to its source text and concatenates `\"1\"`. Any word that names an `Object.prototype` member (`toString`, `valueOf`, `hasOwnProperty`, …) does the same. Count in a `Map`."
+        },
+        {
+          "id": "map-key-types",
+          "code": [
+            "const m = new Map();",
+            "m.set(1, \"number\").set(\"1\", \"string\").set(NaN, \"nan\");",
+            "console.log(m.size, m.get(1), m.get(NaN), m.get([1]));"
+          ],
+          "question": "What is logged?",
+          "answer": "3 number nan undefined",
+          "acceptable": ["3, \"number\", \"nan\", undefined"],
+          "explanation": "`1` and `\"1\"` are different `Map` keys (an object would have merged them into `\"1\"`), so the size is 3. `get(NaN)` finds its entry even though `NaN !== NaN`, because `Map` uses SameValueZero, which treats `NaN` as equal to itself. `get([1])` misses: the array literal is a new object, and object keys match by identity. (`set` returns the map, which is why the calls chain.)"
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-collections",
+      "challengeSlug": "index-orders-with-maps"
+    }
+  ]
+}

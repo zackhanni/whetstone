@@ -1,0 +1,19 @@
+---
+id: built-ins-first
+title: The built-ins cover most jobs
+---
+
+Before adding a dependency, check what the job actually is:
+
+| Job | Built-in |
+| --- | --- |
+| Store or send an instant | `Date` + `toISOString()` |
+| Show an instant to a person | `Intl.DateTimeFormat` with `timeZone` |
+| "3 days ago" | `Intl.RelativeTimeFormat` (you compute the number) |
+| Date-only math (due dates, birthdays) | ~20 lines of UTC helpers |
+| "Today" for a user | `formatToParts` with their `timeZone` |
+
+A library earns its place when the job is **wall-clock arithmetic in a named zone** (a meeting at
+09:00 New York time every Monday, across DST), durations and intervals ("2 months, 3 days"), or
+parsing many custom formats. `Date` can't do arithmetic in any zone except the machine's and
+UTC, and those are exactly the cases where hand-rolled code goes wrong.

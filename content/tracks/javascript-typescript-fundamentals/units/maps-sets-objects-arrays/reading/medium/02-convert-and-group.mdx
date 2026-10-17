@@ -1,0 +1,52 @@
+---
+id: convert-and-group
+title: Converting between collections, and grouping
+---
+
+Every collection type speaks the same go-between format: an **array of `[key, value]` pairs**.
+`Object.entries` produces it, `map.entries()` (or just spreading the `Map`) produces it, and both
+`new Map(…)` and `Object.fromEntries(…)` accept it.
+
+| From → to | Code |
+| --- | --- |
+| `Map` → array of pairs | `[...map]` or `Array.from(map)` |
+| `Map` values → array | `[...map.values()]` |
+| `Set` → array | `[...set]` or `Array.from(set)` |
+| object → `Map` | `new Map(Object.entries(obj))` |
+| `Map` → object | `Object.fromEntries(map)` — keys become strings |
+| array → `Set` | `new Set(array)` |
+
+`Array.from` also takes a mapping function, which saves a second pass:
+`Array.from(map.values(), (c) => c.name)`.
+
+To iterate a `Map`, destructure each pair:
+
+```ts
+for (const [id, customer] of customersById) {
+  console.log(id, customer.name); // insertion order, id still a number
+}
+```
+
+## Grouping (ES2024)
+
+`Object.groupBy` and `Map.groupBy` arrived in ES2024 (Baseline since March 2024; Node 21+). Both
+take a list and a callback that returns each item's group key:
+
+```ts
+const byStatus = Object.groupBy(orders, (o) => o.status);
+// { open: [ …orders… ], shipped: [ …orders… ] }
+
+const byCustomer = Map.groupBy(orders, (o) => o.customerId);
+// Map { 10 => [ … ], 2 => [ … ] }
+```
+
+The rule for choosing is the key rule from before. `Object.groupBy` builds an object, so every
+key is turned into a string: fine for `"open"` / `"shipped"`, lossy for numeric ids (they come
+back as `"10"`, `"2"`) and useless for objects (every object becomes `"[object Object]"`, one
+group). `Map.groupBy` keeps keys as they are.
+
+Two details of `Object.groupBy`: the object it returns has a **null prototype** (no inherited
+`toString` or `constructor`), and TypeScript types it with every key optional, because nothing
+guarantees each possible key got at least one item — `byStatus.open` is `Order[] | undefined`.
+Before ES2024 the same job was a `reduce` or a `for` loop filling a `Map` — you will still read
+plenty of those.

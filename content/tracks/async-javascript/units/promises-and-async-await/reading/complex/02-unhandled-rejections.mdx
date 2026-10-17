@@ -1,0 +1,74 @@
+---
+id: unhandled-rejections
+title: Unhandled rejections — what counts, and what each host does
+---
+
+A rejection is **unhandled** when a promise rejects and nothing has attached a handler (a
+`.catch`, a second `.then` argument, or an `await` that's currently waiting on it) by the time the
+current burst of microtasks has run. Node's docs put it as "within a turn of the event loop".
+Being handled _later_ doesn't undo the report.
+
+**What happens next depends on the host:**
+
+- **Browsers** fire an `unhandledrejection` event on `window` and log an error to the console. The
+  page keeps running. If a handler is attached later, a `rejectionhandled` event follows.
+- **Node 15+** defaults to `--unhandled-rejections=throw`: unless a `process.on("unhandledRejection")`
+  listener exists, the rejection is raised as an uncaught exception, and **the process exits**
+  with code 1. (Before v15 it only printed a warning.) One unhandled rejection in a request handler
+  takes the whole server down.
+
+Two patterns produce one even though the code "has a catch":
+
+**1. Starting promises, then awaiting them one at a time.**
+
+```js
+async function load() {
+  const profile = getProfile(); // slow: 100 ms
+  const avatar = getAvatar();   // fails after 10 ms
+  const p = await profile;      // still waiting here when avatar rejects…
+  try {
+    return [p, await avatar];   // …so this handler is attached 90 ms too late
+  } catch {
+    return [p, DEFAULT_AVATAR];
+  }
+}
+```
+
+`avatar` rejects while the function is paused on `profile`. No handler is attached yet, so the
+rejection is reported as unhandled. In Node 24 this crashes the process even though a `try` around
+`await avatar` exists. Start-then-await is right only with a combinator that attaches handlers
+to every promise at once: `await Promise.all([profile, avatar])`, or `allSettled` if each failure
+needs separate handling.
+
+**2. Rethrowing from the last `.catch` in a chain.**
+
+```js
+search(query, { signal })
+  .then(setResults)
+  .catch((err) => {
+    if (err.name !== "AbortError") throw err; // ❌ rethrown to… nobody
+  });
+```
+
+A `.catch` returns a new promise, and throwing inside it rejects _that_ promise. Nobody holds it,
+so it's unhandled: an error event in the browser, a crash in Node. It doesn't reach a React error
+boundary, or any `try` higher up the call stack, because that stack finished long ago. At the
+end of a chain, handle the error for real (put it in state, show it, report it) instead of
+rethrowing:
+
+```js
+.catch((err) => {
+  if (err.name === "AbortError") return; // expected: we cancelled it
+  setError(err);                          // real failure: show it
+});
+```
+
+<!--more-->
+
+### Global handlers are for reporting
+
+`window.addEventListener("unhandledrejection", …)` and `process.on("unhandledRejection", …)`
+are the place to send the error to monitoring. They aren't a substitute for local handling: by
+the time they run, the code that could have shown a message or retried is gone. And in Node,
+registering the listener **replaces** the crash. MDN warns that a listener that doesn't deal with
+the rejection leaves it "dropped on the floor and silently ignored".

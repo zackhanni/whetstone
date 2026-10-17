@@ -1,0 +1,59 @@
+---
+id: where-chains-stop
+title: Where a ?. chain stops — and where it still throws
+---
+
+## The whole chain short-circuits
+
+When `?.` meets `null` or `undefined`, it skips **everything to its right in the same chain** —
+property reads, index expressions, calls, their side effects:
+
+```js
+let i = 0;
+const order = null;
+const sku = order?.items[i++].sku;
+sku; // undefined
+i;   // 0 — items[i++] was never evaluated
+```
+
+There is no `?.` after `items`, yet nothing threw: once `order?.` stopped, `.items[i++].sku`
+didn't run. The chain ends at a parenthesis, though: `(order?.items).length` evaluates
+`(undefined).length` and throws a `TypeError`.
+
+## What each form still lets through
+
+- **`a?.b.c`** guards `a` only. If `a` exists and `a.b` is `undefined`, `.c` throws.
+- **`fn?.()`** checks that `fn` isn't `null`/`undefined` — not that it is a function. With
+  `props.onChange` set to a string, `props.onChange?.()` throws `props.onChange is not a function`.
+  And it doesn't guard `props` itself: that needs `props?.onChange?.()`.
+- **No optional assignment.** `user?.name = "Ada"` is a `SyntaxError`. Assign inside an `if`.
+
+## `??` refuses to mix
+
+`a || b ?? c` and `a && b ?? c` are `SyntaxError`s — the language won't guess the precedence you
+meant, and the whole module fails to load. Add parentheses: `(a || b) ?? c`.
+
+## `?.` vs `&&` chains
+
+Older code writes `user && user.profile && user.profile.name`. It is not the same thing: `&&`
+stops at **any falsy value and returns it**, while `?.` stops only at `null`/`undefined` and
+returns `undefined`. With `user = null`, the `&&` chain gives `null` and `user?.profile?.name`
+gives `undefined`. And a falsy value that isn't nullish stops `&&` but not `?.`: with `price = 0`,
+`price && price.toFixed(2)` is `0`, while `price?.toFixed(2)` is `"0.00"`. That difference shows up
+when the result is rendered or compared with `=== undefined`.
+
+## TypeScript's `!` is not a runtime check
+
+`props.onSelect!(item)` looks like a cousin of `?.`, but the `!` (non-null assertion) is erased
+when TypeScript compiles — the emitted code is `props.onSelect(item)`. It tells the compiler "trust
+me, this isn't null", and if you're wrong it crashes exactly as the plain call would. `?.` checks at
+runtime; `!` checks nothing.
+
+<!--more-->
+
+## Don't spray `?.`
+
+`?.` belongs where absence is legitimate: an optional prop, a field the API documents as nullable,
+a lookup that can miss. On a value that must exist, it turns a crash with a stack trace pointing at
+the bug into a quiet `undefined` that surfaces three screens later as "Hello, undefined". If `order`
+can't be missing at this point, `order.items` is the more honest line.

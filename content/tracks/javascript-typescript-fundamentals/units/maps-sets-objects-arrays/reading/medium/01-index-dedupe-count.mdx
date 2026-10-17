@@ -1,0 +1,53 @@
+---
+id: index-dedupe-count
+title: Index, dedupe, count — the everyday moves
+---
+
+An orders screen gets two lists from the API and has to join, clean and summarise them:
+
+```ts
+type Customer = { id: number; name: string };
+type Order = { id: number; customerId: number; status: "open" | "shipped"; tags: string[] };
+
+// 1. Index once: id → customer. One pass, then every lookup is a get.
+const customersById = new Map(customers.map((c) => [c.id, c]));
+
+const rows = orders.map((o) => ({
+  ...o,
+  customerName: customersById.get(o.customerId)?.name ?? "(unknown)",
+}));
+
+// 2. Dedupe primitives with a Set. First-seen order is kept.
+const allTags = [...new Set(orders.flatMap((o) => o.tags))];
+
+// 3. Dedupe objects by a key, not by identity.
+const uniqueOrders = [...new Map(orders.map((o) => [o.id, o])).values()];
+
+// 4. Count with a Map.
+const tagCounts = new Map<string, number>();
+for (const tag of orders.flatMap((o) => o.tags)) {
+  tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+}
+```
+
+What each line is doing:
+
+- **`new Map(customers.map((c) => [c.id, c]))`** — the `Map` constructor takes an iterable of
+  `[key, value]` pairs. Building it is one pass over `customers`; after that, joining 10,000
+  orders costs 10,000 `get`s, not 10,000 scans of the customer list (`customers.find(…)` inside
+  `orders.map` is the slow version).
+- **`?.name ?? "(unknown)"`** — `get` returns `undefined` for a missing key, so an order whose
+  customer was deleted gets a placeholder instead of a crash.
+- **`[...new Set(…)]`** — a `Set` drops repeats as you add them, and the spread turns it back
+  into an array. `Array.from(set)` does the same.
+- **The `Map` dedupe** — `new Set(orders)` would keep both copies of order 7 when two pages of
+  results overlap: they are different objects, and a `Set` compares objects by identity. Keying a
+  `Map` by `id` collapses them. When a key repeats, `set` replaces the value but the key keeps
+  its **first** position, so this keeps the *last* copy in the *first* copy's place.
+- **`tagCounts.get(tag) ?? 0`** — the first time a tag is seen, `get` returns `undefined`, so
+  start from 0. (`|| 0` works here too, because a stored count is never 0; `??` says what you
+  mean.)
+
+To count entries, read **`map.size`** or **`set.size`** — a property, not a method.
+`Object.keys(obj).length` is the object equivalent, and it builds a whole array of keys each time
+you ask.

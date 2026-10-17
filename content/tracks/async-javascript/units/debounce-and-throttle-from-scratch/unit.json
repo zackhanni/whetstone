@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 3,
+  "slug": "debounce-and-throttle-from-scratch",
+  "title": "Debounce & throttle from scratch",
+  "skills": ["async", "debounce", "timers"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Write a trailing-edge `debounce` that forwards `this` and the latest arguments, with working `cancel()` and `flush()`",
+    "Write a leading-and-trailing `throttle` whose trailing run uses the latest call, not the call that started the timer",
+    "Predict which calls run, and when, under trailing, leading, leading-plus-trailing and `maxWait` settings",
+    "Explain why continuous input needs `maxWait`, why throttle is a debounce with `maxWait` equal to `wait`, and why a fresh wrapper per call debounces nothing"
+  ],
+  "sources": [
+    { "title": "Lodash docs: _.debounce", "url": "https://lodash.com/docs/#debounce" },
+    { "title": "Lodash docs: _.throttle", "url": "https://lodash.com/docs/#throttle" },
+    { "title": "MDN Glossary: Debounce", "url": "https://developer.mozilla.org/en-US/docs/Glossary/Debounce" },
+    { "title": "MDN Glossary: Throttle", "url": "https://developer.mozilla.org/en-US/docs/Glossary/Throttle" },
+    { "title": "MDN: Closures", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Closures" },
+    { "title": "MDN: Function.prototype.apply()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/apply" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-debounce-throttle", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-debounce-throttle",
+      "questions": [
+        {
+          "id": "arrow-loses-this",
+          "prompt": "`editor.save = debounce(saveDraft, 500)`, and `saveDraft` reads `this.id`. The debounce wraps with `(...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); }`. What `this` does `saveDraft` see after `editor.save()`?",
+          "options": [
+            { "id": "not-editor", "text": "Not `editor`: the arrow wrapper has no `this` of its own, and `fn(...args)` calls `fn` as a plain function" },
+            { "id": "arrow-inherits", "text": "`editor`, because an arrow function takes `this` from the object it's called on" },
+            { "id": "settimeout-keeps", "text": "`editor`, because `setTimeout` preserves the `this` of the code that scheduled it" },
+            { "id": "throws", "text": "None: `editor.save()` throws a `TypeError` at the call site" }
+          ],
+          "answer": "not-editor",
+          "explanation": "An arrow function's `this` is fixed lexically, where the arrow was **written** (inside `debounce`), never where it's called. And even with the right `this` in the wrapper, `fn(...args)` drops it, because a plain call passes no receiver. The wrapper must be a `function`, it must save `this` alongside the arguments, and it must call `fn.apply(savedThis, savedArgs)`. Nothing throws at the call site. The bug shows up later, inside the timer: in strict code (an ES module, a class) `this` is `undefined` and `this.id` throws a `TypeError` there; in sloppy code `this` is the global object and `this.id` is quietly `undefined`."
+        },
+        {
+          "id": "cancel-without-clear",
+          "prompt": "A debounce's `cancel()` is written as `() => { timer = undefined; }`. What happens to a pending run?",
+          "options": [
+            { "id": "still-fires", "text": "It still fires: only `clearTimeout` stops a scheduled timer, and dropping the handle just means you can no longer cancel it" },
+            { "id": "gc", "text": "It's cancelled: with no reference left, the timer is garbage-collected" },
+            { "id": "next-throws", "text": "It's cancelled, but the next call throws because `timer` is `undefined`" },
+            { "id": "fires-twice", "text": "It fires twice: once on schedule, once when the next call clears it" }
+          ],
+          "answer": "still-fires",
+          "explanation": "A scheduled timer is held by the host (the browser or Node), not by your variable. The handle is just a receipt for cancelling it. Overwriting the variable throws the receipt away, and the run still happens. `clearTimeout(undefined)` and `clearTimeout` on a stale handle are harmless no-ops, so the correct `cancel` clears first and then resets the state."
+        },
+        {
+          "id": "stale-trailing-args",
+          "prompt": "A throttle schedules its trailing run with `setTimeout(() => fn.apply(this, args), remaining)` inside the first call that finds the window closed. A burst reports scroll positions 0, 40, 80, 120. The trailing run reports 40. Why?",
+          "options": [
+            { "id": "closed-over", "text": "The timer callback closed over the `args` of the call that created it. Later calls found a timer already pending, and their arguments were never stored anywhere" },
+            { "id": "by-design", "text": "A throttle's trailing run reports the first blocked value by design. Use a debounce to get the last one" },
+            { "id": "copies-at-fire", "text": "`setTimeout` copies the arguments when it fires, and 40 was the value at that moment" },
+            { "id": "next-window", "text": "120 arrived after the window closed, so it's deferred to the next window's leading run" }
+          ],
+          "answer": "closed-over",
+          "explanation": "A closure captures the variables in scope where it's **created**: here, the `args` of the call that saw 40. Calls 80 and 120 skipped scheduling because a timer existed, and dropped their arguments. The fix is to write the latest arguments (and `this`) into shared variables on **every** call and have the timer read them when it fires. A trailing run exists precisely to deliver the final value, so stale arguments defeat its purpose."
+        },
+        {
+          "id": "continuous-input",
+          "prompt": "A sensor calls a 100 ms trailing debounce every 50 ms, without pause, for an hour. How often does `fn` run during that hour?",
+          "options": [
+            { "id": "never", "text": "Never: each call resets the timer before it can fire. `maxWait` is the fix" },
+            { "id": "every-100", "text": "Every 100 ms" },
+            { "id": "every-150", "text": "Every 150 ms: 100 ms of wait plus the 50 ms gap" },
+            { "id": "once-first", "text": "Once, 100 ms after the first call, then never again" }
+          ],
+          "answer": "never",
+          "explanation": "A trailing debounce runs only after `wait` ms of **silence**, and calls 50 ms apart never leave 100 ms of it. Every call cancels the pending timer and starts a new one. `maxWait` adds a deadline timer that starts with the burst and is not reset, so `fn` runs at least once per `maxWait` while calls continue. Running steadily at a capped rate is throttle behaviour, which is why lodash builds throttle from a debounce with `maxWait`."
+        },
+        {
+          "id": "throttle-is-debounce",
+          "prompt": "Lodash (4.x) implements `throttle(fn, wait)` as which `debounce` call?",
+          "options": [
+            { "id": "lead-trail-max", "text": "`debounce(fn, wait, { leading: true, trailing: true, maxWait: wait })`" },
+            { "id": "lead-only", "text": "`debounce(fn, wait, { leading: true, trailing: false })`" },
+            { "id": "max-only", "text": "`debounce(fn, wait, { maxWait: wait })`" },
+            { "id": "zero-max", "text": "`debounce(fn, wait, { leading: false, trailing: true, maxWait: 0 })`" }
+          ],
+          "answer": "lead-trail-max",
+          "explanation": "`maxWait: wait` forces a run at least once per `wait` during continuous calls, which is the rate cap. `leading: true` makes the first call run immediately, and `trailing: true` makes the burst end on its latest arguments. Leading-only drops the final value and isn't periodic. `maxWait` alone, or `leading: false`, loses the immediate first run. (Lodash also raises any `maxWait` below `wait` up to `wait`, so `maxWait: 0` doesn't mean \"no cap\".)"
+        },
+        {
+          "id": "flush-after-fire",
+          "prompt": "A debounce's `invoke` runs `fn.apply(lastThis, lastArgs)` but never resets `timer`. Its `flush` is `if (timer !== undefined) { clearTimeout(timer); invoke(); }`. The user types, the save fires 500 ms later, then they click **Save**, which calls `flush()`. What happens?",
+          "options": [
+            { "id": "saves-again", "text": "The draft is saved a second time, with the old arguments: `timer` still holds the fired timer's handle, so `flush()` thinks a run is pending" },
+            { "id": "clear-throws", "text": "Nothing: `clearTimeout` on a timer that has already fired throws, so `invoke` never runs" },
+            { "id": "handle-clears-itself", "text": "Nothing: a timer's handle becomes `undefined` by itself once the timer has fired" },
+            { "id": "waits-for-next", "text": "`flush()` waits until the next keystroke's timer fires, then runs once" }
+          ],
+          "answer": "saves-again",
+          "explanation": "A handle is a receipt, not a live status. After the timer fires, the variable still holds the same number (or Node `Timeout` object) until your code changes it, and `clearTimeout` on it is a silent no-op. So the `timer !== undefined` check passes and `invoke` runs `fn` again with the arguments it already saved: a duplicate save. The fix is an invariant: `invoke` resets `timer` (and the saved arguments) every time it runs, whether the timer or `flush()` called it. Then `timer !== undefined` really means \"a run is pending\". (When to flush and when to cancel in a component is the `debounced-input-and-autosave` unit's topic.)"
+        },
+        {
+          "id": "trailing-updates-lastrun",
+          "prompt": "In a leading-and-trailing throttle, why must the trailing run also record `lastRun = Date.now()`?",
+          "options": [
+            { "id": "double-run", "text": "Otherwise a call just after the trailing run sees an open window and runs immediately: two runs a few ms apart" },
+            { "id": "cancel-needs", "text": "So `cancel()` can tell whether a run has happened" },
+            { "id": "this-binding", "text": "So the trailing run receives the correct `this`" },
+            { "id": "no-matter", "text": "It doesn't matter: the pending timer already prevents a second run" }
+          ],
+          "answer": "double-run",
+          "explanation": "The leading check compares against `lastRun`. If only leading runs update it, `lastRun` still points at the start of the previous window after a trailing run, so the next call (perhaps 5 ms later) passes the check and runs at once. That breaks \"at most once per `wait`\". By then the timer has fired and been cleared, so it can't help. Treat every run, leading or trailing, as the start of a new window."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-debounce-throttle",
+      "prompts": [
+        {
+          "id": "forward-this-and-args",
+          "prompt": "Save the caller's receiver along with the arguments, and pass both on when the timer fires.",
+          "code": [
+            "function debounced(...args) {",
+            "  lastArgs = args;",
+            "  lastThis = ___;",
+            "  clearTimeout(timer);",
+            "  timer = setTimeout(invoke, wait);",
+            "}",
+            "",
+            "function invoke() {",
+            "  const args = lastArgs, thisArg = lastThis;",
+            "  timer = lastArgs = lastThis = undefined;",
+            "  fn.___(thisArg, args);",
+            "}"
+          ],
+          "blanks": [
+            { "id": "f1", "accept": ["this"] },
+            { "id": "f2", "accept": ["apply"] }
+          ],
+          "explanation": "`debounced` is a `function`, so `this` is whatever it was called on (`editor` in `editor.save()`). `fn.apply(thisArg, args)` calls `fn` with that receiver and the saved argument array. `fn.call(thisArg, ...args)` is the spread equivalent. Clearing `timer` in `invoke` keeps \"is a run pending?\" honest for `flush()`."
+        },
+        {
+          "id": "cancel-body",
+          "prompt": "Make `cancel()` actually stop the pending run.",
+          "code": "debounced.cancel = () => { ___(timer); timer = lastArgs = lastThis = undefined; };",
+          "blanks": [
+            { "id": "c1", "accept": ["clearTimeout", "window.clearTimeout", "globalThis.clearTimeout"] }
+          ],
+          "explanation": "The host holds the scheduled timer, so only `clearTimeout(handle)` removes it. Resetting the variables afterwards keeps the pending state consistent. Resetting them **instead of** clearing leaves the run scheduled, and it fires anyway."
+        },
+        {
+          "id": "trailing-reads-latest",
+          "prompt": "The throttle's trailing timer must deliver the latest call, not the call that created the timer. Which variable does it read?",
+          "code": [
+            "// on every call while the window is closed: pendingArgs = args;",
+            "timer = setTimeout(() => {",
+            "  const latest = ___;",
+            "  timer = pendingArgs = undefined;",
+            "  run(latest);",
+            "}, remaining);"
+          ],
+          "blanks": [
+            { "id": "t1", "accept": ["pendingArgs"] }
+          ],
+          "explanation": "`pendingArgs` is shared state that every call overwrites, so reading it when the timer **fires** gets the final call's arguments. The `args` visible where the timer was created belong to the first blocked call, a stale closure."
+        },
+        {
+          "id": "throttle-from-debounce",
+          "prompt": "Build a throttle out of a lodash-style debounce.",
+          "code": "const throttle = (fn, wait) => debounce(fn, wait, { leading: true, trailing: true, ___: wait });",
+          "blanks": [
+            { "id": "m1", "accept": ["maxWait"] }
+          ],
+          "explanation": "`maxWait` is a deadline that later calls don't push back, so continuous calls still produce a run at least every `wait` ms: a rate cap. With `leading` and `trailing` both on, the burst starts and ends with a run. This is exactly how lodash 4.x defines `throttle`."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-debounce-throttle",
+      "snippets": [
+        {
+          "id": "leading-and-trailing",
+          "code": [
+            "import debounce from \"lodash/debounce\"; // lodash 4.x",
+            "",
+            "const save = debounce((v) => console.log(\"save\", v), 100, { leading: true, trailing: true });",
+            "",
+            "save(\"a\");",
+            "setTimeout(() => {",
+            "  save(\"b\");",
+            "  save(\"c\");",
+            "}, 300);"
+          ],
+          "question": "What is logged, and roughly when?",
+          "answer": "save a (at 0 ms), save b (at 300 ms), save c (at ~400 ms)",
+          "acceptable": ["a at 0, b at 300, c at 400", "save a, save b, save c"],
+          "explanation": "With both edges on, a burst runs on its first call and again after the silence, but the trailing run only happens if there was **more than one** call (lodash: \"only if the debounced function is invoked more than once during the `wait` timeout\"). So the lone `a` runs once, immediately, with no duplicate at 100 ms. The later burst runs `b` on the leading edge (the previous burst's wait is long over) and `c` on the trailing edge, 100 ms after the last call."
+        },
+        {
+          "id": "fresh-wrapper-per-call",
+          "code": [
+            "const searches = [];",
+            "const search = (q) => searches.push(q);",
+            "",
+            "// a debounce like the one in the readings, 30 ms",
+            "const onInput = (value) => debounce(search, 30)(value);",
+            "",
+            "onInput(\"r\");",
+            "onInput(\"re\");",
+            "onInput(\"rea\");",
+            "setTimeout(() => console.log(searches), 100);"
+          ],
+          "question": "What is logged?",
+          "answer": "[\"r\", \"re\", \"rea\"]",
+          "acceptable": ["r, re, rea", "all three", "3 searches"],
+          "explanation": "Each `onInput` call runs `debounce(search, 30)` again, creating a brand-new closure with its own `timer`. Three debouncers, each called once, each running once 30 ms later. Nothing ever cancels anything. The delay makes it look debounced in a quick test. Create the debounced function **once** (at module scope, in a constructor, or kept stable across React renders) and call that same function every time."
+        },
+        {
+          "id": "maxwait-under-continuous-input",
+          "code": [
+            "import debounce from \"lodash/debounce\"; // lodash 4.x",
+            "",
+            "let runs = 0;",
+            "const onReading = debounce(() => { runs += 1; }, 50, { maxWait: 120 });",
+            "",
+            "const start = Date.now();",
+            "const id = setInterval(() => {",
+            "  onReading();",
+            "  if (Date.now() - start > 300) clearInterval(id);",
+            "}, 10);",
+            "",
+            "setTimeout(() => console.log(\"runs:\", runs), 600);"
+          ],
+          "question": "What is logged? And what would it be without `{ maxWait: 120 }`?",
+          "answer": "runs: 3 (without maxWait: runs: 1)",
+          "acceptable": ["3", "3, and 1 without maxWait"],
+          "explanation": "Calls every 10 ms never leave 50 ms of silence, so the plain debounce can't fire until the calls stop at about 300 ms. That's one run, at about 350 ms. `maxWait: 120` adds a deadline that the calls don't reset: a run at about 120 ms, another at about 240 ms, then the trailing run after the input stops. Three in all."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-debounce-throttle",
+      "challengeSlug": "debounce-throttle-from-scratch"
+    }
+  ]
+}

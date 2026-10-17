@@ -1,0 +1,56 @@
+---
+id: interval-vs-recursive-timeout
+title: setInterval doesn't wait for your async work. A recursive setTimeout does
+---
+
+`setInterval(fn, 1000)` calls `fn` about every second, **whether or not the previous call's
+work has finished**. For synchronous work that's fine: one call can't overlap another on a
+single thread. But most repeated work is async (a request, a save), and the callback returns
+the moment it starts that work.
+
+```js
+// ❌ Poll every second, but a slow response means requests pile up
+setInterval(async () => {
+  const res = await fetch("/api/status"); // sometimes takes 3 s
+  render(await res.json());
+}, 1000);
+```
+
+When the server slows down to 3 s per response, three requests are in flight at once. That adds
+load to a server that's already struggling, and the responses can come back **out of order**,
+so an older status overwrites a newer one. MDN's `setInterval` page warns about exactly this
+("queued up XHR requests that won't necessarily return in order").
+
+The fix is to schedule the **next** run only when the **current** one has finished:
+
+```js
+// ✅ Next poll starts 1 s after the previous one *finished*
+async function poll() {
+  const res = await fetch("/api/status");
+  render(await res.json());
+  setTimeout(poll, 1000);
+}
+poll();
+```
+
+Now there's never more than one request in flight, and a slow server automatically gets polled
+less often. The trade-off is that the period becomes "work time + 1 s" instead of a steady
+beat. For polling that's what you want; for a clock display it isn't (see below).
+
+| You need… | Use |
+| --- | --- |
+| Repeat async work, never overlapping | recursive `setTimeout` |
+| A steady visual tick (a clock, a countdown) | `setInterval`, but compute the value from `Date.now()` each tick |
+| One delayed action | `setTimeout` |
+
+This sketch still has two holes, and both are bugs in production: it can't be **stopped**, and
+one failed `fetch` throws out of `poll()` before `setTimeout` runs, so polling silently dies. The
+medium tier fixes both.
+
+<!--more-->
+
+### Why a clock should still compute from the time
+
+Every tick, whether it comes from `setInterval` or a recursive `setTimeout`, can arrive late, and
+a background tab may skip ahead by seconds or minutes. A display that counts ticks drifts from
+real time. A display that reads `Date.now()` on each tick is right whenever it does get to run.

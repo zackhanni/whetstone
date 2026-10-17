@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 3,
+  "slug": "utc-vs-local",
+  "title": "UTC vs local time",
+  "skills": ["javascript", "dates", "time-zones"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Explain why instants are stored and sent in UTC and converted to a zone only for display, with an explicit `timeZone` wherever there's no viewer (a server, an email)",
+    "Predict `getHours()` vs `getUTCHours()`, and the local date and weekday, for one instant read on machines in different zones",
+    "Tell an offset (`-05:00`, `getTimezoneOffset()`) from an IANA time zone (`America/New_York`), and store the zone name for future or repeating wall-clock times",
+    "Fix a server/client zone difference in Next.js: a Server Component that shows the server's zone, and a Client Component's hydration mismatch",
+    "Explain why a date test passes on UTC CI and fails on a laptop, and pin a non-UTC `TZ` in Vitest with an assertion that it took"
+  ],
+  "sources": [
+    { "title": "MDN: Date — UTC, local time and the time zone offset", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date" },
+    { "title": "MDN: Date.prototype.getTimezoneOffset()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset" },
+    { "title": "MDN: Intl.DateTimeFormat.prototype.resolvedOptions()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat/resolvedOptions" },
+    { "title": "Next.js docs: Server and Client Components", "url": "https://nextjs.org/docs/app/getting-started/server-and-client-components" },
+    { "title": "Next.js docs: Text content does not match server-rendered HTML", "url": "https://nextjs.org/docs/messages/react-hydration-error" },
+    { "title": "React docs: hydrateRoot — suppressing unavoidable mismatches", "url": "https://react.dev/reference/react-dom/client/hydrateRoot" },
+    { "title": "Node.js docs: the TZ environment variable", "url": "https://nodejs.org/api/cli.html#tz" },
+    { "title": "Vitest docs: pool", "url": "https://vitest.dev/config/pool" },
+    { "title": "Playwright docs: Emulation — locale and timezone", "url": "https://playwright.dev/docs/emulation" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-utc-local", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-utc-local",
+      "questions": [
+        {
+          "id": "what-to-store",
+          "prompt": "An order is placed at 3:00 p.m. New York time on March 10, 2026. What should the API send and the database store?",
+          "options": [
+            { "id": "utc-instant", "text": "The instant in UTC: `\"2026-03-10T19:00:00.000Z\"` (or epoch milliseconds)" },
+            { "id": "locale-string", "text": "The display string `\"3/10/2026, 3:00:00 PM\"`" },
+            { "id": "no-offset", "text": "`\"2026-03-10T15:00:00\"`: the wall time, without an offset" },
+            { "id": "split-columns", "text": "`\"2026-03-10\"` and `\"15:00\"` in two columns" }
+          ],
+          "answer": "utc-instant",
+          "explanation": "An order time is an instant, and UTC names it unambiguously (3 p.m. EDT is 19:00 UTC). Every other option has thrown the zone away: the display string and the split columns can't be turned back into an instant, and an ISO date-time **without** an offset is read as local time by whatever machine parses it, so a server in UTC and a browser in Tokyo would get two different instants from one string."
+        },
+        {
+          "id": "offset-sign",
+          "prompt": "On a machine in New York, what does `new Date(2026, 0, 15).getTimezoneOffset()` return?",
+          "options": [
+            { "id": "plus-300", "text": "`300`" },
+            { "id": "minus-300", "text": "`-300`" },
+            { "id": "minus-5", "text": "`-5`" },
+            { "id": "zero", "text": "`0`, because the Date was built without an offset" }
+          ],
+          "answer": "plus-300",
+          "explanation": "It's in minutes, and it's UTC minus local: positive when the local zone is **behind** UTC. New York in January is UTC−5, so `300`; in July (daylight time) it's `240`; Tokyo is `-540`. The sign is the opposite of the `-05:00` you'd write in a string. The Date doesn't store a zone, so the answer comes from the machine's rules for that date, never `0` by default."
+        },
+        {
+          "id": "recurring-meeting",
+          "prompt": "A stand-up is \"every Monday at 09:00, New York time\". What should you store?",
+          "options": [
+            { "id": "wall-time-and-zone", "text": "`{ weekday: \"monday\", time: \"09:00\", timeZone: \"America/New_York\" }`, and compute each occurrence's instant when needed" },
+            { "id": "first-instant", "text": "The first occurrence as a UTC instant; each next one is 7 × 24 hours later" },
+            { "id": "fixed-offset", "text": "`{ weekday: \"monday\", time: \"09:00\", offset: \"-05:00\" }`" },
+            { "id": "abbreviation", "text": "`{ weekday: \"monday\", time: \"09:00\", zone: \"EST\" }`" }
+          ],
+          "answer": "wall-time-and-zone",
+          "explanation": "The meeting is defined by a wall clock in a place, so store the weekday, that clock time and the place's zone name, whose rules include daylight saving time. Adding 7 × 24 hours to a UTC instant keeps the UTC time fixed, so after the March change the meeting shows up at 10:00. A fixed `-05:00` offset is right only in winter. `EST` names one offset (standard time), not New York's rules, and abbreviations are ambiguous anyway."
+        },
+        {
+          "id": "server-component-zone",
+          "prompt": "A Next.js **Server** Component renders `new Date(order.placedAt).toLocaleString(\"en-US\")`. Users in New York see times 4–5 hours off, and there's no error anywhere. Why?",
+          "options": [
+            { "id": "rendered-once-on-server", "text": "It rendered once, on the server, in the server's zone; the browser never re-renders it, so there is nothing to mismatch" },
+            { "id": "parsed-as-local", "text": "`placedAt` ends in `Z`, so `new Date` parsed it as local time" },
+            { "id": "prod-ignores-zone", "text": "`toLocaleString` ignores the browser's zone in production builds" },
+            { "id": "react-patched", "text": "React detected the hydration mismatch and patched it silently with the server's text" }
+          ],
+          "answer": "rendered-once-on-server",
+          "explanation": "Server Components are rendered on the server into the RSC payload and are not hydrated, so their text is final: whatever zone the server is in is what everyone sees, with no warning. A `Z` string is parsed as UTC, not local. A hydration mismatch is a Client Component problem, and React reports it rather than patching it quietly. The fix is to pass the user's zone: `toLocaleString(\"en-US\", { timeZone: user.timeZone })`."
+        },
+        {
+          "id": "hydration-fix",
+          "prompt": "A Client Component renders `toLocaleTimeString()` of a timestamp and logs a hydration mismatch. Each user's zone is in their profile, which the server can read. What's the best fix?",
+          "options": [
+            { "id": "pass-zone-and-locale", "text": "Format with `timeZone: user.timeZone` and an explicit locale, so the server and the browser produce the same string" },
+            { "id": "suppress-root", "text": "Add `suppressHydrationWarning` to the page's root `<div>`" },
+            { "id": "use-memo", "text": "Wrap the formatting in `useMemo` so it runs once" },
+            { "id": "server-utc", "text": "Set `TZ=UTC` on the server" }
+          ],
+          "answer": "pass-zone-and-locale",
+          "explanation": "The mismatch exists because the two renders run in two zones (and possibly two default locales). Give both the same zone and locale and they produce identical text, which also makes the server's HTML correct. `suppressHydrationWarning` works one level deep, so on a root `<div>` it doesn't reach the text, and even on the right element React doesn't patch the text: the user keeps the server's version. `useMemo` still runs once per environment. The server is probably already UTC; the browser is the side that differs."
+        },
+        {
+          "id": "ci-passes-laptop-fails",
+          "prompt": "`expect(dueLabel(\"2026-03-10T02:00:00Z\")).toBe(\"Mar 10\")` passes in CI and fails on a New York laptop with `\"Mar 9\"`. What's the right first move?",
+          "options": [
+            { "id": "pass-the-zone", "text": "Believe the laptop: `dueLabel` reads the machine's zone. Pass the zone in (`dueLabel(iso, timeZone)`) and assert both zones explicitly" },
+            { "id": "tz-utc-everywhere", "text": "Set `TZ=UTC` in the test script so the laptop matches CI" },
+            { "id": "retry-flaky", "text": "Mark the test flaky and retry it" },
+            { "id": "expect-mar-9", "text": "Change the expectation to `\"Mar 9\"`" }
+          ],
+          "answer": "pass-the-zone",
+          "explanation": "The failure is real: 02:00 UTC is the evening of March 9 in New York, and that's what users there see. CI passes only because it runs in UTC. Forcing `TZ=UTC` everywhere makes every machine agree with CI and hides the bug for good. The test isn't flaky; it's deterministic per zone. Changing the expectation just moves the failure to CI. Make the zone an argument and the test means the same thing everywhere."
+        },
+        {
+          "id": "threads-pool",
+          "prompt": "A Vitest setup file sets `process.env.TZ = \"America/New_York\"`. Someone switches the config to `pool: \"threads\"`. What happens?",
+          "options": [
+            { "id": "silently-machine-zone", "text": "The tests quietly run in the machine's zone again, unless a test asserts the offset" },
+            { "id": "config-error", "text": "Vitest throws a configuration error at startup" },
+            { "id": "no-change", "text": "Nothing changes: `TZ` is process-wide, and threads share the process" },
+            { "id": "per-thread", "text": "Each worker thread uses New York, so nothing changes" }
+          ],
+          "answer": "silently-machine-zone",
+          "explanation": "Vitest's docs say changing `process.env.TZ` doesn't affect the time zone in a worker thread, and setup files run inside the workers. Nothing errors; the guard just stops guarding. Set `TZ` before the workers start (on the command line, or at the top of `vitest.config.ts`), and keep one test asserting `new Date(2026, 0, 1).getTimezoneOffset()` is `300` so a config change can't turn it off unnoticed."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-utc-local",
+      "prompts": [
+        {
+          "id": "viewer-zone",
+          "prompt": "In the browser, read the viewer's IANA time zone so the server can format in it later.",
+          "code": "const timeZone = Intl.DateTimeFormat().___().timeZone; // \"America/New_York\"",
+          "blanks": [{ "id": "v1", "accept": ["resolvedOptions"] }],
+          "explanation": "`resolvedOptions()` reports what the formatter actually uses; with no options, `timeZone` is the runtime's default zone, which in a browser is the user's. Save it to the profile or a cookie: the server can't see it otherwise."
+        },
+        {
+          "id": "explicit-zone",
+          "prompt": "Format an instant for a user in an email, where there is no browser.",
+          "code": [
+            "new Date(order.placedAt).toLocaleString(\"en-US\", {",
+            "  dateStyle: \"medium\",",
+            "  timeStyle: \"short\",",
+            "  ___: user.timeZone,",
+            "});"
+          ],
+          "blanks": [{ "id": "z1", "accept": ["timeZone"] }],
+          "explanation": "Without `timeZone` the string is in the zone of the machine sending the email. With it, the same code prints the user's wall-clock time anywhere it runs."
+        },
+        {
+          "id": "utc-hour",
+          "prompt": "Read the hour on the UTC clock, the same on every machine.",
+          "code": "const hour = placedAt.___();",
+          "blanks": [{ "id": "h1", "accept": ["getUTCHours"] }],
+          "explanation": "`getHours()` reads the machine's zone; `getUTCHours()` reads UTC. Use the UTC getters for anything that must not change between your laptop, CI and production."
+        },
+        {
+          "id": "pin-and-assert-tz",
+          "prompt": "Run the test suite in New York time, and fail loudly if the switch didn't take.",
+          "code": [
+            "// vitest.config.ts, before anything else",
+            "process.env.___ = \"America/New_York\";",
+            "",
+            "// a test",
+            "expect(new Date(2026, 0, 1).getTimezoneOffset()).toBe(___);"
+          ],
+          "blanks": [
+            { "id": "t1", "accept": ["TZ"] },
+            { "id": "t2", "accept": ["300"] }
+          ],
+          "explanation": "Node reads the zone from `TZ`. Set in the config file, it applies before Vitest starts its workers, whatever the pool. New York in January is UTC−5, and `getTimezoneOffset()` is UTC minus local in minutes, so `300`. If the assignment ever stops working (moved into a setup file under a `threads` pool, say), this test fails instead of the suite silently running in UTC."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-utc-local",
+      "snippets": [
+        {
+          "id": "tokyo-reads-the-instant",
+          "code": [
+            "// The machine is in Asia/Tokyo (UTC+9, no daylight saving time).",
+            "const d = new Date(\"2026-03-10T15:00:00Z\");",
+            "console.log(d.getUTCDate(), d.getDate(), d.getHours(), d.getDay());"
+          ],
+          "question": "What's logged?",
+          "answer": "10 11 0 3",
+          "acceptable": ["10, 11, 0, 3"],
+          "explanation": "15:00 UTC is midnight the next day in Tokyo. The UTC getter still says the 10th, but the local ones say March 11 at 00:00, a Wednesday (`3`), while UTC is still Tuesday. Code that builds a \"date\" from local getters on a server and on a client in Tokyo gets two different days from one instant."
+        },
+        {
+          "id": "recurring-by-adding-ms",
+          "code": [
+            "// The machine is in America/New_York.",
+            "const first = new Date(\"2026-03-02T14:00:00Z\"); // Monday 09:00 EST",
+            "const twoWeeksLater = new Date(first.getTime() + 14 * 86_400_000);",
+            "console.log(first.getHours(), twoWeeksLater.getHours());"
+          ],
+          "question": "What's logged?",
+          "answer": "9 10",
+          "acceptable": ["9, 10"],
+          "explanation": "Adding milliseconds keeps the **UTC** time fixed at 14:00. New York switched to daylight time on March 8, 2026 (UTC−4), so 14:00 UTC on March 16 is 10:00 local: the stand-up moved an hour. A repeating wall-clock time has to be stored as a wall time plus a zone name, and each occurrence converted separately."
+        },
+        {
+          "id": "two-renders-two-days",
+          "code": [
+            "// A Client Component renders this text twice:",
+            "// on a server in UTC (prerender), then in a browser in Asia/Tokyo (hydration).",
+            "const label = new Date(\"2026-03-10T23:30:00Z\").toLocaleDateString(\"en-US\");"
+          ],
+          "question": "What does `label` come out as on each side?",
+          "answer": "server: 3/10/2026, browser: 3/11/2026",
+          "acceptable": ["3/10/2026 then 3/11/2026", "different days: a hydration mismatch"],
+          "explanation": "23:30 UTC is 08:30 the next morning in Tokyo, so the two renders print different days and React reports a hydration mismatch. Passing `timeZone` (the user's) makes both sides print the same text; rendering the local text only after hydration is the fallback when the server can't know the zone."
+        }
+      ]
+    }
+  ]
+}

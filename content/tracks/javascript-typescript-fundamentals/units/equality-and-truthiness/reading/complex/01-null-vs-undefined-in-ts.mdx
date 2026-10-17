@@ -1,0 +1,58 @@
+---
+id: null-vs-undefined-in-ts
+title: null vs undefined in TypeScript — and what JSON does to each
+---
+
+JavaScript has two "no value" values, and TypeScript can tell them apart — **only with
+`strictNullChecks` on**. It's part of `strict`, and `strict` is `true` by default since TS 6.0
+(earlier versions default to off, so check older projects' `tsconfig.json`). With it off, `null`
+and `undefined` are assignable to every type and the checks below don't exist.
+
+## Three ways to write "maybe absent"
+
+```ts
+type User = {
+  middleName?: string;                // the key may be missing entirely
+  nickname: string | undefined;       // the key must be present; its value may be undefined
+  deletedAt: string | null;           // always present; null means "no value", on purpose
+};
+```
+
+- **`?:`** — optional. `{}` is a valid object here. Reading it gives `string | undefined`, and
+  TypeScript makes you check: `u.middleName[0]` is an error, `'u.middleName' is possibly
+  'undefined'`.
+- **`| undefined`** without `?` — the key is required: leave `nickname` out and TypeScript reports
+  it missing, even though `undefined` is an allowed value. Rarely what you want for data, sometimes
+  right for a function's return shape.
+- **`| null`** — the shape APIs and databases use: the field is always sent, and `null` says
+  "known to be empty". A nullable SQL column typically comes back as `null`, not as a missing key.
+
+A useful convention that matches JSON: **`undefined` = not provided, `null` = explicitly empty.**
+When you need to accept both, `x == null` (or `x ?? fallback`) covers them in one go.
+
+## JSON keeps `null` and drops `undefined`
+
+```js
+JSON.stringify({ nickname: undefined }); // '{}'
+JSON.stringify({ nickname: null });      // '{"nickname":null}'
+JSON.stringify([undefined, 1]);          // '[null,1]' — in arrays it becomes null
+```
+
+That difference is an API contract. A `PATCH /users/1` with `{ nickname: undefined }` sends `{}`
+— "change nothing" — while `{ nickname: null }` says "clear the nickname". If your client code
+writes `undefined` to mean "clear", the server never hears it. And on the way back in, a field
+the server sends as `null` will never be `undefined`, so a check like `if (user.deletedAt ===
+undefined)` is always false.
+
+<!--more-->
+
+## Where the types and the runtime disagree
+
+- `JSON.stringify` is typed as returning `string`, but `JSON.stringify(undefined)` returns
+  `undefined` (MDN). Guard values you didn't build yourself.
+- An optional property, by default, also accepts an explicit `undefined` (`{ middleName:
+  undefined }`), so `"middleName" in u` can be `true` while the value is `undefined`. The
+  `exactOptionalPropertyTypes` flag (TS 4.4+, not part of `strict`) makes `?:` mean "missing or a
+  real value" only.
+- `typeof null` is `"object"` — a historical bug kept for compatibility. Narrowing with
+  `typeof x === "object"` doesn't exclude `null`; the narrowing unit picks this up.

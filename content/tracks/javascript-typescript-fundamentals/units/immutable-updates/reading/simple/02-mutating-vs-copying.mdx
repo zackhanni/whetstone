@@ -1,0 +1,40 @@
+---
+id: mutating-vs-copying-methods
+title: Array methods that change the array, and the ones that copy
+---
+
+Some array methods change the array you call them on. Others return a new array and leave the
+original alone. They look alike, so learn the list:
+
+| Mutates the original | Returns a new array instead |
+| --- | --- |
+| `push(x)`, `unshift(x)` | `[...arr, x]`, `[x, ...arr]`, `concat([x])` |
+| `pop()`, `shift()` | `slice(0, -1)`, `slice(1)` |
+| `splice(i, 1)` (remove) | `filter(…)`, `toSpliced(i, 1)` |
+| `splice(i, 0, x)` (insert) | `toSpliced(i, 0, x)` |
+| `arr[i] = x` | `with(i, x)`, `map(…)` |
+| `sort()` | `toSorted()` |
+| `reverse()` | `toReversed()` |
+| `fill()`, `copyWithin()` | no one-method alternative |
+
+`concat` spreads an array argument: `[1].concat([2, 3])` is `[1, 2, 3]`, where `push` would add
+one nested element. Wrapping `x` in brackets appends it as one element, whatever it is.
+
+`toSorted`, `toReversed`, `toSpliced` and `with` arrived in **ES2023** (in every major browser
+since mid-2023, Node 20+). Before them, the idiom was "copy, then mutate the copy":
+`[...arr].sort()`.
+
+Two return values cause most of the bugs:
+
+```js
+const tags = ["a"];
+tags.push("b");   // returns 2 — the new LENGTH, not the array
+tags.sort();      // returns tags itself — sorted in place, not a sorted copy
+```
+
+So `setTags(tags.push("b"))` sets the state to the number `2`, and
+`const sorted = items.sort()` quietly reorders `items` for everyone who holds it — a prop, a
+cache entry, the previous state.
+
+`slice` (copies part of an array) and `splice` (cuts the array in place) differ by one letter.
+React's docs make the point too: in state updates you'll use `slice`, no `p`, far more often.

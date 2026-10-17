@@ -82,24 +82,49 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ⬜ Optimistic updates + rollback (`onMutate` + context)
   - ⬜ Loading/error/empty states, `isPending` vs `isFetching`
   - ⬜ TanStack Router — typed routes, loaders, search-param state
-- ⬜ **Async JavaScript & Timing**
-  - ⬜ **Synchronous vs asynchronous** (blocking vs non-blocking), the event loop, macro vs micro tasks
-  - ⬜ **`setTimeout` / `setInterval`** — the handle, `clearTimeout`, why timers leak in components
-  - ⬜ Debounce vs throttle — build both, know which one autosave wants
-  - ⬜ Promises, `async/await`, `Promise.all` vs `allSettled`, error propagation
-  - ⬜ Cancellation — `AbortController`, stale-response ordering ("last write wins" bugs)
-- ⬜ **JavaScript & TypeScript Fundamentals**
-  - ⬜ **`Map` vs `Set` vs plain object vs array** — lookup cost, key types, iteration order, when each wins (`new Map<string, Container>()`, `new Set<string>()`); common manipulations (`get/set/has/delete`, spread to array, `Array.from`, dedupe)
-  - ⬜ **Shorthand syntax you'll read in review** — optional chaining incl. optional _call_ `fn?.(arg)`, `?.[]`, nullish coalescing `??` vs `||`, destructuring + defaults, and what each one expands to
-  - ⬜ Equality, truthiness, and `undefined` vs `null` in TS
-  - ⬜ Narrowing, unions vs enums, `as const`, discriminated unions
-  - ⬜ Immutable updates (spread, `structuredClone`, why mutation breaks React)
-- ⬜ **Dates & Time**
-  - ⬜ The `Date` API in practice — `new Date()`, `getFullYear`, `getMonth` (0-indexed trap), `toISOString`, epoch ms
-  - ⬜ **UTC vs local time** — when to store UTC, when to render local, server/client hydration mismatches
-  - ⬜ Parsing & formatting — ISO 8601, `Intl.DateTimeFormat`, locale/timezone options
-  - ⬜ Date-only vs instant (birthdays vs timestamps), DST and off-by-one-day bugs
-  - ⬜ _card:_ when to reach for a library (`date-fns` / Temporal) instead
+- 🔨 **Async JavaScript & Timing** (`async-javascript`) — the framework-free language mechanics
+  under the React units. `debounced-input-and-autosave` keeps the timer handle in a ref, unmount
+  cleanup and the debounce-vs-throttle _choice_; `use-effect` keeps the `ignore` flag and abort in
+  effect cleanup. These units link back to them and don't re-teach them.
+  - ✅ **The event loop** (`event-loop`) — run-to-completion, one turn = one task → drain every
+    microtask → maybe render; predicting the order of sync code, `setTimeout(0)`, `.then`,
+    `queueMicrotask` and the code after `await`; why a long task or a self-requeuing microtask
+    freezes input and paint, and chunking work; which orderings are host-specific (`setImmediate`,
+    `process.nextTick`, `requestAnimationFrame`). Predict-heavy, no challenge.
+  - ✅ **Timers in depth** (`timers`) — the delay is a minimum, not an appointment; nested-timeout
+    clamping, background-tab throttling, the 2³¹−1 ms overflow; `setInterval` drift and overlap vs
+    a recursive `setTimeout`; the handle in the DOM vs Node (`Timeout`, `unref`,
+    `ReturnType<typeof setTimeout>`); extra arguments and `this`. Challenge:
+    `polling-loop-stops-cleanly` (no overlap, survives a failed poll, stops mid-request).
+  - ✅ **Debounce & throttle from scratch** (`debounce-and-throttle-from-scratch`) — both as plain
+    closures: trailing vs leading edge, `maxWait`, `cancel()`/`flush()`, forwarding `this` and the
+    _latest_ arguments, throttle as a debounce with `maxWait`. Challenge:
+    `debounce-throttle-from-scratch`.
+  - ✅ **Promises & async/await** (`promises-and-async-await`) — settle-once states, `then` returns a
+    new promise, where a `catch` must sit, async functions always return promises, a missing
+    `return`/`await`, sequential vs parallel `await`, `all` vs `allSettled` vs `race` vs `any`,
+    unhandled rejections (Node exits by default). Challenge: `parallel-dashboard-loader`.
+  - ✅ **Cancellation & races** (`cancellation-and-races`) — `AbortController`/`AbortSignal` threaded
+    through plain functions, `fetch` abort and `signal.reason`, `AbortSignal.timeout()` and
+    `AbortSignal.any()` (with support versions), telling `AbortError` from `TimeoutError` from a
+    real failure, last-write-wins bugs, request ids vs aborting. Challenge:
+    `latest-only-search-client`.
+  - ✅ Browser run of the four challenges (2026-10-17, in a background tab where Chrome throttles timers): every starter fails and every solution passes, except that `debounce-throttle-from-scratch`'s burst test hit Sandpack's 5 s test timeout because each throttled sleep took ~1 s. No assertion failed. Re-run it once in a visible tab. The two timing-heavy graders now wait for a condition or count calls, instead of using a fixed wall-clock window.
+- ✅ **JavaScript & TypeScript Fundamentals** (`javascript-typescript-fundamentals`, first in the catalog) — 5 units, 4 challenges. The language layer every other track assumes. Intro/core, with an advanced edge in each complex tier.
+  - ✅ **Maps, Sets, objects & arrays** (`maps-sets-objects-arrays`) — choosing the collection: `has`/`get` vs `includes`/`find` cost, object keys become strings while `Map` keys keep their type (SameValueZero), prototype keys like `"constructor"`, insertion order, `size`, a `Map` serialising to `{}`, dedupe with `Set`, `Object.groupBy`/`Map.groupBy` (ES2024), `WeakMap` in one line. Challenge: index/dedupe/count/serialise an order list.
+  - ✅ **Shorthand syntax** (`shorthand-syntax`) — what each shorthand expands to: `?.`/`?.[]`/`?.()` short-circuiting the whole chain, `??` vs `||` on `0`/`""`/`false`, `??=`/`||=`/`&&=`, destructuring defaults (only `undefined` triggers them), rename, rest/spread, shorthand properties/methods, computed keys. Challenge: an options resolver that loses `0`, `""` and `null`.
+  - ✅ **Equality & truthiness** (`equality-and-truthiness`) — values, not syntax: `===` vs `==` (the few coercions worth knowing), `Object.is` (NaN, -0), SameValueZero in `includes`, the falsy list and `{count && …}` rendering `0`, `null` vs `undefined` in TS (`?:` vs `| null`, `strictNullChecks`, JSON dropping `undefined`), objects compare by identity. React re-render identity stays in `memoization`.
+  - ✅ **Narrowing & unions** (`narrowing-and-unions`) — types, not values: `typeof`/`in`/`instanceof`/equality narrowing, custom type guards as unchecked promises, discriminated unions + the `never` exhaustiveness check, enums vs unions (runtime objects, `const enum` under `isolatedModules`, TS 5.8 `erasableSyntaxOnly` and Node type stripping), `as const` objects, `satisfies`. Owns the enum language facts the Testing track links to. Challenge: parse an `unknown` payload into a discriminated union.
+  - ✅ **Immutable updates** (`immutable-updates`) — changing data without changing the old copy: spread is shallow, nested updates, copying (`toSorted`/`toSpliced`/`with`, ES2023) vs mutating array methods, `structuredClone` and what it can't clone, `Object.freeze` is shallow, why mutation breaks React's `Object.is` bail-out and doubles a pushed item under StrictMode. Challenge: a todo reducer with planted mutations.
+  - ✅ Browser run of each new challenge (2026-10-17): starter fails and _Show solution_ passes in Sandpack for `index-orders-with-maps`, `resolve-player-options`, `narrow-unknown-events` and `todo-reducer-mutations`. `todo-reducer-mutations`' preview wraps itself in `<StrictMode>` on purpose (the doubled todo is the symptom).
+- ✅ **Dates & Time** (`dates-and-time`) — 5 units, in this order
+  - ✅ **The Date object** (`date-api-basics`) — one machine, one zone: a `Date` is one number (ms since the epoch), the constructor forms and 0-indexed months, `getDate` vs `getDay`, setters that mutate and overflow (Jan 31 + 1 month), Invalid Date. Time zones are deliberately left to the next unit.
+  - ✅ **UTC vs local time** (`utc-vs-local`) — one instant, many wall clocks: store UTC and render in the viewer's zone, `getHours` vs `getUTCHours`, offsets vs IANA zones, the server's zone vs the browser's (an SSR hydration mismatch), and a test that passes on UTC CI but fails on a laptop.
+  - ✅ **Parsing & formatting** (`parsing-and-formatting`) — strings in and out: which ISO shapes parse as UTC and which as local, never parsing non-ISO strings with `Date`, `Intl.DateTimeFormat` (`timeZone`, `dateStyle`/`timeStyle`, `formatToParts`), `Intl.RelativeTimeFormat`.
+  - ✅ **Date-only values & DST** (`date-only-and-dst`) — calendar dates that aren't instants: `YYYY-MM-DD` arithmetic in UTC days, 23- and 25-hour DST days, the date-only-vs-ISO-instant string prefix trap, and validating a real calendar date. Challenge: `date-only-helpers` (correct in every time zone).
+  - ✅ _card:_ **Date libraries** (`date-libraries`) — when `Date` + `Intl` are enough, `date-fns` v4 (functions on `Date`), Luxon (a zone-carrying `DateTime`), `Temporal`'s shipping status, and why not Moment for new code.
+  - ✅ Browser run of `date-only-helpers` (2026-10-17): starter fails 9/13 with both "used local time" trap messages, _Show solution_ passes 13/13 in Sandpack. Test names must be unique across `describe` blocks — Sandpack keys its results list by name (duplicates log a React key error).
+  - ⬜ _later:_ when Safari ships Temporal (MDN "Limited availability" as of October 2026), refresh `date-libraries` → `temporal-status`, and consider a `Temporal.PlainDate` variant of the date-only challenge.
 
 ### Backend, network & data
 

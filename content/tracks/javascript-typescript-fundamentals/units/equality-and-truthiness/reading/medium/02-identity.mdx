@@ -1,0 +1,45 @@
+---
+id: identity-not-contents
+title: Objects compare by identity, not by contents
+---
+
+When both sides are objects — and arrays, functions, dates and maps are objects — every
+equality operator asks one question: **is this the same object?** Not "does it look the same":
+
+```js
+const a = { id: 3 };
+const b = { id: 3 };
+
+a === b;          // false — two objects that happen to match
+a === a;          // true
+[1, 2] === [1, 2]; // false
+```
+
+Every array method that searches by value inherits this, which produces bugs that look like the
+data is wrong:
+
+```ts
+const selected = [{ id: 3, name: "Ada" }];
+
+selected.includes({ id: 3, name: "Ada" });    // false — a new object
+selected.some((s) => s.id === 3);              // true  — compare the identifying field
+```
+
+The fix is almost never "deep equality". Decide what makes two things *the same thing* in your
+domain — usually an `id` — and compare that:
+
+| You want to know | Compare |
+| --- | --- |
+| "Is this the same record?" | `a.id === b.id` |
+| "Is this item in the list?" | `list.some((x) => x.id === item.id)`, or a `Set` of ids |
+| "Did anything change?" | the specific fields you care about |
+
+`JSON.stringify(a) === JSON.stringify(b)` works only by accident: it depends on key order
+(`{ a: 1, b: 2 }` and `{ b: 2, a: 1 }` stringify differently), it drops `undefined` fields, and it
+can't handle `Map`, `Set` or cycles. Treat it as a quick debugging check, not a comparison.
+
+Identity is also why "I changed the data but nothing happened" bugs exist. React decides whether
+state changed with `Object.is`: mutate an object and set the same object back, and React sees the
+same identity and may skip the update; build a new object every render, and React sees a change
+every time. The immutable-updates unit covers the first case; the memoization unit covers the
+second.

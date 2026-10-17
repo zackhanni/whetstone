@@ -1,0 +1,41 @@
+---
+id: object-keys-vs-map-keys
+title: Object keys are strings; Map keys are values
+---
+
+A plain object's keys are **strings** (or symbols). Anything else you use as a key is converted
+to a string first:
+
+```js
+const byId = {};
+byId[1] = "Ada";
+byId["1"] = "Grace";       // the same key, "1" — this overwrites Ada
+byId[{ id: 2 }] = "Linus"; // the key is the string "[object Object]"
+
+Object.keys(byId);         // ["1", "[object Object]"]
+```
+
+A `Map` keeps the key you gave it, type and all:
+
+```js
+const byId = new Map();
+byId.set(1, "Ada");
+byId.set("1", "Grace");    // a different key
+byId.size;                 // 2
+byId.get(1);               // "Ada"
+```
+
+`Map` compares keys with **SameValueZero**: the same as `===`, except that `NaN` matches `NaN`.
+For object keys that means **identity** — the same object, not an object that looks the same:
+
+```js
+const page = { n: 1 };
+const cache = new Map([[page, "rows"]]);
+cache.get(page);           // "rows"
+cache.get({ n: 1 });       // undefined: a different object
+```
+
+`Set` uses the same rule, which is why `new Set([{ id: 1 }, { id: 1 }])` has a size of 2.
+
+Rule of thumb: a record with field names you know up front → object. A lookup table keyed by ids,
+by objects, or by strings you don't control → `Map`.

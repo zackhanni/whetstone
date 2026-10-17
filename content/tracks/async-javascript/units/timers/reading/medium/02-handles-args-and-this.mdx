@@ -1,0 +1,57 @@
+---
+id: handles-args-and-this
+title: Handles, arguments and this, in the browser and in Node
+---
+
+**The handle's type depends on the host.** In a browser, `setTimeout` returns a positive
+integer. In Node it returns a `Timeout` object. TypeScript follows whichever declarations are
+loaded, and most front-end projects load both the DOM lib and `@types/node`. Then the global
+`setTimeout` resolves to Node's signature:
+
+```ts
+const id: number = setTimeout(tick, 100);
+// ❌ Type 'Timeout' is not assignable to type 'number'.   (with @types/node installed)
+
+const a: ReturnType<typeof setTimeout> = setTimeout(tick, 100); // ✅ right in both hosts
+const b: number = window.setTimeout(tick, 100);                 // ✅ browser-only code
+```
+
+Use `ReturnType<typeof setTimeout>` for anything that may run in both (shared utilities, tests
+under Node, server-rendered components).
+
+**Clearing.** `clearTimeout` with an id that's already fired, already been cleared, or is
+`undefined` silently does nothing, so you don't need to guard it. Both hosts let
+`clearTimeout` and `clearInterval` cancel either kind of timer (in browsers the ids share one
+pool). Match them anyway, for the reader's sake.
+
+**Extra arguments are passed through**, and they're evaluated when you _schedule_, not when
+the timer fires:
+
+```js
+for (var i = 0; i < 3; i++) setTimeout(() => console.log(i), 0);   // 3, 3, 3
+for (var j = 0; j < 3; j++) setTimeout((n) => console.log(n), 0, j); // 0, 1, 2
+```
+
+The first loop's callbacks all read the one shared `var i` after the loop has finished. The
+second passes each value in as an argument. (`let i` would also fix the first, since it creates
+one binding per iteration.)
+
+**`this` is not your object.** A timer calls its callback as a plain function, so passing a
+method loses its receiver:
+
+```js
+setTimeout(counter.increment, 1000);              // ❌ `this` isn't counter
+setTimeout(() => counter.increment(), 1000);      // ✅
+setTimeout(counter.increment.bind(counter), 1000); // ✅
+```
+
+What `this` _is_ differs by host. In browsers a non-arrow callback gets `globalThis` (the
+window). In Node it gets the `Timeout` object. Either way, `this.count` is not your counter's.
+
+<!--more-->
+
+### Never pass a string
+
+`setTimeout("save()", 100)` compiles the string like `eval`. MDN calls it an injection sink,
+and a Content-Security-Policy whose `script-src` lacks `'unsafe-eval'` blocks it. Always pass a
+function.

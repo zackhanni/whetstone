@@ -1,0 +1,79 @@
+---
+id: a-missing-return-or-await
+title: One missing return or await, four different bugs
+---
+
+Most promise bugs in review come down to a single missing keyword. The code still runs, it just
+stops waiting, or stops catching.
+
+**1. A `.then` callback that doesn't `return` the inner promise.** The chain no longer waits for
+it, so the next step runs early and its errors go nowhere. MDN calls this a _floating_ promise:
+
+```js
+// ❌ The next .then runs before the save finishes; a failed save is unhandled
+loadDraft()
+  .then((draft) => { saveDraft(draft); })   // braces, no return
+  .then(() => showToast("Saved"));
+
+// ✅ Return it, and the chain waits (and carries its error to the next catch)
+loadDraft()
+  .then((draft) => saveDraft(draft))
+  .then(() => showToast("Saved"));
+```
+
+**2. A call without `await` in an async function.** Same bug, newer syntax:
+
+```js
+async function onSubmit() {
+  saveDraft(form);  // ❌ not awaited: navigation wins the race, and a failure is unhandled
+  router.push("/drafts");
+}
+```
+
+**3. `return promise` inside `try` instead of `return await promise`.** The `try` only covers
+what happens while the function is running. Return the promise un-awaited and the function has
+already left the `try` by the time it rejects:
+
+```js
+async function getSettings() {
+  try {
+    return fetchSettings();        // ❌ a rejection skips the catch below
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+// with `return await fetchSettings();` the fallback works
+```
+
+Outside a `try`, `return await` and `return` behave the same, so the rule is simply: inside
+`try`, `await` before you return.
+
+**4. Using a promise as if it were its value.** A promise object is truthy, so a forgotten `await`
+in a condition always passes:
+
+```js
+if (isAllowed(user)) deleteProject(id);        // ❌ isAllowed is async: always true
+if (await isAllowed(user)) deleteProject(id);  // ✅
+```
+
+TypeScript catches only part of this. With `strictNullChecks` (part of `strict`), a promise used
+directly as an `if`, `&&` or `? :` condition is error TS2801:
+
+```
+This condition will always return true since this 'Promise<boolean>' is always defined.
+```
+
+It doesn't flag `if (!isAllowed(user))`, an async callback passed to `filter` or `forEach`, or
+cases 1 to 3. typescript-eslint's `no-floating-promises` (cases 1 and 2) and `no-misused-promises`
+(conditions, plus async callbacks where a `void` function is expected, such as `forEach` or an
+event listener) cover most of the rest. Both need type information and are in its
+`recommended-type-checked` config.
+
+<!--more-->
+
+### When not awaiting is deliberate
+
+Fire-and-forget is sometimes right: analytics, a cache warm-up. Make it explicit and handle the
+error where it starts: `void track(event).catch(reportError)`. The `void` documents the intent.
+The `.catch` is what keeps a failure from becoming an unhandled rejection, because `void` alone
+doesn't handle anything.

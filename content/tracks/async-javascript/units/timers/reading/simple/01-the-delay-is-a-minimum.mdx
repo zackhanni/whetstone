@@ -1,0 +1,42 @@
+---
+id: the-delay-is-a-minimum
+title: A timer's delay is a minimum, not an appointment
+---
+
+`setTimeout(fn, 10)` does not mean "run `fn` at 10 ms". It means "**no sooner than** 10 ms from
+now, queue `fn` as a task". The task then waits its turn like any other: the thread has to be
+free, and every pending microtask runs first (see the `event-loop` unit).
+
+```js
+const start = Date.now();
+setTimeout(() => console.log("fired after", Date.now() - start, "ms"), 10);
+while (Date.now() - start < 50) {} // 50 ms of synchronous work
+// fired after 50-something ms, never 10
+```
+
+The timer expired at 10 ms, but the thread was busy until 50. Nothing can interrupt running
+code, so the callback runs as soon after 50 as it can, not at 10.
+
+The HTML spec says it plainly: the API "does not guarantee that timers will run exactly on
+schedule. Delays due to CPU load, other tasks, etc, are to be expected." Node's docs say the
+same: the callback "will likely not be invoked in precisely `delay` milliseconds".
+
+Two consequences you'll meet constantly:
+
+- **Never use a timer as a clock.** A countdown that does `remaining -= 1000` every tick drifts,
+  because every tick is a little late. Store the deadline once and compute
+  `deadline - Date.now()` on each tick.
+- **`setTimeout(fn, 0)` is "after the current work", not "now".** It's a way to defer, and it's
+  still a full task away.
+
+And the receipt you get back is the handle: `clearTimeout(handle)` cancels a timer that hasn't
+fired yet, and silently does nothing for one that has already fired or never existed. (Keeping
+that handle across React renders is the `debounced-input-and-autosave` unit's topic.)
+
+<!--more-->
+
+### Other reasons a timer runs late
+
+A busy thread is the everyday reason. Browsers add more: nested timeouts are clamped to at least
+4 ms, background tabs are throttled to about once a second or less, and timers pause while the
+page sits in the back/forward cache. The complex tier walks through each one.

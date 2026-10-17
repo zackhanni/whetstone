@@ -1,0 +1,48 @@
+---
+id: production-traps
+title: Production traps — fresh wrappers, async work and promises
+---
+
+**1. A new debounced function per call debounces nothing.** The timer lives in the closure
+that `debounce()` creates. Call `debounce()` again and you get a new closure with a new timer
+that knows nothing about the old one:
+
+```js
+// ❌ Every event builds its own debouncer: 3 events → 3 searches
+input.addEventListener("input", (e) => debounce(search, 300)(e.target.value));
+
+// ✅ Build it once, call it many times: 3 events → 1 search
+const debouncedSearch = debounce(search, 300);
+input.addEventListener("input", (e) => debouncedSearch(e.target.value));
+```
+
+The bad version still _delays_ each search by 300 ms, so it looks debounced in a quick manual
+test. In React the same bug appears as a debounced function created during render. The
+`debounced-input-and-autosave` unit shows how to keep it stable.
+
+**2. Debouncing doesn't serialise async work.** A debounce controls when a function _starts_,
+not how long it runs, so two debounced searches can still overlap and finish out of order. The
+`debounced-input-and-autosave` unit shows it with saves. The `cancellation-and-races` unit fixes
+it.
+
+**3. A promise-returning debounce must settle every promise.** It's tempting to make
+`await debouncedSave(draft)` work by returning a promise from each call. But the calls that get
+superseded never run `fn`. If their promises never settle, every `await` on them hangs forever,
+along with anything chained after it. Pick a rule and apply it to every caller: resolve all
+pending callers with the final run's result, or reject the superseded ones with an
+`AbortError` they can recognise.
+
+**4. Tear down explicitly.** A pending trailing call outlives whatever scheduled it. `cancel()`
+or `flush()` it when the screen or connection goes away (in a component, that's the cleanup in
+the `debounced-input-and-autosave` unit).
+
+<!--more-->
+
+### Testing time-based code
+
+The fast way is fake timers, such as Vitest's `vi.useFakeTimers()` and
+`vi.advanceTimersByTime(300)`: no real waiting, and exact control over "just before" and "just
+after" the deadline. When you can't fake the clock (this site's in-browser challenges, for one),
+use real timers with **small** delays, kept in one shared constant, and assert with a margin:
+"not yet at `wait / 2`" and "done by `wait * 2`". Never assert an exact millisecond, because
+timers are only ever "at least" (the `timers` unit).

@@ -1,0 +1,39 @@
+---
+id: optional-chaining
+title: ?. means "stop here if this is null or undefined"
+---
+
+`a?.b` reads `b` from `a` — unless `a` is `null` or `undefined`, in which case the whole
+expression is `undefined` and nothing after it runs. It is shorthand for a check you would
+otherwise write by hand:
+
+```js
+const city = user?.address?.city;
+
+// expands to (roughly):
+const sameCity =
+  user === null || user === undefined ? undefined
+  : user.address === null || user.address === undefined ? undefined
+  : user.address.city;
+```
+
+There are three forms, one for each way of reaching into a value:
+
+| Shorthand | Guards | Instead of |
+| --- | --- | --- |
+| `user?.name` | `user` | `user.name` |
+| `rows?.[i]` | `rows` | `rows[i]` |
+| `onChange?.(value)` | `onChange` | `onChange(value)` |
+
+The third one is the one people miss in review: `props.onChange?.(value)` calls `onChange` only
+if it was passed, so an optional callback prop doesn't need an `if`.
+
+Two things `?.` does **not** do:
+
+- It checks only for `null` and `undefined`. An empty string, `0` or `false` on the left is a
+  real value, and the access goes ahead.
+- It guards only the value directly to its left. `user?.address.city` protects you from a
+  missing `user`, but throws if `user` exists and `address` doesn't.
+
+It always produces `undefined` when it stops — never `null`, even if the value it stopped at was
+`null`.

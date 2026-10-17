@@ -1,6 +1,9 @@
 {
   "schemaVersion": 3,
   "tracks": [
+    "javascript-typescript-fundamentals",
+    "async-javascript",
+    "dates-and-time",
     "react-hooks-and-rendering",
     "state-and-data-flow",
     "backend-nestjs"

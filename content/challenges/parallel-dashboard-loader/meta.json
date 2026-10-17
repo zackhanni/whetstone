@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "parallel-dashboard-loader",
+  "title": "Fix the dashboard loader: real errors, parallel panels, partial failure",
+  "skills": ["async", "promises"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "loader.ts",
+  "acceptanceCriteria": [
+    "A dashboard loads the user and all three panels",
+    "If the user can't be loaded, `loadDashboard` rejects with the user service's **own** error, and no panel is requested",
+    "The three panels are requested at the same time, not one after another",
+    "A panel that fails becomes `{ status: \"error\", message }` while the user and the other panels still load",
+    "A panel that fails while the others are still loading is already being handled: no unhandled rejection in between"
+  ]
+}

@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 3,
+  "slug": "date-api-basics",
+  "title": "The Date object: one number, many getters",
+  "skills": ["javascript", "dates"],
+  "difficulty": "intro",
+  "estimatedMinutes": 20,
+  "objectives": [
+    "Explain a `Date` as one number (milliseconds since 1970-01-01T00:00Z) and read `toISOString()` as that instant printed in UTC",
+    "Build dates with the constructor forms, remembering that months are 0-indexed (`new Date(2026, 0, 31)` is January 31)",
+    "Tell `getDate` (day of the month) from `getDay` (day of the week, 0–6) when reading a date's parts",
+    "Predict how setters mutate in place and overflow: `setMonth` on January 31 lands in March, `setDate(0)` is the previous month's last day",
+    "Detect an Invalid Date with `Number.isNaN(d.getTime())`, and know where it fails quietly (`JSON.stringify` writes `null`) and loudly (`toISOString` throws)"
+  ],
+  "sources": [
+    { "title": "MDN: Date", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date" },
+    { "title": "MDN: Date() constructor", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/Date" },
+    { "title": "MDN: Date.prototype.setMonth()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/setMonth" },
+    { "title": "MDN: Date.prototype.toISOString()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toISOString" },
+    { "title": "MDN: Date.prototype.toJSON()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toJSON" },
+    { "title": "ECMAScript spec: Date Objects", "url": "https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-date-objects" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-date-basics", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-date-basics",
+      "questions": [
+        {
+          "id": "what-a-date-stores",
+          "prompt": "What does a `Date` object actually hold?",
+          "options": [
+            { "id": "epoch-ms", "text": "One number: milliseconds since 1970-01-01T00:00:00Z" },
+            { "id": "fields-and-zone", "text": "Separate year, month, day and time fields, plus the time zone it was created in" },
+            { "id": "source-string", "text": "The string it was created from, re-parsed on every `get…` call" },
+            { "id": "local-wall-time", "text": "A local wall-clock time, which `toISOString()` converts to UTC" }
+          ],
+          "answer": "epoch-ms",
+          "explanation": "A `Date` wraps a single time value: milliseconds since the epoch, which is defined in UTC. There are no stored fields and no stored zone: `getFullYear()`, `getHours()` and friends compute their answer from that number each time, using the time zone of the machine that's asking. That's why the same `Date` can show different hours on two machines while `getTime()` is identical on both."
+        },
+        {
+          "id": "month-index",
+          "prompt": "Which day is `new Date(2026, 1, 14)`?",
+          "options": [
+            { "id": "feb-14", "text": "February 14, 2026" },
+            { "id": "jan-14", "text": "January 14, 2026" },
+            { "id": "feb-13", "text": "February 13, 2026: the day is 0-indexed too" },
+            { "id": "invalid", "text": "Invalid Date: the month must be written `\"02\"`" }
+          ],
+          "answer": "feb-14",
+          "explanation": "The month argument is an index from 0 (January) to 11 (December), so `1` is February. The day is not an index: it runs 1–31. Reading `1` as January is the classic off-by-one; the fix when printing is `getMonth() + 1`."
+        },
+        {
+          "id": "getday-in-template",
+          "prompt": "A task due Tuesday, April 14, 2026 renders as \"Due on the 2nd\". Which call is in the template?",
+          "options": [
+            { "id": "getday", "text": "`due.getDay()`" },
+            { "id": "getdate", "text": "`due.getDate()`" },
+            { "id": "getmonth", "text": "`due.getMonth()`" },
+            { "id": "getutcdate", "text": "`due.getUTCDate()`" }
+          ],
+          "answer": "getday",
+          "explanation": "`getDay()` is the day of the **week**, 0 (Sunday) to 6 (Saturday); Tuesday is `2`. The day of the **month** is `getDate()`, which would print 14. `getMonth()` is 3 for April (0-indexed). `getUTCDate()` is the day of the month read in UTC, a question for the next unit: 14 or a neighbouring day depending on the time and the machine's zone, never 2."
+        },
+        {
+          "id": "compare-two-dates",
+          "prompt": "`a` and `b` were each built with `new Date(2026, 2, 10)`. Which expression is `true`?",
+          "options": [
+            { "id": "gettime", "text": "`a.getTime() === b.getTime()`" },
+            { "id": "strict", "text": "`a === b`" },
+            { "id": "loose", "text": "`a == b`" },
+            { "id": "object-is", "text": "`Object.is(a, b)`" }
+          ],
+          "answer": "gettime",
+          "explanation": "Two `Date` objects are two objects, and `===`, `==` and `Object.is` all compare object identity, so all three are `false` even though both hold the same instant. Compare the numbers instead. (`<`, `>` and `-` do convert both sides to numbers, which is why `a <= b` is `true` while `a === b` is not.)"
+        },
+        {
+          "id": "iso-is-utc",
+          "prompt": "On a laptop in New York (UTC−5 in January), what does `new Date(2026, 0, 1).toISOString()` print?",
+          "options": [
+            { "id": "five-z", "text": "`\"2026-01-01T05:00:00.000Z\"`" },
+            { "id": "midnight-z", "text": "`\"2026-01-01T00:00:00.000Z\"`" },
+            { "id": "with-offset", "text": "`\"2026-01-01T00:00:00.000-05:00\"`" },
+            { "id": "nineteen", "text": "`\"2025-12-31T19:00:00.000Z\"`" }
+          ],
+          "answer": "five-z",
+          "explanation": "The multi-argument constructor builds **local** midnight, which in New York is 05:00 UTC. `toISOString()` always prints UTC, marked by the `Z`, never the machine's offset. `\"2025-12-31T19:00\"` subtracts the offset in the wrong direction. Run the same line in Tokyo and you get `\"2025-12-31T15:00:00.000Z\"`: local midnight there is 15:00 UTC the day before."
+        },
+        {
+          "id": "setter-return",
+          "prompt": "What's wrong with `const nextWeek = due.setDate(due.getDate() + 7);`?",
+          "options": [
+            { "id": "number-and-mutated", "text": "`nextWeek` is a number (the new timestamp), and `due` itself moved a week" },
+            { "id": "returns-copy", "text": "Nothing: `setDate` returns a new `Date` and leaves `due` alone" },
+            { "id": "month-end-throws", "text": "Past the end of the month, `setDate` throws a `RangeError`" },
+            { "id": "returns-undefined", "text": "`nextWeek` is `undefined`, because setters return nothing" }
+          ],
+          "answer": "number-and-mutated",
+          "explanation": "Every `Date` setter changes the object in place and returns the new time value as a number. So `due` no longer means \"due\", and `nextWeek.getDate()` would throw because numbers have no `getDate`. Overflow is not an error: day 38 of March rolls into April. Copy first: `const next = new Date(due); next.setDate(next.getDate() + 7);`."
+        },
+        {
+          "id": "add-month-clamped",
+          "prompt": "The rule is \"same day next month, or the last day of a shorter month\" (January 31 → February 28, 2026). Which code does that for **every** start date?",
+          "options": [
+            { "id": "park-on-first", "text": "Remember the day, `setDate(1)`, `setMonth(m + 1)`, then `setDate(Math.min(day, lastDayOfThatMonth))`" },
+            { "id": "set-month", "text": "`d.setMonth(d.getMonth() + 1)`" },
+            { "id": "plus-30-days", "text": "`new Date(d.getTime() + 30 * 86_400_000)`" },
+            { "id": "set-month-then-zero", "text": "`d.setMonth(d.getMonth() + 1); d.setDate(0);`" }
+          ],
+          "answer": "park-on-first",
+          "explanation": "Parking on the 1st means changing the month can't overflow; clamping afterwards applies the rule. Plain `setMonth` keeps day 31, and February 31 rolls into March 3. Adding 30 days assumes every month is 30 days long (January 31 + 30 days is March 2). `setDate(0)` after `setMonth` looks clever because it fixes January 31, but for January 15 it goes to February 15 and then back to January 31."
+        },
+        {
+          "id": "detect-invalid",
+          "prompt": "`const d = new Date(input);` Which check rejects an Invalid Date?",
+          "options": [
+            { "id": "isnan-gettime", "text": "`if (Number.isNaN(d.getTime())) throw …`" },
+            { "id": "instanceof", "text": "`if (!(d instanceof Date)) throw …`" },
+            { "id": "falsy", "text": "`if (!d) throw …`" },
+            { "id": "try-catch", "text": "Wrap `new Date(input)` in `try/catch`" }
+          ],
+          "answer": "isnan-gettime",
+          "explanation": "An Invalid Date is still a `Date` object (so `instanceof` passes) and objects are truthy (so `!d` passes). The constructor doesn't throw for a bad string or number; it returns a Date whose time value is `NaN`. Checking that number is the only reliable test."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-date-basics",
+      "prompts": [
+        {
+          "id": "christmas",
+          "prompt": "Build December 25, 2026, at local midnight.",
+          "code": "const christmas = new Date(2026, ___, 25);",
+          "blanks": [{ "id": "c1", "accept": ["11"] }],
+          "explanation": "Months are indexed 0–11, so December is `11`. Passing `12` would roll over into January 25, 2027."
+        },
+        {
+          "id": "days-in-month",
+          "prompt": "Day 0 of a month is the last day of the month before. Get the number of days in February 2028.",
+          "code": "const daysInFeb2028 = new Date(2028, ___, ___).getDate(); // 29",
+          "blanks": [
+            { "id": "m1", "accept": ["2"] },
+            { "id": "m2", "accept": ["0"] }
+          ],
+          "explanation": "Month index `2` is March; day `0` borrows one day back, landing on the last day of February. 2028 is a leap year, so `getDate()` is 29. The same idiom, `new Date(year, month + 1, 0)`, gives the last day of any month."
+        },
+        {
+          "id": "copy-then-mutate",
+          "prompt": "Add a week without moving the caller's `start`.",
+          "code": [
+            "const end = new Date(start.___());",
+            "end.___(end.getDate() + 7);"
+          ],
+          "blanks": [
+            { "id": "k1", "accept": ["getTime", "valueOf"] },
+            { "id": "k2", "accept": ["setDate"] }
+          ],
+          "explanation": "`new Date(start.getTime())` makes an independent copy holding the same instant (plain `new Date(start)` does too). Then the setter changes only the copy. `setDate` handles the month end: March 28 + 7 is April 4."
+        },
+        {
+          "id": "invalid-guard",
+          "prompt": "Fail at the boundary instead of passing an Invalid Date along.",
+          "code": [
+            "const due = new Date(input);",
+            "if (Number.___(due.___())) throw new RangeError(`not a date: ${input}`);"
+          ],
+          "blanks": [
+            { "id": "g1", "accept": ["isNaN"] },
+            { "id": "g2", "accept": ["getTime", "valueOf"] }
+          ],
+          "explanation": "An Invalid Date's time value is `NaN`, and `Number.isNaN` is the check that doesn't coerce. Throwing here keeps the failure next to its cause, instead of a `null` in a JSON payload or a `RangeError` from `toISOString()` three calls later."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-date-basics",
+      "snippets": [
+        {
+          "id": "jan-31-plus-month",
+          "code": [
+            "const d = new Date(2026, 0, 31); // January 31, 2026",
+            "d.setMonth(d.getMonth() + 1);   // \"one month later\"",
+            "console.log(d.getMonth() + 1, d.getDate());"
+          ],
+          "question": "What's logged? (Any time zone: every value here is local.)",
+          "answer": "3 3",
+          "acceptable": ["March 3", "3 3 (March 3)"],
+          "explanation": "`setMonth(1)` keeps the day number, asking for February 31, 2026. February has 28 days that year, so the extra 3 days roll into March: March 3. In 2028, a leap year, it's March 2. The rule you probably wanted (clamp to February 28) has to be written explicitly."
+        },
+        {
+          "id": "setter-returns-number",
+          "code": [
+            "const start = new Date(2026, 2, 10); // March 10",
+            "const next = start.setDate(start.getDate() + 1);",
+            "console.log(typeof next, start.getDate());"
+          ],
+          "question": "What's logged?",
+          "answer": "number 11",
+          "acceptable": ["\"number\" 11", "number, 11"],
+          "explanation": "Setters return the new timestamp, a number, and change the Date they were called on. So `next` is not a Date at all, and `start` is now March 11. Code that expects `start` to still be the start, or calls `next.getDate()`, breaks."
+        },
+        {
+          "id": "invalid-date-quiet",
+          "code": [
+            "const due = new Date(\"2026-13-01\");",
+            "console.log(due instanceof Date, due.getTime(), JSON.stringify({ due }));"
+          ],
+          "question": "What's logged?",
+          "answer": "true NaN {\"due\":null}",
+          "acceptable": ["true NaN {due: null}", "true, NaN, {\"due\":null}"],
+          "explanation": "Month 13 can't be parsed, but the constructor doesn't throw: it returns a real `Date` whose time value is `NaN`. `instanceof` is still `true`. `JSON.stringify` calls `toJSON()`, which returns `null` for an invalid date, so the API receives `\"due\": null` with no error anywhere. Only `toISOString()` would have thrown."
+        }
+      ]
+    }
+  ]
+}

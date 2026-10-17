@@ -1,0 +1,38 @@
+---
+id: three-equalities
+title: Three kinds of "equal"
+---
+
+JavaScript has three everyday ways to ask "are these the same?", and they disagree on a handful
+of values:
+
+| | `===` (strict) | `==` (loose) | `Object.is` |
+| --- | --- | --- | --- |
+| Converts types first? | No | **Yes** | No |
+| `1` vs `"1"` | false | **true** | false |
+| `null` vs `undefined` | false | **true** | false |
+| `NaN` vs `NaN` | **false** | **false** | true |
+| `0` vs `-0` | true | true | **false** |
+| `{}` vs `{}` | false | false | false |
+
+The working rule is short:
+
+- **Use `===` and `!==`.** No conversions, so what you see is what's compared.
+- **`x == null` is the one `==` you'll see on purpose.** Loose equality treats `null` and
+  `undefined` as equal to each other and to nothing else, so `x == null` means "`x` is `null` or
+  `undefined`" in one check.
+- **`NaN` is never `===` anything, itself included.** Test for it with `Number.isNaN(x)`.
+- **Objects and arrays compare by identity** under all three: two separately created objects are
+  never equal, however alike they look.
+
+```js
+"1" === 1;            // false
+"1" == 1;             // true — the string was converted to a number
+value == null;        // true for null and undefined, false for 0, "", false
+Number.isNaN(0 / 0);  // true
+[1, 2] === [1, 2];    // false — two different arrays
+```
+
+`Object.is` is `===` with two differences: `NaN` equals itself, and `0` and `-0` are different.
+You rarely call it yourself, but React uses it to decide whether state or a dependency changed,
+which is why "same contents, new object" counts as a change there.

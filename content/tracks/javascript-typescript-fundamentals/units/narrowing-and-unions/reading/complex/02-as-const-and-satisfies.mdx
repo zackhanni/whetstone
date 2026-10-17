@@ -1,0 +1,77 @@
+---
+id: as-const-and-satisfies
+title: as const and satisfies — keep the literals, still get the check
+---
+
+## `as const` keeps the literal types
+
+Without help, TypeScript widens literals in a mutable position: `["admin", "editor"]` is a
+`string[]`. `as const` makes the value deeply `readonly` and keeps every literal:
+
+```ts
+const ROLES = ["admin", "editor", "viewer"] as const;
+// readonly ["admin", "editor", "viewer"]
+
+type Role = (typeof ROLES)[number]; // "admin" | "editor" | "viewer"
+```
+
+One list now feeds both the runtime (a dropdown, validation) and the type. The catch comes when
+you validate input against it:
+
+```ts
+const input: string = searchParams.get("role") ?? "";
+ROLES.includes(input);
+// ❌ Argument of type 'string' is not assignable to parameter of type '"admin" | "editor" | "viewer"'.
+```
+
+`includes` on the narrow tuple only accepts members — the very thing you're trying to find out.
+Widen the array for the check and turn the result into a type guard:
+
+```ts
+function isRole(x: string): x is Role {
+  return (ROLES as readonly string[]).includes(x);
+}
+```
+
+## `satisfies` checks without widening (TS 4.9+)
+
+A type annotation checks a value *and replaces* its inferred type. `satisfies` only checks; the
+value keeps the type TypeScript inferred for it. Both catch a missing key:
+
+```ts
+type Status = "open" | "shipped" | "refunded";
+
+const LABELS = {
+  open: "Open",
+  shipped: "Shipped",
+} satisfies Record<Status, string>;
+// ❌ Property 'refunded' is missing … (an annotation `: Record<Status, string>` reports it too)
+```
+
+So a `Record<Union, …>` check is the exhaustiveness check for **lookup tables**: add a member to
+`Status` and every label map, icon map and colour map that lacks it fails to compile — the `never`
+check, for objects instead of switches.
+
+The difference is the type you get back. For this table there's little: string values in an object
+literal widen to `string` either way (`satisfies` doesn't stop that; `as const` does). It matters
+when the inferred type is more precise than the one you check against — a heterogeneous object:
+
+```ts
+const annotated: Record<string, string | ((id: string) => string)> = {
+  home: "/",
+  user: (id: string) => `/u/${id}`,
+};
+annotated.user("7"); // ❌ not callable: TypeScript only knows string | function
+
+const checked = {
+  home: "/",
+  user: (id: string) => `/u/${id}`,
+} satisfies Record<string, string | ((id: string) => string)>;
+checked.user("7"); // ✅ still a function
+```
+
+Keep `satisfies` (and `as`) on the same line as the end of the value: TypeScript doesn't accept
+a line break before either one.
+
+The two combine: `{ … } as const satisfies Record<Status, string>` keeps the readonly literals
+*and* checks the keys.
