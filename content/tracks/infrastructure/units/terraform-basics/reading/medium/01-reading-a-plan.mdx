@@ -1,0 +1,94 @@
+---
+id: reading-a-plan
+title: Reading a plan — update in place, replace, and what the summary counts
+---
+
+The configuration has one variable, `env`, used in three places:
+
+```hcl
+variable "env" {
+  type    = string
+  default = "staging"
+}
+
+resource "random_pet" "server" {
+  keepers = { env = var.env }      # a new env means a new pet
+}
+
+resource "terraform_data" "config" {
+  input = { env = var.env, replicas = 2 }
+}
+
+resource "local_file" "motd" {
+  filename = "${path.module}/motd.txt"
+  content  = "hello from ${random_pet.server.id}\n"
+}
+```
+
+It was applied with `staging`. Here is the real plan for `-var env=production`, with the
+checksum lines of the file trimmed:
+
+```text
+  ~ update in-place
+-/+ destroy and then create replacement
+
+  # local_file.motd must be replaced
+-/+ resource "local_file" "motd" {
+      ~ content = <<-EOT
+            hello from evident-satyr
+        EOT -> (known after apply) # forces replacement
+      ~ id      = "dd375f8f…" -> (known after apply)
+
+  # random_pet.server must be replaced
+-/+ resource "random_pet" "server" {
+      ~ id      = "evident-satyr" -> (known after apply)
+      ~ keepers = { # forces replacement
+          ~ "env" = "staging" -> "production"
+        }
+
+  # terraform_data.config will be updated in-place
+  ~ resource "terraform_data" "config" {
+        id    = "4971ef44-…"
+      ~ input = {
+          ~ env = "staging" -> "production"
+
+Plan: 2 to add, 1 to change, 2 to destroy.
+```
+
+Line by line:
+
+- **`~` update in place.** The same object (note the unchanged `id`) gets a new value. Cheap and
+  usually safe.
+- **`-/+` must be replaced.** The provider can't change that attribute on a live object, so the
+  object is destroyed and a new one created — new ID, new identity. `# forces replacement`
+  names the attribute responsible. For a database, a disk or a DNS record, *that* is the line
+  to read before anything else.
+- **Replacement spreads.** Nothing about the file changed directly, but its content embeds the
+  pet's name, which will be new — so the file is replaced too.
+- **The summary counts objects, not resources.** Each replacement destroys one object and
+  creates one, so two replacements plus one update read `2 to add, 1 to change, 2 to
+  destroy`. "1 to change" is *only* the in-place update. Skim the summary for "change" and
+  you'll miss that a replace is a destroy.
+
+Two more symbols you'll meet:
+
+- **`+/-` create replacement and then destroy** — the same replacement, reversed, when the
+  resource sets `lifecycle { create_before_destroy = true }`. The default is
+  destroy-then-create.
+- **`<=` read** — a data source being read during apply because something it depends on is
+  still changing. Reads never appear in the add/change/destroy line.
+
+### Plan once, apply that plan
+
+`terraform apply` with no argument re-plans, and the world may have moved since you reviewed.
+In CI, save the plan and apply exactly it:
+
+```bash
+terraform plan -out=tfplan           # the file you review (or a bot summarises)
+terraform apply tfplan               # applies those actions — no new plan, no prompt
+```
+
+Terraform's own hint after `-out` reads *"To perform exactly these actions, run …"*. A plan
+file contains the configuration and variable values, sensitive ones included, so treat it
+like state. For scripts, `terraform plan -detailed-exitcode` exits `0` for no changes, `2` for
+changes and `1` for an error.

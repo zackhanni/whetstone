@@ -1,0 +1,75 @@
+---
+id: drift-and-refresh-only
+title: Drift — when reality changes behind Terraform's back
+---
+
+**Drift** is a difference between a real object and what Terraform last recorded: someone
+edited a security group in the console, an autoscaler changed a count, a person "just fixed
+it" on the server. Every normal plan starts by refreshing — asking the provider what each
+object looks like now — and then plans from *that*.
+
+Here someone overwrote `motd.txt` by hand. The next normal plan:
+
+```text
+  # local_file.motd will be created
+  + resource "local_file" "motd" {
+      ...
+Plan: 1 to add, 0 to change, 0 to destroy.
+```
+
+A plan that only *creates* looks harmless, but nothing in the configuration changed — this is
+Terraform undoing the hand edit. To see what it detected, ask for a refresh-only plan:
+
+```text
+$ terraform plan -refresh-only
+Note: Objects have changed outside of Terraform
+
+  # local_file.motd has been deleted
+  - resource "local_file" "motd" { ... }
+
+This is a refresh-only plan, so Terraform will not take any actions to undo
+these. If you were expecting these changes then you can apply this plan to
+record the updated values in the Terraform state without changing any remote
+objects.
+```
+
+How drift is *reported* depends on the provider. `local` compares the file's checksum and
+reports a file with different content as gone, so the fix is a create. A cloud provider
+usually reports the changed attribute, and the normal plan shows a `~` update that puts the
+configured value back. (A normal plan prints its own "Objects have changed outside of
+Terraform" note only for changes that may have affected the plan; `-refresh-only` lists
+everything it found.) Either way: **a normal plan makes reality match the configuration
+again.**
+
+So you choose, per change:
+
+| You want… | Do this |
+| --- | --- |
+| the configured value back | a normal `plan` and `apply` — that's the revert |
+| to keep the outside change | edit the **configuration** to match; the next plan is empty |
+| state to record reality, touching nothing | `terraform apply -refresh-only` |
+| Terraform to leave one attribute alone for good | `lifecycle { ignore_changes = [tags] }` |
+
+The trap is the third row. `-refresh-only` updates **state**, never the configuration. After
+accepting the hand edit that way, the very next normal plan still read:
+
+```text
+  # local_file.motd will be created
+Plan: 1 to add, 0 to change, 0 to destroy.
+```
+
+The configuration still declares the file, so Terraform still wants it. Keeping an outside
+change means editing the code; `-refresh-only` is for looking, and for refreshing outputs that
+other configurations read from your state.
+
+`ignore_changes` is for attributes something else legitimately owns — tags a compliance tool
+manages, a count an autoscaler moves — not for silencing drift you don't understand.
+
+<!--more-->
+
+**Make drift rare instead of reconciling it.** Drift means two writers. If people can change
+infrastructure outside Terraform, every `apply` can silently revert a production fix made at
+3 a.m. — which is why Terraform's `apply` docs recommend making sure nobody can change
+infrastructure outside the Terraform workflow before you rely on `-auto-approve`. Read-only
+console access, plus a scheduled `terraform plan -detailed-exitcode` that alerts when it exits
+`2` (changes present), turns drift from a surprise into a ticket.

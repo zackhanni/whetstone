@@ -1,0 +1,75 @@
+---
+id: variables-data-modules-outputs
+title: Variables in, data sources read, modules reuse, outputs out
+---
+
+A real configuration has more than `resource` blocks. Each of the other four has one job:
+
+```hcl
+variable "env" {
+  type        = string
+  description = "staging or production"
+}
+
+data "aws_vpc" "shared" {               # read something you don't own
+  tags = { Name = "shared-${var.env}" }
+}
+
+module "api" {                          # reuse a folder of .tf files
+  source = "./modules/service"
+  name   = "api-${var.env}"
+  vpc_id = data.aws_vpc.shared.id
+}
+
+output "api_url" {                      # hand a value back out
+  value = module.api.url
+}
+```
+
+- **`variable`** — an input. A value comes from `-var env=staging`, a `terraform.tfvars` file
+  (loaded automatically), a `*.tfvars` file passed with `-var-file`, or a `TF_VAR_env`
+  environment variable. With no default and no value, `plan` prompts — or, under
+  `-input=false` as in CI, fails with *No value for required variable*. That failure is a
+  feature: an unset environment name should stop the run, not fall back to something.
+- **`data`** — a **read**. It looks up an object someone else manages (a shared VPC, the
+  current account ID, an AMI) and exposes its attributes. Terraform never creates, changes or
+  destroys what a data source points at; delete the `data` block and the VPC is untouched.
+  Write `resource "aws_vpc"` by mistake and the same object would become *yours*, to update
+  and — one day — to destroy.
+- **`module`** — a call to a folder of `.tf` files. The folder's `variable` blocks are the
+  module's parameters and its `output` blocks are its return values. The directory you run
+  `terraform` in is the *root module*; what it calls are *child modules*, which can also come
+  from a registry or a git URL (`terraform init` fetches them).
+- **`output`** — a value printed after apply, readable with `terraform output -json`, and the
+  only way a parent sees inside a child module.
+
+### Addresses grow a module prefix
+
+A resource inside a module is addressed through the call that created it. With a small local
+module called `site`:
+
+```text
+$ terraform state list
+data.local_file.banner
+module.site.local_file.index
+```
+
+That prefix is part of the address state stores. Rename the call from `module "site"` to
+`module "shop"` and the next plan reads it as one object to remove and a different one to add:
+
+```text
+  # module.shop.local_file.index will be created
+  # module.site.local_file.index will be destroyed
+Plan: 1 to add, 0 to change, 1 to destroy.
+```
+
+Same file, new address — and Terraform plans to destroy and recreate it. Renaming without
+destroying is what `moved` blocks are for (see *Complex*).
+
+<!--more-->
+
+**Why modules matter for environments.** The usual layout keeps the real definitions in
+modules and gives each environment a thin root module of its own — a backend block plus a few
+`module` calls with that environment's values. Staging and production then share code but
+not state, credentials or blast radius. *Complex* covers why CLI workspaces aren't the tool
+for that split.

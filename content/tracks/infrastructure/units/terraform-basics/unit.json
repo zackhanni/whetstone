@@ -1,0 +1,321 @@
+{
+  "schemaVersion": 3,
+  "slug": "terraform-basics",
+  "title": "Terraform basics: state, plan and apply",
+  "skills": ["infrastructure", "terraform", "terraform-state"],
+  "difficulty": "core",
+  "estimatedMinutes": 50,
+  "objectives": [
+    "Explain what `resource`, `data`, `variable`, `module` and `output` blocks each do, and choose `data` for something you read but don't own",
+    "Explain why state lives in a locked remote backend, one per environment, and is changed through Terraform rather than by editing the file",
+    "Read a plan: tell an in-place update from a replacement, predict the add/change/destroy line, and recognise drift and what `-refresh-only` does about it",
+    "Rename a resource with a `moved` block and adopt an existing object with an `import` block instead of destroying and recreating it",
+    "Write a check over `terraform show -json` output that summarises a plan and flags every change that deletes an object"
+  ],
+  "sources": [
+    { "title": "Terraform docs: State", "url": "https://developer.hashicorp.com/terraform/language/state" },
+    { "title": "Terraform docs: State locking", "url": "https://developer.hashicorp.com/terraform/language/state/locking" },
+    { "title": "Terraform docs: Backend block configuration", "url": "https://developer.hashicorp.com/terraform/language/backend" },
+    { "title": "Terraform docs: S3 backend", "url": "https://developer.hashicorp.com/terraform/language/backend/s3" },
+    { "title": "Terraform docs: terraform plan command", "url": "https://developer.hashicorp.com/terraform/cli/commands/plan" },
+    { "title": "Terraform docs: JSON output format", "url": "https://developer.hashicorp.com/terraform/internals/json-format" },
+    { "title": "Terraform docs: Refactor modules (moved blocks)", "url": "https://developer.hashicorp.com/terraform/language/modules/develop/refactoring" },
+    { "title": "Terraform docs: import block", "url": "https://developer.hashicorp.com/terraform/language/block/import" },
+    { "title": "Terraform docs: lifecycle meta-argument", "url": "https://developer.hashicorp.com/terraform/language/meta-arguments/lifecycle" },
+    { "title": "Terraform docs: Manage sensitive data", "url": "https://developer.hashicorp.com/terraform/language/manage-sensitive-data" },
+    { "title": "Terraform docs: CLI workspaces", "url": "https://developer.hashicorp.com/terraform/cli/workspaces" },
+    { "title": "OpenTofu docs", "url": "https://opentofu.org/docs/intro/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-terraform", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-terraform",
+      "questions": [
+        {
+          "id": "data-vs-resource",
+          "prompt": "Your service needs the ID of a VPC that the network team manages in their own Terraform. Which block gives you its attributes **without** making the VPC yours?",
+          "options": [
+            { "id": "data", "text": "`data \"aws_vpc\" \"shared\" { … }` — a read; nothing in your configuration will ever change or destroy it" },
+            { "id": "resource", "text": "`resource \"aws_vpc\" \"shared\" { … }` with the same settings, then read its `id`" },
+            { "id": "import", "text": "An `import` block pointing at the VPC's ID" },
+            { "id": "module", "text": "A `module` block whose `source` is the network team's repository" }
+          ],
+          "answer": "data",
+          "explanation": "A data source looks an object up and exposes its attributes; Terraform never creates, updates or destroys what it points at. A `resource` block declares an object *you* own — with no state entry it would create a second VPC. An `import` block is the opposite of what you want: it adopts the VPC into your state, after which your plans can modify or destroy it. Calling the network team's code as a module would create its resources all over again in your state."
+        },
+        {
+          "id": "lost-state",
+          "prompt": "There's no remote backend, and the only `terraform.tfstate` gets deleted. The real objects are untouched. What does the next `terraform plan` propose?",
+          "options": [
+            { "id": "create-all", "text": "Creating every resource again — Terraform no longer knows those objects are its own" },
+            { "id": "rediscover", "text": "No changes — it rediscovers the objects by querying the provider" },
+            { "id": "destroy", "text": "Destroying the objects it can no longer find in state" },
+            { "id": "error", "text": "An error: plan refuses to run without a state file" }
+          ],
+          "answer": "create-all",
+          "explanation": "State is the only link between an address like `random_pet.server` and the real object's ID. With it gone, every resource looks new — a real run printed `Plan: 2 to add, 0 to change, 0 to destroy.` for two objects that still existed. Against a cloud API that plan either fails on a name clash or builds duplicates. Terraform can't \"rediscover\" ownership by matching settings, and it can't destroy objects it has no record of. That's why state belongs in a versioned remote backend."
+        },
+        {
+          "id": "lock-contention",
+          "prompt": "Two CI jobs run `terraform apply` against the same S3 backend with `use_lockfile = true`, a few seconds apart, with default flags. What happens to the second job?",
+          "options": [
+            { "id": "fails", "text": "It stops with *Error acquiring the state lock*; `-lock-timeout` defaults to `0s`, so it doesn't wait" },
+            { "id": "waits", "text": "It waits until the first apply finishes, then plans and applies" },
+            { "id": "last-wins", "text": "Both apply, and whichever finishes last overwrites the state" },
+            { "id": "shares", "text": "It applies on top of the first job's in-progress state" }
+          ],
+          "answer": "fails",
+          "explanation": "Terraform locks state for every operation that could write it, and \"if state locking fails, Terraform does not continue\". Waiting is opt-in: `-lock-timeout=5m` retries for five minutes. \"Both apply\" is what you risk with no locking at all — which is the S3 backend's default, since `use_lockfile` defaults to `false`. In CI, serialise runs per state (a concurrency group) so the lock is a safety net, not the normal path."
+        },
+        {
+          "id": "forces-replacement",
+          "prompt": "A plan shows `-/+ resource \"aws_db_instance\" \"main\"` and one attribute marked `# forces replacement`. What will `apply` do?",
+          "options": [
+            { "id": "replace", "text": "Destroy the database and create a new one with a new identity — its data goes with the old instance unless you've arranged a restore" },
+            { "id": "in-place", "text": "Modify the database in place; `-/+` is how a plan marks a large change" },
+            { "id": "migrate", "text": "Create the new database, copy the data across, then destroy the old one" },
+            { "id": "needs-flag", "text": "Nothing yet — a replacement only happens if you also pass `-replace`" }
+          ],
+          "answer": "replace",
+          "explanation": "`-/+` reads \"destroy and then create replacement\": the provider can't change that attribute on a live object. `~` is the in-place symbol. Terraform never migrates data — even with `create_before_destroy` (shown as `+/-`) it only changes the order, creating a new, separate object first. `-replace=ADDR` forces a replacement Terraform wouldn't otherwise plan; it isn't needed to carry out one it already planned."
+        },
+        {
+          "id": "summary-count",
+          "prompt": "A plan replaces one database and updates the tags on one security group. Which summary line does Terraform print?",
+          "options": [
+            { "id": "objects", "text": "`Plan: 1 to add, 1 to change, 1 to destroy.`" },
+            { "id": "as-change", "text": "`Plan: 0 to add, 2 to change, 0 to destroy.`" },
+            { "id": "double", "text": "`Plan: 1 to add, 2 to change, 1 to destroy.`" },
+            { "id": "resources", "text": "`Plan: 0 to add, 1 to change, 1 to destroy.`" }
+          ],
+          "answer": "objects",
+          "explanation": "The summary counts objects: a replacement destroys one and creates one, so it adds 1 to *add* and 1 to *destroy*, and *change* is only the in-place tag update. The tempting `2 to change` is how a skimming reviewer reads it — and why a replaced database hides in plain sight. A real plan with two replacements and one update printed `Plan: 2 to add, 1 to change, 2 to destroy.`"
+        },
+        {
+          "id": "refresh-only-trap",
+          "prompt": "Someone hand-edited an object and you want to keep their change. You run `terraform apply -refresh-only`, and change nothing else. What does the next normal `plan` propose?",
+          "options": [
+            { "id": "reverts", "text": "Undoing the edit again — the configuration still declares the old value" },
+            { "id": "nothing", "text": "No changes — state now matches reality" },
+            { "id": "error", "text": "An error, because state and configuration disagree" },
+            { "id": "writes-config", "text": "Nothing; `-refresh-only` also rewrote the `.tf` file to match" }
+          ],
+          "answer": "reverts",
+          "explanation": "`-refresh-only` updates **state** to match reality and never touches the configuration. A normal plan compares configuration with reality, so it still proposes to put the configured value back — the real run proposed recreating the hand-edited file straight after the refresh-only apply. To keep an outside change, edit the configuration to match; the plan is then empty."
+        },
+        {
+          "id": "moved-rename",
+          "prompt": "You rename `aws_db_instance.main` to `aws_db_instance.primary` in the code and change nothing else. What does the next plan propose, and what's the fix?",
+          "options": [
+            { "id": "moved", "text": "Destroy `main` and create `primary`; fix it with a `moved` block whose `from` is `aws_db_instance.main` and `to` is `aws_db_instance.primary`" },
+            { "id": "matches", "text": "No changes — Terraform matches the object by its settings, not its name" },
+            { "id": "in-place", "text": "An in-place rename (`~`), which is safe to apply" },
+            { "id": "import", "text": "Destroy and create; fix it with an `import` block for `primary`" }
+          ],
+          "answer": "moved",
+          "explanation": "State is keyed by address, so a new name is a new resource and the old address has no configuration: `Plan: 1 to add, 0 to change, 1 to destroy.` A `moved` block (Terraform 1.1+) tells Terraform the object at the old address now lives at the new one, and the plan becomes *\"has moved to\"* with nothing to add or destroy. An `import` block is for objects Terraform doesn't manage yet; this one is already in state under `main`, which would still be destroyed."
+        },
+        {
+          "id": "workspaces-for-prod",
+          "prompt": "Staging and production should share Terraform code, and the staging CI role must not be able to touch production. Which layout do Terraform's docs point to?",
+          "options": [
+            { "id": "roots", "text": "Shared modules plus one small root module per environment, each with its own backend and credentials" },
+            { "id": "workspaces", "text": "One configuration with `staging` and `production` CLI workspaces" },
+            { "id": "count", "text": "One configuration and one state, with `count = var.env == \"production\" ? 1 : 0` on each resource" },
+            { "id": "branches", "text": "A long-lived git branch per environment, each applied from its own branch" }
+          ],
+          "answer": "roots",
+          "explanation": "CLI workspaces give one configuration several states *in the same backend*, so the same credentials reach all of them — the docs say they are \"not a suitable isolation mechanism\" when deployments need separate credentials and access controls. The documented alternative is reusable modules plus a root module per deployment that holds only a backend block and a few `module` calls. One shared state puts both environments in one blast radius, and per-environment branches drift apart because the change you tested is never the change you merge."
+        },
+        {
+          "id": "json-actions",
+          "prompt": "In `terraform show -json` output, a change has `\"actions\": [\"create\", \"delete\"]`. What is it?",
+          "options": [
+            { "id": "cbd", "text": "A replacement with `create_before_destroy`: the new object is created, then the old one destroyed" },
+            { "id": "two", "text": "Two different resources — one being created and one being destroyed" },
+            { "id": "rollback", "text": "A create that Terraform will roll back if it fails" },
+            { "id": "update", "text": "An in-place update, written as a create and a delete" }
+          ],
+          "answer": "cbd",
+          "explanation": "Each entry in `resource_changes` is one resource instance, and the documented `actions` values include two spellings of replace: `[\"delete\", \"create\"]` (the default order) and `[\"create\", \"delete\"]` (with `create_before_destroy`). An update is `[\"update\"]`, and Terraform has no automatic rollback. The format writes replacements this way, the reference says, so that a caller can scan for `\"delete\"` and catch every plan that deletes something — reading only `actions[0]` misses this one."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-terraform",
+      "prompts": [
+        {
+          "id": "data-and-output",
+          "prompt": "Read a VPC you don't own, and expose its ID as an output.",
+          "code": [
+            "___ \"aws_vpc\" \"shared\" {",
+            "  tags = { Name = \"shared\" }",
+            "}",
+            "",
+            "output \"vpc_id\" {",
+            "  value = ___.aws_vpc.shared.id",
+            "}"
+          ],
+          "blanks": [
+            { "id": "a1", "accept": ["data"] },
+            { "id": "a2", "accept": ["data"] }
+          ],
+          "explanation": "A data source is declared with `data` and referenced with a `data.` prefix — `data.aws_vpc.shared.id` — which keeps reads visibly separate from `aws_vpc.shared`, a VPC you'd own. An `output` is how a value leaves a module (or is printed after apply)."
+        },
+        {
+          "id": "backend-lock",
+          "prompt": "Keep production state in S3 with S3-native locking turned on (generally available since Terraform 1.11).",
+          "code": [
+            "terraform {",
+            "  ___ \"s3\" {",
+            "    bucket       = \"acme-terraform-state\"",
+            "    key          = \"shop/production/terraform.tfstate\"",
+            "    region       = \"eu-west-1\"",
+            "    use_lockfile = ___",
+            "  }",
+            "}"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["backend"] },
+            { "id": "b2", "accept": ["true"] }
+          ],
+          "explanation": "The `backend` block lives inside `terraform { }` and is read before anything else, so it can't use variables. Locking on the S3 backend is opt-in — `use_lockfile` defaults to `false` — and the older `dynamodb_table` locking is deprecated."
+        },
+        {
+          "id": "plan-out-show",
+          "prompt": "Save a plan, turn it into JSON for a CI check, then apply exactly the plan that was checked.",
+          "code": [
+            "terraform plan -___=tfplan",
+            "terraform show -___ tfplan > plan.json",
+            "terraform apply tfplan"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["out"] },
+            { "id": "c2", "accept": ["json"] }
+          ],
+          "explanation": "`-out` writes a saved plan; `terraform show -json` renders it in the documented JSON format; `apply tfplan` performs those actions without re-planning or prompting — and refuses with *Saved plan is stale* if the state changed in between. The plan file holds variable values in clear text, so treat it like state."
+        },
+        {
+          "id": "moved-block",
+          "prompt": "Rename the database's address without destroying it.",
+          "code": [
+            "___ {",
+            "  from = aws_db_instance.main",
+            "  ___  = aws_db_instance.primary",
+            "}"
+          ],
+          "blanks": [
+            { "id": "d1", "accept": ["moved"] },
+            { "id": "d2", "accept": ["to"] }
+          ],
+          "explanation": "`moved` (Terraform 1.1+) records that the object bound to `from` now belongs to `to`, so the plan shows *\"has moved to\"* instead of a destroy and a create. Keep the block around: removing it later is a breaking change for any configuration that hasn't applied the move yet."
+        },
+        {
+          "id": "import-block",
+          "prompt": "Adopt a bucket that was created by hand (Terraform 1.5+). A matching `resource \"aws_s3_bucket\" \"assets\"` block already exists.",
+          "code": [
+            "import {",
+            "  ___ = aws_s3_bucket.assets",
+            "  ___ = \"acme-assets-prod\"",
+            "}"
+          ],
+          "blanks": [
+            { "id": "e1", "accept": ["to"] },
+            { "id": "e2", "accept": ["id"] }
+          ],
+          "explanation": "`to` is the address in your configuration; `id` is the provider's identifier for the real object (for an S3 bucket, its name). The plan shows *\"will be imported\"*, state changes at apply, and once the address is in state the block is a no-op you may delete or keep as a record."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-terraform",
+      "snippets": [
+        {
+          "id": "missing-variable",
+          "code": [
+            "variable \"env\" {",
+            "  type = string          # no default",
+            "}",
+            "",
+            "resource \"random_pet\" \"server\" {",
+            "  keepers = { env = var.env }",
+            "}",
+            "",
+            "# In CI, with no -var, no .tfvars file and no TF_VAR_env set:",
+            "# terraform plan -input=false"
+          ],
+          "question": "What does the plan do?",
+          "answer": "It fails: Error: No value for required variable",
+          "acceptable": ["error", "it errors", "No value for required variable"],
+          "explanation": "A variable with no default is required. Interactively, `plan` would prompt for it; with `-input=false`, as in CI, Terraform stops with *No value for required variable — the root module input variable \"env\" is not set, and has no default value*. It doesn't fall back to an empty string. That's the behaviour you want for an environment name: give it no default, so a pipeline that forgot to set it can't quietly plan against the wrong environment."
+        },
+        {
+          "id": "env-change-summary",
+          "code": [
+            "variable \"env\" { default = \"staging\" }",
+            "",
+            "resource \"random_pet\" \"server\" {",
+            "  keepers = { env = var.env }   # changing a keeper forces a new pet",
+            "}",
+            "",
+            "resource \"terraform_data\" \"config\" {",
+            "  input = { env = var.env, replicas = 2 }   # updates in place",
+            "}",
+            "",
+            "resource \"local_file\" \"motd\" {",
+            "  filename = \"${path.module}/motd.txt\"",
+            "  content  = \"hello from ${random_pet.server.id}\\n\"",
+            "}",
+            "",
+            "# Applied with the default. Now: terraform plan -var env=production"
+          ],
+          "question": "What is the plan's summary line?",
+          "answer": "Plan: 2 to add, 1 to change, 2 to destroy.",
+          "acceptable": ["2 to add, 1 to change, 2 to destroy", "2 add, 1 change, 2 destroy"],
+          "explanation": "The pet is replaced because a keeper changed, and the file is replaced because its content embeds the pet's new name — replacement spreads through references. `terraform_data.config` is the only in-place update. Each replacement is one destroy plus one create, so two replacements and one update give exactly the line Terraform 1.16 printed: `Plan: 2 to add, 1 to change, 2 to destroy.`"
+        },
+        {
+          "id": "rename-without-moved",
+          "code": [
+            "# Applied earlier:",
+            "resource \"random_pet\" \"worker\" {}",
+            "",
+            "# Now the file says this instead, and nothing else changed:",
+            "resource \"random_pet\" \"api\" {}",
+            "",
+            "# terraform plan"
+          ],
+          "question": "What does the plan propose?",
+          "answer": "Create random_pet.api and destroy random_pet.worker — Plan: 1 to add, 0 to change, 1 to destroy.",
+          "acceptable": ["Plan: 1 to add, 0 to change, 1 to destroy.", "destroy the old one and create a new one", "1 to add, 1 to destroy"],
+          "explanation": "State binds the real object to the address `random_pet.worker`. That address no longer has configuration (so: destroy), and `random_pet.api` has no object (so: create). Terraform doesn't match by settings, so for a database this rename is data loss. A `moved` block with `from = random_pet.worker` and `to = random_pet.api` turns it into `Plan: 0 to add, 0 to change, 0 to destroy.`"
+        },
+        {
+          "id": "import-mismatch",
+          "code": [
+            "# The real object was created earlier with min = 8000, max = 8999 (result 8443).",
+            "import {",
+            "  to = random_integer.port",
+            "  id = \"8443,8000,8999\"",
+            "}",
+            "",
+            "resource \"random_integer\" \"port\" {",
+            "  min = 8000",
+            "  max = 9999      # differs from the real object; changing max forces replacement",
+            "}",
+            "",
+            "# terraform plan"
+          ],
+          "question": "What is the summary line?",
+          "answer": "Plan: 1 to import, 1 to add, 0 to change, 1 to destroy.",
+          "acceptable": ["1 to import, 1 to add, 0 to change, 1 to destroy", "import it, then destroy and recreate it"],
+          "explanation": "Import adopts the existing object, then the plan reconciles it with the configuration like any other resource — and `max` can't change in place, so the object you meant to adopt is replaced. Terraform even prints `# Warning: this will destroy the imported resource`. Make the configuration match the real object first, import with an empty diff, and change it in a later plan. In JSON this is one change with `actions: [\"delete\", \"create\"]` **and** an `importing` object."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-terraform-plan-gate", "challengeSlug": "terraform-plan-gate" }
+  ]
+}
