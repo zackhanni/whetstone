@@ -38,6 +38,18 @@ const Code = z
   ])
   .transform((code) => (Array.isArray(code) ? code.join("\n") : code));
 
+/**
+ * A short field rendered as inline Markdown (prompts, options, questions, objectives, challenge
+ * titles and acceptance criteria). The inline renderer unwraps paragraphs, so a line break would
+ * silently run the two lines together — write one line, or move the detail to the explanation.
+ */
+const InlineText = z
+  .string()
+  .min(1)
+  .refine((s) => !s.includes("\n"), {
+    message: "inline text can't contain a line break (it renders as one run-on line)",
+  });
+
 /** An official documentation page the unit's claims were checked against. */
 const Source = z
   .object({
@@ -70,9 +82,9 @@ export const CardsBlock = Identified.extend({
 
 /** One multiple-choice question. `answer` references option id(s), so options shuffle freely. */
 export const QuizQuestion = Identified.extend({
-  prompt: z.string().min(1),
+  prompt: InlineText,
   options: z
-    .array(z.object({ id: z.string().min(1), text: z.string().min(1) }).strict())
+    .array(z.object({ id: z.string().min(1), text: InlineText }).strict())
     .min(2),
   answer: z.union([z.string(), z.array(z.string()).min(1)]), // option id(s); array => multi-select
   explanation: z.string().min(1), // ALWAYS required: wrong answers must teach
@@ -80,7 +92,7 @@ export const QuizQuestion = Identified.extend({
 }).strict();
 
 export const FillBlankItem = Identified.extend({
-  prompt: z.string().min(1),
+  prompt: InlineText,
   code: Code, // contains `___` tokens, one per blank, in order
   blanks: z
     .array(
@@ -108,7 +120,7 @@ export const FillBlankItem = Identified.extend({
  */
 export const PredictItem = Identified.extend({
   code: Code,
-  question: z.string().min(1),
+  question: InlineText,
   answer: z.string().min(1),
   acceptable: z.array(z.string()).optional(), // other phrasings that also count as correct
   explanation: z.string().min(1),
@@ -162,7 +174,7 @@ export const Unit = z
     difficulty: Difficulty,
     estimatedMinutes: z.number().int().positive(),
     // "After this unit you can…" — each one a concrete, assessed skill (PLAYBOOK → Objectives).
-    objectives: z.array(z.string().min(1)).min(2).max(5),
+    objectives: z.array(InlineText).min(2).max(5),
     sources: z.array(Source).min(1), // shown as "Further reading"; see PLAYBOOK → Sources
     blocks: z.array(Block).min(1), // ordered; difficulty escalates down the array
   })
@@ -268,7 +280,7 @@ export const Challenge = z
   .object({
     schemaVersion: z.literal(SCHEMA_VERSION),
     slug: z.string().min(1),
-    title: z.string().min(1), // shown as the challenge heading; README.md must not repeat it
+    title: InlineText, // shown as the challenge heading; README.md must not repeat it
     skills: z.array(z.string()).min(1),
     difficulty: Difficulty,
     estimatedMinutes: z.number().int().positive(),
@@ -291,7 +303,7 @@ export const Challenge = z
       .optional(),
     // Shown as the "Your task" checklist; README.md must not repeat it. Each one is asserted by
     // a test in the grader (PLAYBOOK → quality checklist).
-    acceptanceCriteria: z.array(z.string()).min(1),
+    acceptanceCriteria: z.array(InlineText).min(1),
   })
   .strict()
   .superRefine((challenge, ctx) => {
