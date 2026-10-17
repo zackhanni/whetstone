@@ -259,6 +259,14 @@ describe("validateContent non-errors", () => {
     expect((await validateContent(root)).errors).toEqual([]);
   });
 
+  it("doesn't read a regex's .test(\"…\") call as a test name", async () => {
+    await write(
+      "content/challenges/c/Thing.test.tsx",
+      'it("accepts letters", () => { expect(/^[a-z]+$/.test("abc")).toBe(true); });\nit("rejects digits", () => { expect(/^[a-z]+$/.test("abc")).toBe(true); });\n',
+    );
+    expect((await validateContent(root)).errors).toEqual([]);
+  });
+
   it("warns, without failing, when a track description contains Markdown", async () => {
     await set(TRACK, ["description"], "Learn `useEffect` the **right** way");
     const { errors, warnings } = await validateContent(root);

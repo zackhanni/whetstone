@@ -46,7 +46,8 @@ const Code = z
 const InlineText = z
   .string()
   .min(1)
-  .refine((s) => !s.includes("\n"), {
+  // CommonMark ends a line at a lone \r too, not only at \n.
+  .refine((s) => !/[\r\n]/.test(s), {
     message: "inline text can't contain a line break (it renders as one run-on line)",
   });
 

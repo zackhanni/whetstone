@@ -131,7 +131,7 @@
             { "id": "403", "text": "`403 Forbidden`" }
           ],
           "answer": "429",
-          "explanation": "429 (RFC 6585) is rate limiting: this client sent too many requests and should come back later, and `Retry-After` says when. 503 means the server can't serve *anyone* right now, which sends the wrong signal to every client and dashboard. 403 says the request is refused however slowly it's sent, so the client can't tell that waiting would fix it."
+          "explanation": "429 (RFC 6585) is rate limiting: this client sent too many requests and should come back later, and `Retry-After` says when. 503 blames the server — it's temporarily unable to handle the request (overload, maintenance) — so the client can't tell it went over its own limit, and dashboards count a server error. 403 says the request is refused however slowly it's sent, so the client can't tell that waiting would fix it."
         },
         {
           "id": "post-redirect-get",
@@ -167,7 +167,7 @@
             { "id": "408", "text": "`408 Request Timeout`" }
           ],
           "answer": "504",
-          "explanation": "The proxy waited for the upstream and gave up: 504. A 502 means the proxy *got* something back and it was invalid — the app crashed or dropped the connection. 503 means a server is temporarily unable to serve (overload, maintenance), not that a request was slow. 408 is the other direction: a server that stopped waiting for the *client* to finish sending its request."
+          "explanation": "The proxy waited for the upstream and gave up: 504. A 502 means the exchange failed rather than ran out of time: the response was invalid, or the connection closed before its headers arrived (the app crashed). 503 means a server is temporarily unable to serve (overload, maintenance), not that a request was slow. 408 is the other direction: a server that stopped waiting for the *client* to finish sending its request."
         }
       ]
     },

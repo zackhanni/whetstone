@@ -15,6 +15,7 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — PR #24 review — 502/503 and regex `\w`/`\b` cards, Nest versioning snippet; schema rejects `\r`; `.test()` isn't a test name; browser check waits for the runner.
 - 2026-10-17 — taxonomy — `status-codes` (under `http`), `regex` (under `javascript`) and `terminal` (under `tooling`) for the Reference Cards track.
 - 2026-10-17 — reference-cards/http-status-codes — per-code lookup cards (200–504: redirects by permanence and method, 304, 400 vs 422, 401 vs 403, 404 vs 410, 405, 409, 415, 429, 502/503/504), bloomed with a "which code for this situation?" quiz and a fill-blank on the header each code needs; `request-response-anatomy` now links the deck.
 - 2026-10-17 — reference-cards/common-cli-flags — cards for everyday flags (`ls -la`, `rm -rf` and the empty-variable trap, `grep -rniE`, `cp -R`/`-a`, `mkdir -p`, `tail -F`, `ps aux`, `lsof` port lookup, `kill` vs `-9`, `chmod +x`, `--`, `find`, `xargs -0`) and the macOS-vs-GNU differences that break scripts (all BSD behaviour run on macOS 26).

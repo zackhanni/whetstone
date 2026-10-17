@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { chromium, type Page } from "playwright-core";
+import { chromium, errors, type Page } from "playwright-core";
 
 /**
  * The browser half of PLAYBOOK Rule 4: open each challenge in the real Sandpack runner, press
@@ -72,14 +72,42 @@ const clickButton = (page: Page, label: string) =>
     button.click();
   }, label);
 
+/**
+ * Waits for the "Run tests" button; false if it doesn't render within `timeoutMs`. The runner is
+ * client-only (`ssr: false`), so its buttons appear some time after `load`.
+ *
+ * Don't scroll the runner into view or wait for Sandpack to start before pressing it. Sandpack
+ * starts only when the runner nears the viewport, and in headless Chrome a press made after the
+ * preview has loaded leaves the tests panel empty. The press itself scrolls the runner into view,
+ * so Sandpack starts with the tests panel already mounted, and that run reports. The short pause
+ * after the button appears is what the script always used; a press right after render was dropped.
+ */
+async function waitForRunner(page: Page, timeoutMs = 120_000): Promise<boolean> {
+  try {
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll("button")).some((b) => b.innerText.trim() === "Run tests"),
+      undefined,
+      { timeout: timeoutMs },
+    );
+  } catch (e) {
+    if (e instanceof errors.TimeoutError) return false;
+    throw e;
+  }
+  await page.waitForTimeout(4000);
+  return true;
+}
+
 async function checkOne(page: Page, slug: string, route: string): Promise<string | null> {
   await page.goto(BASE_URL + route, { waitUntil: "load" });
-  // Sandpack mounts its client lazily; a click before it's ready is silently dropped.
-  await page.waitForTimeout(4000);
+  if (!(await waitForRunner(page))) return `${slug}: the runner never rendered its "Run tests" button`;
   await clickButton(page, "Run tests");
   const starter = await readSummary(page);
   await clickButton(page, "Show solution");
-  await page.waitForTimeout(1500);
+  // The same render that relabels the button remounts Sandpack with the solution, so once the
+  // label reads "Reset to starter" the starter's results are gone and can't be read as the solution's.
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll("button")).some((b) => b.innerText.trim() === "Reset to starter"),
+  );
   const solution = await readSummary(page);
 
   const fmt = (s: Summary) => (s ? `${s.failed} failed / ${s.passed} passed` : "no result");

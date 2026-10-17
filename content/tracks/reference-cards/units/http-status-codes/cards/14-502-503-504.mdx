@@ -7,7 +7,7 @@ With a proxy, load balancer or CDN in front of your app, read these as **where**
 
 | Code | Usually sent by | What happened |
 | --- | --- | --- |
-| `502 Bad Gateway` | the proxy | it got an **invalid** response from the app — the app crashed or dropped the connection mid-response |
+| `502 Bad Gateway` | the proxy | it got an **invalid** response from the app — garbage, or the connection closed before the headers came (a crash) |
 | `503 Service Unavailable` | the app or the proxy | **temporarily** can't serve: overload, maintenance; may send `Retry-After` |
 | `504 Gateway Timeout` | the proxy | the app didn't answer **in time** — the proxy's timeout fired first (a slow query, a hung handler) |
 

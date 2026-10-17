@@ -132,11 +132,11 @@ export function stripComments(src: string): string {
 
 /**
  * The names of a grader's tests, in order: the first argument of every `it(…)` / `test(…)`
- * written as a plain string literal.
+ * written as a plain string literal. A method call such as a regex's `.test("x")` is not a test.
  */
 export function testNames(src: string): string[] {
   const names: string[] = [];
-  for (const m of stripComments(src).matchAll(/\b(?:it|test)\s*\(\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/g))
+  for (const m of stripComments(src).matchAll(/(?<![\w$.])(?:it|test)\s*\(\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/g))
     names.push(m[2]);
   return names;
 }
