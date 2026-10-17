@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 3,
+  "slug": "n-plus-one-queries",
+  "title": "N+1 queries: batching, loaders and paging",
+  "skills": ["databases", "n-plus-one", "pagination", "query-performance", "sql"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Spot an N+1 — a query per row in a loop, an ORM relation loaded per item, per-item loads awaited one at a time — and count the round trips it costs",
+    "Replace it with a join or one `WHERE id = ANY($1)` batch whose rows are mapped back by id, sending each id once and answering missing ids with `null`",
+    "Explain how a DataLoader-style loader batches the loads made in one tick, and why awaiting each load in a loop defeats it",
+    "Page large reads with keyset pagination instead of `OFFSET`, and spot a read silently capped by Supabase's max rows (1,000 by default)"
+  ],
+  "sources": [
+    { "title": "PostgreSQL 18 docs: Row and Array Comparisons (ANY, row-wise <)", "url": "https://www.postgresql.org/docs/18/functions-comparisons.html" },
+    { "title": "PostgreSQL 18 docs: LIMIT and OFFSET", "url": "https://www.postgresql.org/docs/18/queries-limit.html" },
+    { "title": "PostgreSQL 18 docs: Aggregate Functions (json_agg)", "url": "https://www.postgresql.org/docs/18/functions-aggregate.html" },
+    { "title": "DataLoader README (GraphQL Foundation)", "url": "https://github.com/graphql/dataloader" },
+    { "title": "Prisma ORM 7 docs: Query optimization (the n+1 problem)", "url": "https://www.prisma.io/docs/orm/v7/prisma-client/queries/advanced/query-optimization-performance" },
+    { "title": "PostgREST docs: Configuration (db-max-rows)", "url": "https://docs.postgrest.org/en/stable/references/configuration.html" },
+    { "title": "Supabase docs: Fetch data (default maximum of 1,000 rows)", "url": "https://supabase.com/docs/reference/python/select" },
+    { "title": "pg-types README (node-postgres): int8 is returned as a string", "url": "https://github.com/brianc/node-pg-types" },
+    { "title": "MDN: queueMicrotask()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/queueMicrotask" },
+    { "title": "RFC 9110: HTTP Semantics — URI length (4.1)", "url": "https://www.rfc-editor.org/rfc/rfc9110#section-4.1" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-n-plus-one", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-n-plus-one",
+      "questions": [
+        {
+          "id": "count-the-queries",
+          "prompt": "A feed loads 20 posts with one query, then for each post calls `getAuthor(post.authorId)` and `countLikes(post.id)`, each running one query. How many queries does one page view make?",
+          "options": [
+            { "id": "41", "text": "41 — 1 for the list, plus 2 per post" },
+            { "id": "3", "text": "3 — one per kind of data" },
+            { "id": "21", "text": "21 — the helpers share a connection, so each post costs one" },
+            { "id": "1", "text": "1 — the database sees it as a single request" }
+          ],
+          "answer": "41",
+          "explanation": "Each helper call is its own round trip, and there are two per post: 1 + 20 × 2 = 41. Sharing a connection doesn't merge queries; it only means they run one after another. The fix gets it to 3: the list, every author in one `= ANY($1)` batch, and every post's like count in one `GROUP BY post_id` query."
+        },
+        {
+          "id": "concurrency-is-not-batching",
+          "prompt": "A teammate wraps the per-order customer queries in `Promise.all(orders.map(o => getCustomer(o.customerId)))`. The page is fast locally. Is the N+1 fixed?",
+          "options": [
+            { "id": "no", "text": "No — it's still one query per order, just concurrent; under load they compete for the pool's connections and queue anyway" },
+            { "id": "yes", "text": "Yes — the queries now run in parallel, so the total time is one round trip" },
+            { "id": "yes-db", "text": "Yes — PostgreSQL merges identical concurrent queries into one" },
+            { "id": "worse", "text": "No — `Promise.all` runs them sequentially" }
+          ],
+          "answer": "no",
+          "explanation": "Concurrency hides latency on a quiet machine; it doesn't reduce work. The database still parses, plans and runs one statement per order, and a connection pool runs only as many at once as it has connections — the rest wait. PostgreSQL doesn't merge separate queries. A single `WHERE id = ANY($1)` batch (or a join) is one statement whatever the page size."
+        },
+        {
+          "id": "zip-by-position",
+          "prompt": "`const rows = await db.query('SELECT id, name FROM customers WHERE id = ANY($1)', [ids])`, then `orders[i].customerName = rows.rows[i].name`. What's wrong?",
+          "options": [
+            { "id": "position", "text": "Without `ORDER BY` the rows come back in no particular order, once per distinct id, and not at all for missing ids — match them by id with a `Map`" },
+            { "id": "nothing", "text": "Nothing — `ANY` returns rows in the order of the array" },
+            { "id": "order-by-id", "text": "Only that it needs `ORDER BY id` to line up with `orders`" },
+            { "id": "param", "text": "An array can't be passed as a single parameter" }
+          ],
+          "answer": "position",
+          "explanation": "SQL promises no row order without `ORDER BY`, so `rows[i]` belongs to `ids[i]` only by luck — asking for 1, 2, 9 returned 2, 9, 1 from storage order. `ORDER BY id` doesn't save it: the ids are deduped and missing ones produce no row, so positions still don't line up with orders. Build `new Map(rows.map(r => [r.id, r]))` and look up each order's id. Passing a JavaScript array as `$1` works fine with node-postgres."
+        },
+        {
+          "id": "await-defeats-loader",
+          "prompt": "A batching loader is in place, yet a report built with `for (const o of orders) rows.push(await loader.load(o.customerId))` still makes one customer query per order. Why?",
+          "options": [
+            { "id": "await-in-loop", "text": "Each `await` lets the tick end before the next `load` is called, so every batch holds exactly one id" },
+            { "id": "loader-broken", "text": "The loader must be broken; a loader always produces one query per request" },
+            { "id": "for-of", "text": "`for…of` runs iterations in parallel, which confuses the loader" },
+            { "id": "cache", "text": "The loader's cache is disabled" }
+          ],
+          "answer": "await-in-loop",
+          "explanation": "A loader can only batch the loads it has been given before it dispatches, and it dispatches at the end of the tick. Awaiting inside the loop hands control back after every `load`, the batch fires with one id, and the next iteration starts a new batch. `await Promise.all(orders.map(o => loader.load(o.customerId)))` issues all the loads first: one query. `for…of` with `await` is strictly sequential."
+        },
+        {
+          "id": "loader-scope",
+          "prompt": "To \"reuse the cache\", a DataLoader is created once at module level and shared by every request in the server. What's the risk?",
+          "options": [
+            { "id": "shared-cache", "text": "Its cache outlives requests: one user's cached rows can be served to another user's request, and the cache grows without bound" },
+            { "id": "none", "text": "None — sharing it maximises batching across users" },
+            { "id": "no-batching", "text": "Batching stops working after the first request" },
+            { "id": "types", "text": "TypeScript can't type a module-level loader" }
+          ],
+          "answer": "shared-cache",
+          "explanation": "DataLoader memoizes every key it has loaded in a `Map` for the loader's lifetime. Its README says to create loaders when a request begins and stop using them when it ends: shared, cached data can incorrectly appear in other users' requests (think row-level permissions), rows go stale, and the `Map` only grows. Batching works per tick either way; it doesn't need a shared instance."
+        },
+        {
+          "id": "offset-drift",
+          "prompt": "An infinite-scroll feed uses `ORDER BY created_at DESC, id DESC LIMIT 20 OFFSET $n`. Users report seeing the same post twice when new posts arrive while they scroll. The fix?",
+          "options": [
+            { "id": "keyset", "text": "Keyset pagination: `WHERE (created_at, id) < ($last_created_at, $last_id)` with the same `ORDER BY` and `LIMIT 20`" },
+            { "id": "tiebreak", "text": "Add `id` to the `ORDER BY` as a tiebreaker" },
+            { "id": "bigger-pages", "text": "Use bigger pages so fewer offsets are needed" },
+            { "id": "serializable", "text": "Run the feed query in a SERIALIZABLE transaction" }
+          ],
+          "answer": "keyset",
+          "explanation": "`OFFSET` counts positions, and every new post at the top moves everything down one position, so the next page repeats the last post of the previous one. Keyset paging continues from the last row actually seen, so inserts above it don't matter — and with an index on `(created_at, id)` each page costs the same however deep you scroll. The query already has the `id` tiebreaker (needed, but not sufficient). Each page is its own request, so no single transaction spans the scroll."
+        },
+        {
+          "id": "silent-cap",
+          "prompt": "A nightly script fetches all members and all payments with supabase-js `.select()` and flags members with no payment. It suddenly flags hundreds of members who definitely paid. The payments table just passed 1,000 rows. What happened?",
+          "options": [
+            { "id": "max-rows", "text": "PostgREST's max rows setting (1,000 by default on Supabase) truncated the payments read without an error, so later payments were never compared" },
+            { "id": "rls", "text": "Row-level security started hiding payments" },
+            { "id": "timeout", "text": "The query timed out and supabase-js returned partial data with an error the script ignored" },
+            { "id": "bug-in-set", "text": "`Set` stops working reliably above 1,000 entries" }
+          ],
+          "answer": "max-rows",
+          "explanation": "PostgREST's `db-max-rows` is a hard cap on rows per response (unlimited unless configured), and Supabase's docs say Supabase projects return at most 1,000 rows by default. Hitting it isn't an error — the response is just shorter — so every payment past row 1,000 is missing and its member looks unpaid. The tell is a count stuck on a round number. Do the set logic in SQL (`NOT EXISTS`), page until a short page with `.range()`, or request `count: 'exact'` and compare it with `data.length`."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-n-plus-one",
+      "prompts": [
+        {
+          "id": "any-batch",
+          "prompt": "Fetch every customer a page of orders mentions, in one query, with the whole id list as one parameter.",
+          "code": "SELECT id, name FROM customers WHERE id = ___($1);",
+          "blanks": [{ "id": "a1", "accept": ["ANY"] }],
+          "explanation": "`= ANY($1)` compares `id` with each element of the array parameter. It's one statement however many ids the page has — and it returns rows in no particular order, once per distinct id."
+        },
+        {
+          "id": "dedupe-and-map",
+          "prompt": "Send each id once, then match rows back by id — never by position — and answer missing ids with `null`.",
+          "code": [
+            "const ids = [...new ___(orders.map((o) => o.customerId))];",
+            "const rows = await db.customersByIds(ids);",
+            "const byId = new ___(rows.map((row) => [row.id, row]));",
+            "const customerFor = (id: string) => byId.get(id) ___ null;"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["Set"] },
+            { "id": "b2", "accept": ["Map"] },
+            { "id": "b3", "accept": ["??", "||"] }
+          ],
+          "explanation": "A `Set` dedupes the ids; a `Map` keyed by id makes the lookup independent of row order; `?? null` (or `|| null` — the same here, since a row is always an object) turns \"no row for this id\" (a deleted customer) into an explicit `null` instead of `undefined` sneaking through."
+        },
+        {
+          "id": "start-all-loads",
+          "prompt": "Issue every load before awaiting any of them, so the loader sees one batch.",
+          "code": "const customers = await ___(orders.map((o) => loader.load(o.customerId)));",
+          "blanks": [{ "id": "c1", "accept": ["Promise.all"] }],
+          "explanation": "`orders.map` calls `load` for every order synchronously, all inside one tick, so the loader's batch holds every id. `Promise.all` then waits for them and keeps the results in the same order as `orders`."
+        },
+        {
+          "id": "keyset-next-page",
+          "prompt": "Next page of a newest-first feed, continuing after the last row of the previous page (`$1` its `created_at`, `$2` its `id`).",
+          "code": [
+            "SELECT id, created_at FROM posts",
+            "WHERE (created_at, id) ___ ($1, $2)",
+            "ORDER BY created_at DESC, id DESC",
+            "LIMIT 20;"
+          ],
+          "blanks": [{ "id": "d1", "accept": ["<"] }],
+          "explanation": "Newest-first means the next page is everything *before* the last row seen. The row comparison checks `created_at` first and uses `id` only to break ties, matching the `ORDER BY` — and an index on `(created_at, id)` serves it as a range scan."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-n-plus-one",
+      "snippets": [
+        {
+          "id": "await-in-loop-batches",
+          "code": [
+            "// loader batches every load() made in the same tick into one query (no cache, like the reading's loader)",
+            "const orders = [{ customerId: '1' }, { customerId: '9' }, { customerId: '1' }, { customerId: '42' }];",
+            "",
+            "for (const o of orders) await loader.load(o.customerId);           // A",
+            "await Promise.all(orders.map((o) => loader.load(o.customerId)));   // B"
+          ],
+          "question": "How many queries do A and B each send?",
+          "answer": "A: 4, B: 1",
+          "acceptable": ["4 and 1", "A 4, B 1", "four, then one"],
+          "explanation": "In A every `await` ends the tick, so each batch holds one id: `[1]`, `[9]`, `[1]`, `[42]`. In B all four loads are queued before anything is awaited, so one batch goes out — `[1, 9, 42]` with a deduping loader. Verified with the loader from the medium reading."
+        },
+        {
+          "id": "any-returns-storage-order",
+          "code": [
+            "-- customers in storage order: (2 Grace), (9 Linus), (1 Ada), (6 Margaret)",
+            "SELECT id FROM customers WHERE id = ANY('{1,2,9}');"
+          ],
+          "question": "In what order do the ids come back?",
+          "answer": "2, 9, 1",
+          "acceptable": ["2,9,1", "2 9 1", "storage order: 2, 9, 1"],
+          "explanation": "Without `ORDER BY` the result comes back in whatever order the plan produces it — here a sequential scan in storage order — not in the order of the array. Code that zips `rows[i]` with `ids[i]` gives Ada's order to Grace. Map by id."
+        },
+        {
+          "id": "limit-over-a-join",
+          "code": [
+            "-- 100 orders, each with exactly 4 order_items",
+            "SELECT o.id, i.sku",
+            "FROM orders o",
+            "JOIN order_items i ON i.order_id = o.id",
+            "ORDER BY o.id DESC",
+            "LIMIT 50;"
+          ],
+          "question": "How many distinct orders are in the result?",
+          "answer": "13",
+          "acceptable": ["13", "thirteen", "13 (the last one cut off)"],
+          "explanation": "`LIMIT` counts joined rows: 50 rows at 4 per order is 12 full orders plus 2 items of a 13th. Page the parents first (`FROM (SELECT id FROM orders ORDER BY id DESC LIMIT 50) o JOIN …`) or fetch the 50 orders and batch their items with `= ANY($1)`."
+        },
+        {
+          "id": "offset-repeats-a-row",
+          "code": [
+            "-- posts 1..30, newest first. Page 1 (OFFSET 0, LIMIT 10) showed 30…21.",
+            "INSERT INTO posts …;   -- post 31 arrives",
+            "SELECT id FROM posts ORDER BY created_at DESC, id DESC LIMIT 10 OFFSET 10;"
+          ],
+          "question": "Which id does page 2 start with?",
+          "answer": "21",
+          "acceptable": ["21", "21 again", "21 — a repeat"],
+          "explanation": "The new post pushed everything down one position, so offset 10 now lands on 21, which page 1 already showed. A delete shifts the other way and silently skips a post. The keyset version — `WHERE (created_at, id) < (created_at of 21, 21)` — starts at 20 regardless."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-batch-customer-loader", "challengeSlug": "batch-customer-loader" }
+  ]
+}

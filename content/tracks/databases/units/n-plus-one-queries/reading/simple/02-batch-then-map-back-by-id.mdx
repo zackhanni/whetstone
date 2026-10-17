@@ -1,0 +1,54 @@
+---
+id: batch-then-map-back-by-id
+title: Batch the ids, then map the rows back by id
+---
+
+`WHERE id = ANY($1)` returns the matching rows — but not in the order you asked, not once per
+request, and not at all for ids with no row:
+
+```sql
+-- customers table, in storage order: (2 Grace), (9 Linus), (1 Ada), (6 Margaret)
+SELECT id, name FROM customers WHERE id = ANY('{1,2,9}');
+--  2 | Grace
+--  9 | Linus
+--  1 | Ada          ← asked for 1, 2, 9; got 2, 9, 1
+
+SELECT id, name FROM customers WHERE id = ANY('{9,1,9,42}');
+--  9 | Linus
+--  1 | Ada          ← 9 once (asked twice), 42 not at all
+```
+
+Without `ORDER BY`, SQL promises no order, so the rows come back however the plan produced them.
+Three rules follow, and every batching bug breaks one of them:
+
+1. **Never match by position.** `rows[i]` belongs to `ids[i]` only by luck. Build a `Map` keyed by
+   id and look each one up.
+2. **Expect missing ids.** A deleted customer has no row. The lookup must give `null` (or an
+   explicit "not found"), never shift every later answer by one.
+3. **Send each id once.** Fifty orders from three customers is three ids, not fifty.
+
+```ts
+const ids = [...new Set(orders.map((o) => o.customer_id))];          // rule 3
+const { rows } = await db.query(
+  "SELECT id, name FROM customers WHERE id = ANY($1)",
+  [ids],
+);
+const byId = new Map(rows.map((c) => [c.id, c]));                    // rule 1
+
+for (const order of orders) {
+  order.customerName = byId.get(order.customer_id)?.name ?? "(deleted customer)";  // rule 2
+}
+```
+
+Two queries for any page size, and each order gets its own customer.
+
+`IN (…)` with a literal list behaves the same as `= ANY(array)`. The array form is convenient
+from application code because the whole list is **one** parameter (`$1`), however many ids it holds.
+
+<!--more-->
+
+**Watch the key's type.** node-postgres (`pg` 8) returns a `bigint` column as a *string* (`"9"`):
+its default parser for 64-bit integers deliberately keeps the text, because such values don't fit a
+JavaScript number safely. If `orders.customer_id` comes back as
+`"9"` and you build the `Map` from numbers, every lookup misses and every customer looks deleted.
+Keep ids in one representation on both sides of the `Map`.

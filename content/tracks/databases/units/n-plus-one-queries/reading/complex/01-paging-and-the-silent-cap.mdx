@@ -1,0 +1,82 @@
+---
+id: paging-and-the-silent-cap
+title: Paging — OFFSET vs keyset, and the read that silently stops at 1,000
+---
+
+Batching fixes "too many queries". Paging fixes "one query that returns too much" — and has two
+traps of its own.
+
+## OFFSET gets slower and drifts
+
+```sql
+SELECT id, created_at FROM posts
+ORDER BY created_at DESC, id DESC
+LIMIT 10 OFFSET 10;          -- page 2
+```
+
+- **Cost grows with depth.** The PostgreSQL manual: rows skipped by `OFFSET` still have to be
+  computed inside the server. Page 1,000 reads and throws away 9,990 rows to return 10.
+- **Pages drift under writes.** Page 1 returned posts 30…21. A new post arrives before the user
+  clicks "next", everything shifts down one place, and `OFFSET 10` returns 21…12 — post 21 shown
+  twice (a delete shifts the other way and one is silently skipped).
+
+## Keyset pagination: continue from the last row you saw
+
+```sql
+SELECT id, created_at FROM posts
+WHERE (created_at, id) < ($1, $2)          -- the last row of the previous page
+ORDER BY created_at DESC, id DESC
+LIMIT 10;
+```
+
+Same scenario: page 2 starts at 20, whatever was inserted above. With an index on
+`(created_at, id)` every page is an index range scan of 10 entries, page 1 or page 1,000. On a
+200,000-row table in PostgreSQL 18, `OFFSET 100000 LIMIT 10` walked 100,010 index entries (928
+pages) to return 10 rows; a keyset page at a similar depth walked 10 (6 pages).
+
+- The row comparison `(a, b) < (x, y)` compares left to right, stopping at the first unequal pair —
+  exactly "earlier, or same time with a smaller id".
+- The `ORDER BY` must be **unique**, hence the `id` tiebreaker. Without it, rows with equal
+  `created_at` can straddle a page boundary and be skipped or repeated; the manual warns that
+  without a unique order `LIMIT` returns an unpredictable subset.
+- The key columns should be `NOT NULL`. A `NULL` that the row comparison reaches makes it
+  unknown, so such rows drop out of later pages — and a `NULL` in the cursor ends paging
+  altogether.
+- You give up "jump to page 37". For feeds, exports and batch jobs that's no loss.
+
+## The unpaged read that stops at 1,000 rows — without an error
+
+PostgREST, the API layer under Supabase, has a `db-max-rows` setting: a hard limit on rows returned
+per request (unlimited unless configured). Supabase's docs say Supabase projects return a maximum of
+1,000 rows by default. A response that
+hits the limit is not an error — it's just shorter than you think:
+
+```ts
+const { data: members } = await supabase.from("members").select("id");        // ≤ 1,000 rows
+const { data: payments } = await supabase.from("payments").select("member_id"); // ≤ 1,000 rows
+const paid = new Set(payments.map((p) => p.member_id));
+const unpaid = members.filter((m) => !paid.has(m.id));
+```
+
+With 1,400 payment rows, 400 never arrive, and the members they belong to are reported as
+**unpaid** — a false alarm, built from a truncated read, with every call "succeeding". The tell is a
+count that sits exactly on a round number (1,000) no matter how much data you add.
+
+Fixes, best first:
+
+1. **Do set logic in SQL**, not in JavaScript over two downloads: an anti-join
+   (`WHERE NOT EXISTS (SELECT 1 FROM payments p WHERE p.member_id = m.id)`) returns only the
+   answer — a view or a SQL function exposes it through the API.
+2. **Page until a short page**, with a page size no bigger than the max-rows cap: `.range(from, to)`,
+   or keyset with `.order('id').gt('id', last).limit(1000)`, repeating until a page comes back with
+   fewer rows than you asked for. Ask for 5,000 under a 1,000 cap and the very first page is "short"
+   — the loop stops, and you've rebuilt the bug.
+3. **Check for truncation.** `select('id', { count: 'exact' })` also returns the total; if
+   `data.length < count`, you didn't get everything.
+
+<!--more-->
+
+**`max-rows` is a guard, not a bug.** It protects the API from accidental or malicious requests
+for whole tables; Supabase recommends keeping it low and paginating. The bug is code that assumes
+"one request = all rows". Raising the limit just moves the cliff to wherever your data is next
+year.
