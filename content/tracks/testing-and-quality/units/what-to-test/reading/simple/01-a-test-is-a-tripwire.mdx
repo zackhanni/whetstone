@@ -1,0 +1,45 @@
+---
+id: a-test-is-a-tripwire
+title: A test is a tripwire stretched across behaviour
+---
+
+A test suite exists so you can **change code without fear**. You refactor, upgrade a library or
+fix a bug, run the tests, and either they stay green (you didn't break anything you promised) or one
+goes red and tells you exactly which promise you broke.
+
+That gives every test one job: **fail when the behaviour breaks, and only then.**
+
+```ts
+// shipping.ts — orders of $50.00 or more ship free (amounts in cents)
+export function shippingCost(subtotalCents: number): number {
+  return subtotalCents >= 5000 ? 0 : 499;
+}
+```
+
+```ts
+// shipping.test.ts
+import { expect, it } from "vitest";
+import { shippingCost } from "./shipping";
+
+it("ships free from exactly $50", () => {
+  expect(shippingCost(5000)).toBe(0);
+});
+
+it("charges $4.99 just below $50", () => {
+  expect(shippingCost(4999)).toBe(499);
+});
+```
+
+Now try to break it. Change `>=` to `>` and the first test goes red — the tripwire caught a real
+change in what customers pay. Rename the parameter, rewrite the function as an `if`, move it to
+another file: nothing goes red, because nothing a caller can observe changed.
+
+A test can let you down in two opposite ways:
+
+- **It misses a real break.** It stays green while customers get charged. (A test that only checked
+  `shippingCost(10000)` would pass under both `>=` and `>`.)
+- **It breaks on a harmless change.** It goes red on a refactor that changed nothing a caller sees.
+  Do that often enough and the team learns to "just update the test" — and stops believing red.
+
+Both failures cost the same thing: trust. Most of this track is about writing tests that avoid
+them.

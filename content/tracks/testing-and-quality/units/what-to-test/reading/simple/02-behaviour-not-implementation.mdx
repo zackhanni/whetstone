@@ -1,0 +1,46 @@
+---
+id: behaviour-not-implementation
+title: Assert what it promises, not how it works
+---
+
+Two tests for the same cart. Both pass today.
+
+```ts
+class Cart {
+  private lines: { sku: string; priceCents: number; qty: number }[] = [];
+  add(item: { sku: string; priceCents: number }) { /* … */ }
+  count(sku: string): number { /* … */ }
+  total(): number { /* … */ }
+}
+
+// ❌ Pinned to HOW it works: the private array and its shape
+it("adds the item", () => {
+  const cart = new Cart();
+  cart.add({ sku: "tea", priceCents: 450 });
+  expect(cart["lines"]).toEqual([{ sku: "tea", priceCents: 450, qty: 1 }]);
+});
+
+// ✅ Pinned to WHAT it promises: what any caller can observe
+it("adds the item to the count and the total", () => {
+  const cart = new Cart();
+  cart.add({ sku: "tea", priceCents: 450 });
+  cart.add({ sku: "tea", priceCents: 450 });
+  expect(cart.count("tea")).toBe(2);
+  expect(cart.total()).toBe(900);
+});
+```
+
+Next month someone swaps the private array for a `Map` keyed by SKU — faster lookups, same
+behaviour. The first test goes red. Nothing a caller can see changed, so the red is noise.
+The second test stays green, and it would still go red if `add` stopped counting duplicates.
+
+The rule: **test through the public surface**, the same way real callers use the code.
+
+- For a function: its arguments in, its return value or its effect out.
+- For a module: its exports, not its private helpers.
+- For a UI: what a user can see and do. Testing Library's guiding principle says it in one line:
+  *"The more your tests resemble the way your software is used, the more confidence they can give
+  you."* Assert that the "Card declined" message appears, not that `setError` was called.
+
+An implementation detail is anything you could change without a user or caller noticing. If a test
+would break when you change it, that test is checking the detail.

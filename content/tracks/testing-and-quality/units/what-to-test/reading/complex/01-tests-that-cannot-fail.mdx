@@ -1,0 +1,62 @@
+---
+id: tests-that-cannot-fail
+title: Tests that can't fail, and the habit that catches them
+---
+
+A green test is only evidence if it could have been red. These four pass no matter what the code
+does — each one is common in real suites.
+
+**It checks the double you configured.**
+
+```ts
+fetchUser.mockResolvedValue({ id: 1, name: "Ada" });
+expect(await fetchUser(1)).toEqual({ id: 1, name: "Ada" }); // tests the mock, not your code
+```
+
+The code under test never ran. The assertion has to be about *your* function's output when given
+that fake user — `await displayName(1)` returning `"ADA"`, say.
+
+**It recomputes the expected value with the same logic.**
+
+```ts
+const items = [{ priceCents: 450, qty: 2 }];
+expect(total(items)).toBe(items.reduce((s, i) => s + i.priceCents * i.qty, 0));
+```
+
+If `total` has the formula wrong, the test has the same formula wrong. Write the expected value as
+a literal you worked out by hand: `toBe(900)`.
+
+**It runs code without checking it.**
+
+```ts
+it("covers priceLabel", () => {
+  priceLabel(0);
+  priceLabel(1999);
+});
+```
+
+Run under Vitest 4 with coverage on, this test reports **100%** statements, branches and functions
+for `priceLabel` — and it asserts nothing. Coverage records which lines *ran*, not whether anyone
+looked at the result. web.dev's coverage guide: *"100% code coverage doesn't guarantee the absence
+of bugs or flaws in your code."* Use coverage to find code no test touches; don't use it to prove a
+test is good.
+
+**It's a snapshot nobody reads.** The test fails, someone presses `u` to update the snapshot, the
+new (wrong) output becomes the expected output. The vitest-in-practice unit covers when snapshots
+earn their place.
+
+## The habit: watch it fail
+
+Before you trust a new test, make it go red once:
+
+- **For a bug fix:** write the test first and run it against the unfixed code. It must fail — for
+  the reason the bug report describes. Then fix, and watch it pass.
+- **For a new test of working code:** break the code on purpose (flip `>=` to `>`, return early,
+  delete the line that saves) and run it. If it stays green, it isn't testing that line.
+
+<!--more-->
+
+Breaking the code deliberately and checking that some test notices is the idea behind *mutation
+testing*, which automates it: a tool makes many small edits ("mutants") and reports each one no test
+caught. You don't need the tool to use the habit — one deliberate break per new test catches most
+tests that can't fail.

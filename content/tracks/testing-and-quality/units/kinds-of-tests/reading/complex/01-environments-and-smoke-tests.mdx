@@ -1,0 +1,52 @@
+---
+id: environments-and-smoke-tests
+title: Every test runs somewhere that isn't production
+---
+
+The deepest blind spot isn't a kind of test. It's that **every test runs in an environment that
+differs from production**, and each difference is a place a bug can hide:
+
+- **A simulated DOM** has no layout, and its event and API coverage is an approximation — Vitest's
+  docs warn that simulation *"may result in some discrepancies"* and *"false positives or negatives"*.
+- **A dev server** isn't the production build. Code is compiled on demand and unminified, so timing
+  differs, and anything you configure only for production (a Content-Security-Policy, say) simply
+  isn't there. A suite that only runs against `next dev` has never seen the build you ship.
+- **CI's configuration** isn't production's — different environment variables, a seeded test
+  database, no CDN in front.
+
+Higher-level tests close more of these gaps; none closes all of them. The last line is a test that
+runs **against the deployment itself**.
+
+## Smoke tests
+
+A smoke test is a handful of fast, shallow checks run against a deployed URL right after a deploy:
+does the home page render, can a test account sign in, does the health endpoint answer. It's not
+there to find subtle bugs — your other tests do that — but to catch "the deploy is broken" in the
+first minute.
+
+In Playwright, the usual way is to tag a few end-to-end tests and run just those against the
+deployed URL:
+
+```ts
+test("signs in", { tag: "@smoke" }, async ({ page }) => {
+  await page.goto("/login");
+  // …
+});
+```
+
+```bash
+BASE_URL=https://preview-123.example.com npx playwright test --grep @smoke
+```
+
+(The tag name is your choice; Playwright's `--grep` filters on it. `BASE_URL` here is your own
+variable, read into `use.baseURL` in the config.)
+
+<!--more-->
+
+## "Integration" means different things to different teams
+
+Some teams call a test with a real database "integration" and one with a stubbed repository "unit";
+others call any test touching more than one class "integration". web.dev's guide even lists
+component tests as a kind of integration test. Arguing the label wastes time. In a review, say what
+the test makes real and what it replaces — "handler and validator real, storage stubbed, test
+Postgres" — and the gaps are obvious to everyone.

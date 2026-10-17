@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 3,
+  "slug": "kinds-of-tests",
+  "title": "Kinds of tests and what each one catches",
+  "skills": ["testing", "test-strategy", "e2e-testing"],
+  "difficulty": "intro",
+  "estimatedMinutes": 25,
+  "objectives": [
+    "Define unit, integration, component, contract, end-to-end and smoke tests by what runs for real and what is replaced",
+    "Pick the cheapest kind of test that would catch a given bug, and say why the cheaper kinds pass right over it",
+    "Explain where each kind runs — Node, a simulated DOM, a real browser, a deployed URL — and what a simulated DOM can't see",
+    "Explain how a contract test lets two services check they still agree without deploying both, and why a stubbed client can't"
+  ],
+  "sources": [
+    { "title": "web.dev: Three common types of test automation", "url": "https://web.dev/articles/ta-types" },
+    { "title": "web.dev: Pyramid or Crab? Find a testing strategy that fits", "url": "https://web.dev/articles/ta-strategies" },
+    { "title": "Vitest 4 docs: Test environment", "url": "https://v4.vitest.dev/config/environment" },
+    { "title": "Vitest 4 docs: Why Browser Mode", "url": "https://v4.vitest.dev/guide/browser/why" },
+    { "title": "Pact docs: Introduction", "url": "https://docs.pact.io/" },
+    { "title": "Pact docs: How Pact works", "url": "https://docs.pact.io/getting_started/how_pact_works" },
+    { "title": "Playwright docs: Annotations (tags and --grep)", "url": "https://playwright.dev/docs/test-annotations" },
+    { "title": "Playwright docs: Auto-waiting", "url": "https://playwright.dev/docs/actionability" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-kinds", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-kinds",
+      "questions": [
+        {
+          "id": "classify-component",
+          "prompt": "A test renders `<CheckoutForm>` with Testing Library in happy-dom, types into the fields, clicks \"Pay\" and checks the error message. `fetch` is replaced with a double. What kind of test is it?",
+          "options": [
+            { "id": "component", "text": "A component test — one UI component, driven like a user, in a simulated DOM with the network replaced" },
+            { "id": "e2e", "text": "An end-to-end test — it clicks buttons and types like a user" },
+            { "id": "unit", "text": "A unit test — it only imports one file" },
+            { "id": "contract", "text": "A contract test — it checks what the form sends to the API" }
+          ],
+          "answer": "component",
+          "explanation": "Define the kind by what's real: the component and its children are real, the browser is simulated and the network is replaced. Clicking doesn't make it end-to-end — no real browser, backend or database is involved. It renders a whole component tree into a DOM, which is more than a unit test usually means, and nothing here is checked against the real API, so it isn't a contract test."
+        },
+        {
+          "id": "unit-bug",
+          "prompt": "`formatDuration(59_999)` prints `\"60s\"` instead of `\"59s\"`. What's the cheapest test that catches it?",
+          "options": [
+            { "id": "unit", "text": "A unit test of `formatDuration` with inputs either side of each boundary" },
+            { "id": "e2e", "text": "An end-to-end test of the page that shows durations" },
+            { "id": "integration", "text": "An integration test with the database that stores the durations" },
+            { "id": "smoke", "text": "A smoke test after deploy" }
+          ],
+          "answer": "unit",
+          "explanation": "The bug is entirely inside one pure function, so nothing else needs to be real. A unit test can try `59_999`, `60_000` and `60_001` in microseconds. A browser test could only catch it if some page happened to render exactly that value — slow and unlikely."
+        },
+        {
+          "id": "wiring-bug",
+          "prompt": "The checkout handler passes the amount in dollars; the payments module expects cents. Both have passing unit tests, and the handler's unit test replaces the payments module with a double. Which test catches the mismatch?",
+          "options": [
+            { "id": "integration", "text": "An integration test that runs the real handler with the real payments module" },
+            { "id": "more-unit", "text": "More unit tests of the payments module" },
+            { "id": "contract", "text": "A contract test between the browser and the API" },
+            { "id": "snapshot", "text": "A snapshot of the handler's output" }
+          ],
+          "answer": "integration",
+          "explanation": "The bug lives in the wiring between two of your own modules, and the handler's unit test replaced exactly that wiring with a double. Only a test where both are real can see it. More payments-module tests check that module alone, which was never wrong. A contract test is for the boundary between two separately deployed services."
+        },
+        {
+          "id": "renamed-field",
+          "prompt": "The orders API renames `total_cents` to `totalCents`. The web app's tests stub the API client with the old shape and stay green; production shows `$NaN`. Which kind of test would have failed **before** the deploy?",
+          "options": [
+            { "id": "contract", "text": "A contract test — the API's CI replays the web app's recorded expectations against the real API" },
+            { "id": "more-stubs", "text": "More web-app tests with the same stubbed client" },
+            { "id": "component", "text": "A component test of the order summary" },
+            { "id": "smoke", "text": "A smoke test against production" }
+          ],
+          "answer": "contract",
+          "explanation": "A stub freezes the other team's API at the day you wrote it, so no number of stubbed tests notices a change on their side. Consumer-driven contract testing records what the web app relies on and replays it against the real provider in the provider's pipeline, so the rename fails there. A smoke test would notice — after the deploy, which is too late for \"before\"."
+        },
+        {
+          "id": "covered-button",
+          "prompt": "On a 375px-wide screen, the \"Save\" button sits under a sticky footer. The component test in happy-dom clicks it and passes. Why?",
+          "options": [
+            { "id": "no-layout", "text": "happy-dom builds the element tree and fires events but doesn't lay the page out, so nothing is ever \"under\" anything" },
+            { "id": "z-index", "text": "happy-dom ignores `z-index` but would catch it with `position: absolute`" },
+            { "id": "viewport", "text": "The test forgot to set a 375px viewport; with one, happy-dom would fail" },
+            { "id": "click", "text": "`fireEvent.click` uses a different code path than a real click, which is the only difference" }
+          ],
+          "answer": "no-layout",
+          "explanation": "A simulated DOM has no layout engine — `getBoundingClientRect()` returns zeros — so overlap, overflow and positioning bugs are invisible to it whatever the viewport or CSS. An end-to-end test in a real browser catches it: Playwright's click waits for the element to receive events and fails with \"intercepts pointer events\"."
+        },
+        {
+          "id": "missing-env",
+          "prompt": "A deploy ships without the storage provider's environment variable. Every CI check passed. Which test catches it soonest?",
+          "options": [
+            { "id": "smoke", "text": "A smoke test run against the deployed URL right after the deploy" },
+            { "id": "integration", "text": "An integration test in CI with the storage provider stubbed" },
+            { "id": "unit", "text": "A unit test of the upload handler" },
+            { "id": "contract", "text": "A contract test against the storage provider's API" }
+          ],
+          "answer": "smoke",
+          "explanation": "CI runs with its own configuration, so every test there sees a correctly configured app. The bug exists only in the deployed environment, so only a test that runs *against* that environment can see it. A few shallow checks right after deploy turn \"users report broken uploads\" into a red check a minute later."
+        },
+        {
+          "id": "why-few-e2e",
+          "prompt": "Why do most teams keep end-to-end tests few, compared with unit and integration tests?",
+          "options": [
+            { "id": "cost", "text": "They're slow, need the whole stack running, can fail for reasons unrelated to the change, and point only vaguely at the cause" },
+            { "id": "fewer-bugs", "text": "They find fewer bugs than unit tests" },
+            { "id": "no-ci", "text": "Real browsers can't run in CI" },
+            { "id": "replace", "text": "They test the same things as unit tests, so they're redundant" }
+          ],
+          "answer": "cost",
+          "explanation": "End-to-end tests give the most confidence per test — they're the only kind that sees the real browser, layout and deployment — but each one costs seconds, a running stack and some flake risk, and a failure still has to be traced to a cause. Headless browsers run fine in CI. They aren't redundant: they catch the layout and wiring bugs the lower levels can't."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-kinds",
+      "prompts": [
+        {
+          "id": "name-by-what-is-real",
+          "prompt": "Name each test by what runs for real.",
+          "code": [
+            "// Real: the pricing module and the cart module, a test Postgres. Replaced: the payment API.",
+            "// → a(n) ___ test",
+            "// Real: a browser, the frontend, the API and its database, all running together.",
+            "// → a(n) ___ test"
+          ],
+          "blanks": [
+            { "id": "integration", "accept": ["integration"] },
+            { "id": "e2e", "accept": ["end-to-end", "end to end", "e2e"] }
+          ],
+          "explanation": "Several of your own modules plus a real database, with only the third-party edge replaced, is an integration test. When everything you own is running and a real browser drives it, it's end-to-end. Saying what's real and what's replaced settles the label faster than arguing about it."
+        },
+        {
+          "id": "contract-roles",
+          "prompt": "Fill in the two roles in consumer-driven contract testing.",
+          "code": [
+            "// web app (the ___): its test records \"GET /orders/7 → 200 { id, totalCents }\" into a pact file",
+            "// orders API (the ___): its CI replays the pact against its real handlers"
+          ],
+          "blanks": [
+            { "id": "consumer", "accept": ["consumer"] },
+            { "id": "provider", "accept": ["provider"] }
+          ],
+          "explanation": "The consumer writes the contract from the calls it actually makes; the provider verifies it can still satisfy every recorded interaction. Because the provider runs the check in its own pipeline, a breaking change fails before deploy — without deploying both services together."
+        },
+        {
+          "id": "smoke-tag",
+          "prompt": "Tag a sign-in test as a smoke test, then run only the smoke tests against the deployed app.",
+          "code": [
+            "test(\"signs in\", { tag: \"___\" }, async ({ page }) => { /* … */ });",
+            "",
+            "// after the deploy:",
+            "// npx playwright test --___ @smoke"
+          ],
+          "blanks": [
+            { "id": "tag", "accept": ["@smoke"] },
+            { "id": "grep", "accept": ["grep"] }
+          ],
+          "explanation": "Playwright tags must start with `@`, and `--grep` filters the run by them. The tag name is your choice; the point is a short, fast list of checks that runs against the real deployment, separate from the full suite."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-kinds",
+      "snippets": [
+        {
+          "id": "happy-dom-width",
+          "code": [
+            "// @vitest-environment happy-dom",
+            "document.body.innerHTML = `<button style=\"width:200px\">Pay</button>`;",
+            "",
+            "const button = document.querySelector(\"button\")!;",
+            "console.log(button.getBoundingClientRect().width);"
+          ],
+          "question": "What does this print under Vitest 4 with happy-dom (or jsdom)?",
+          "answer": "0",
+          "acceptable": ["0", "zero"],
+          "explanation": "Simulated DOMs build the element tree and dispatch events, but they don't lay out the page, so every size and position is zero — an explicit `width:200px` included. That's why component tests in jsdom or happy-dom can't catch overlap, overflow or \"button off-screen on mobile\" bugs; a real browser can."
+        },
+        {
+          "id": "frozen-stub",
+          "code": [
+            "// summary.ts",
+            "export async function orderSummary(id: number) {",
+            "  const order = await getOrder(id);",
+            "  return `Order ${order.id}: $${(order.total_cents / 100).toFixed(2)}`;",
+            "}",
+            "",
+            "// summary.test.ts — written last month",
+            "vi.mocked(getOrder).mockResolvedValue({ id: 7, total_cents: 1999 });",
+            "expect(await orderSummary(7)).toBe(\"Order 7: $19.99\");",
+            "",
+            "// Today the real API returns { id: 7, totalCents: 1999 }."
+          ],
+          "question": "Does the test pass today, and what does production show for order 7?",
+          "answer": "The test passes; production shows \"Order 7: $NaN\"",
+          "acceptable": ["passes, $NaN", "test green, production Order 7: $NaN", "it passes and prod shows NaN"],
+          "explanation": "The stub still returns last month's shape, so the test is green. In production `order.total_cents` is `undefined`, `undefined / 100` is `NaN`, and `NaN.toFixed(2)` is the string `\"NaN\"`. A stubbed client checks your code against your memory of the API; a contract test checks it against the API."
+        }
+      ]
+    }
+  ]
+}

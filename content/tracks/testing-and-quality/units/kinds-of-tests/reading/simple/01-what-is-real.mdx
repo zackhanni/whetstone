@@ -1,0 +1,29 @@
+---
+id: what-is-real
+title: A kind of test is defined by what's real
+---
+
+Test names get used loosely — one team's "integration test" is another team's "unit test". Cut
+through it with one question: **what runs for real, and what is replaced?**
+
+Take one feature: a user uploads an avatar. The browser sends the file, an API handler checks its
+size and type, the storage module saves it, and the profile page shows the new picture.
+
+| Kind | What runs for real | What's replaced | Example |
+| --- | --- | --- | --- |
+| **Unit** | one function or class | everything it calls, or nothing to replace | `isAllowedImage("cat.gif", 6_000_000)` returns `false` (over 5 MB) |
+| **Integration** | several of your modules together, often with a real test database | services you don't own (the storage provider) | the handler + validator + repository save a row for a valid upload |
+| **Component** | one UI component, rendered into a DOM and driven like a user | the network, and usually the browser itself (a simulated DOM) | render the upload form, pick a 6 MB file, see "File too large" |
+| **Contract** | one side of an API boundary, checked against a recorded agreement | the other side | the web app's expected `POST /avatar` response is replayed against the real API |
+| **End-to-end** | the whole app — browser, frontend, backend, database | (ideally) nothing you own | Playwright signs in, uploads a file, sees the new picture |
+| **Smoke** | the deployed app | nothing | right after a deploy: the home page loads and sign-in works |
+
+Read the table top to bottom and two things grow: **how much is real** and **how much it costs**.
+A unit test runs in milliseconds and names the broken function. An end-to-end test takes seconds,
+needs everything running, and when it fails you still have to find out where.
+
+Read it bottom to top and a third thing grows: **how many cases you can afford**. You can try forty
+file sizes against `isAllowedImage` in a few milliseconds. You won't try forty uploads in a browser.
+
+So each kind answers a different question, and none of them answers all of them. The next examples
+show what each one *misses*.
