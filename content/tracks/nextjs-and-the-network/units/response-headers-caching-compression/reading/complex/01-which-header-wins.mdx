@@ -1,0 +1,59 @@
+---
+id: which-header-wins
+title: Three places set headers in Next.js 16 — and which one wins
+---
+
+You can set a response header in three places:
+
+```ts
+// 1. A Route Handler — this one response
+return new Response(body, { headers: { "Cache-Control": "public, s-maxage=3600" } });
+
+// 2. next.config.ts headers() — every response whose path matches `source`
+async headers() {
+  return [{ source: "/:all*(pdf|csv)", headers: [{ key: "Cache-Control", value: "public, max-age=3600" }] }];
+}
+
+// 3. proxy.ts — responses that pass through it
+const res = NextResponse.next();
+res.headers.set("X-Frame-Options", "DENY");
+return res;
+```
+
+And Next sets some itself. Pages get `Cache-Control` from how they render: a static page
+`s-maxage=31536000`, a revalidating page `s-maxage=<revalidate>, stale-while-revalidate=…`, a
+dynamic page `private, no-cache, no-store, max-age=0, must-revalidate`. Hashed files under
+`/_next/static` get `public, max-age=31536000, immutable`, which the docs say you cannot
+override. A page component itself has no API for response headers (`headers()` from
+`next/headers` is read-only); when you need control over one response, that's a Route Handler.
+
+**The collision.** Say that `/:all*(pdf|csv)` rule was written for files in `public/`. Later a
+Route Handler serves `/reports/q3.csv` from storage and sends its own `Cache-Control`. Which one
+does the client get?
+
+- **`next start`:** the **config value**. The router applies the config headers to the response
+  first; when the handler's `Response` is written, Next 16's `sendResponse` only copies a header
+  that isn't already set. The handler's `Cache-Control` is dropped with no warning; its other
+  headers survive. (Reproduced against Next 16.2's own `send-response.js`.)
+- **Vercel:** the **handler's value**. Vercel's Cache-Control docs state that `Cache-Control`
+  returned by a function takes priority over the same header from `next.config.js` or
+  `vercel.json`.
+
+Same code, two answers. A route that sends `no-store` on its error response can have that
+replaced by the config's `max-age=3600` on a self-hosted server, so an outage gets cached for an
+hour. Locally the page still renders fine, and no type check or lint rule notices.
+
+The fixes:
+
+- Before giving a Route Handler its own caching header, search `next.config` `headers()` for
+  any `source` that matches its URL, including wildcard and file-extension rules.
+- Fix overlaps **in the config** (narrow the `source`), never by "setting it harder" in the route.
+- Assert response headers in a test against a running production build, and check the deployed
+  platform once: it may merge differently.
+
+<!--more-->
+
+Within `next.config` itself the rule is documented: when two `headers()` entries match a path and
+set the same key, the later entry wins. Config headers are applied before the filesystem is
+checked, so one rule can cover pages, Route Handlers and `public/` files at once. That reach is
+what makes an extension wildcard dangerous.
