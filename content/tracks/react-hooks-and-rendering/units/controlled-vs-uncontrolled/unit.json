@@ -9,12 +9,14 @@
     "Wire a controlled input by pairing value from state with an onChange that writes e.target.value",
     "Predict what an input with value but no onChange does: a frozen field plus a React warning",
     "Choose an uncontrolled input (defaultValue plus a ref) when you only need the value on submit",
-    "Spot the uncontrolled-to-controlled warning and fix it by keeping value defined from the first render"
+    "Spot the uncontrolled-to-controlled warning and fix it by keeping value defined from the first render",
+    "Show data that loads after the first render in an editable field: render the form once it's loaded, or remount it with a key"
   ],
   "sources": [
     { "title": "React docs: <input>", "url": "https://react.dev/reference/react-dom/components/input" },
     { "title": "React docs: Manipulating the DOM with Refs", "url": "https://react.dev/learn/manipulating-the-dom-with-refs" },
-    { "title": "React docs: useState", "url": "https://react.dev/reference/react/useState" }
+    { "title": "React docs: useState", "url": "https://react.dev/reference/react/useState" },
+    { "title": "React docs: Preserving and Resetting State", "url": "https://react.dev/learn/preserving-and-resetting-state" }
   ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
@@ -44,7 +46,7 @@
             { "id": "throws", "text": "React throws a runtime error" }
           ],
           "answer": "nothing-warns",
-          "explanation": "With `value` set to a state variable that never changes, React re-renders the input back to that fixed value on every keystroke, so the field appears frozen (effectively read-only). React warns that you provided `value` without `onChange` (unless you meant `readOnly`). Add `onChange={(e) => setQuery(e.target.value)}` to make it controlled."
+          "explanation": "With `value` set to a state variable that never changes, React reverts the input to that fixed value after every keystroke, so the field appears frozen (effectively read-only). React logs that you provided `value` without `onChange` and suggests `defaultValue` or `readOnly`. Add `onChange={(e) => setQuery(e.target.value)}` to make it controlled."
         },
         {
           "id": "when-uncontrolled",
@@ -57,6 +59,18 @@
           ],
           "answer": "final-value-only",
           "explanation": "Uncontrolled inputs let the DOM own the value; you read it from a ref on demand. That's a fine fit when you only care about the final value (form submit), for file inputs (which are always uncontrolled), or to avoid a re-render per keystroke. If you need to react as the user types — live filtering, validation, enabling a button — go controlled."
+        },
+        {
+          "id": "loads-later",
+          "prompt": "`NameForm` seeds `const [name, setName] = useState(initialName)` and binds the input to `name`. The parent renders `<NameForm initialName={user?.name ?? \"\"} />` while `user` is loading, and again once it arrives. What does the field show, and what's the fix?",
+          "options": [
+            { "id": "empty-remount", "text": "It stays empty: `useState` reads its argument only on the first render. Render `NameForm` only once `user` has loaded, or give it `key={user?.id}` so it remounts with the name" },
+            { "id": "shows-name", "text": "It shows the loaded name: `useState` picks up its new argument when the prop changes" },
+            { "id": "sync-effect", "text": "It stays empty; fix it with `useEffect(() => setName(initialName))` so state always follows the prop" },
+            { "id": "coalesce", "text": "It stays empty; fix it with `useState(initialName ?? \"\")` so the value is never undefined" }
+          ],
+          "answer": "empty-remount",
+          "explanation": "react.dev: `useState`'s initial value \"is ignored after the initial render\". The first render saw `\"\"`, so `name` stays `\"\"` when the user arrives. Don't copy the prop in later — a dependency-less sync effect overwrites every keystroke on the next render. Instead, make the form start *after* the data exists: `{user ? <NameForm initialName={user.name} /> : <Spinner />}`, or change its `key` when the data arrives so React discards the old state and runs `useState` again. `?? \"\"` keeps an input controlled; it does nothing to make a later value appear (here `initialName` is already a string)."
         }
       ]
     },
@@ -76,12 +90,12 @@
         },
         {
           "id": "keep-value-defined",
-          "prompt": "Seed the state so `value` is never undefined, avoiding the uncontrolled-to-controlled warning when `user.name` is missing.",
-          "code": "const [name, setName] = useState(user.name ___ \"\");",
+          "prompt": "`user` is `{}` until the fetch resolves. Keep this input controlled from the very first render.",
+          "code": "<input value={user.name ___ \"\"} onChange={(e) => onNameChange(e.target.value)} />",
           "blanks": [
             { "id": "coalesce", "accept": ["??", "||"] }
           ],
-          "explanation": "If `user.name` is `undefined`, `value` starts undefined (uncontrolled) and becomes a string later (controlled) — React warns. Coalescing to `\"\"` with `??` (or `||`) keeps `value` a defined string from the first render, so the input is controlled its whole life."
+          "explanation": "While `user.name` is `undefined`, `value={undefined}` means \"no value\", so the input starts uncontrolled; when the name arrives it becomes controlled and React warns. Coalescing to `\"\"` — react.dev's own fix, `value={someValue ?? ''}` — keeps `value` a string from the first render. `??` replaces only `null`/`undefined`; `||` also replaces other falsy values, which is the same for a string but would turn a number input's `0` into an empty field."
         }
       ]
     },
@@ -90,22 +104,41 @@
       "id": "predict-warning",
       "snippets": [
         {
-          "id": "undefined-flip",
+          "id": "prop-flip",
           "code": [
-            "function NameField({ user }) {",
-            "  // user starts as {} then updates to { name: \"Ada\" } after a fetch",
-            "  const [name, setName] = useState(user.name);",
-            "  return <input value={name} onChange={(e) => setName(e.target.value)} />;",
+            "function NameField({ user, onNameChange }) {",
+            "  // user is {} until the fetch resolves, then { name: \"Ada\" }",
+            "  return <input value={user.name} onChange={(e) => onNameChange(e.target.value)} />;",
             "}"
           ],
-          "question": "What warning does React log when `user.name` goes from undefined to a string?",
+          "question": "What does React log when the fetch resolves?",
           "answer": "A component is changing an uncontrolled input to be controlled.",
           "acceptable": [
             "changing an uncontrolled input to be controlled",
             "uncontrolled to controlled",
             "uncontrolled input to be controlled"
           ],
-          "explanation": "On the first render `user.name` is undefined, so `value={undefined}` makes the input uncontrolled. Once the data loads, `value` becomes a string and the input flips to controlled — React warns: \"A component is changing an uncontrolled input to be controlled.\" Fix it by keeping `value` always defined: `useState(user.name ?? \"\")`."
+          "explanation": "On the first render `user.name` is undefined, and `value={undefined}` counts as no value at all, so React treats the input as uncontrolled. When the data arrives, `value` becomes `\"Ada\"` and the input switches to controlled — React logs \"A component is changing an uncontrolled input to be controlled\" (it shows \"Ada\", but an input mustn't switch modes during its life). Fix: `value={user.name ?? \"\"}`."
+        },
+        {
+          "id": "seeded-state-ignores-load",
+          "code": [
+            "function NameField({ user }) {",
+            "  // user is {} until the fetch resolves, then { name: \"Ada\" }",
+            "  const [name, setName] = useState(user.name);",
+            "  return <input value={name} onChange={(e) => setName(e.target.value)} />;",
+            "}",
+            "",
+            "// The fetch resolves. Then the user types \"x\"."
+          ],
+          "question": "What does the input show after the fetch resolves, and when does React log the uncontrolled-to-controlled warning?",
+          "answer": "It stays empty after the fetch (no warning yet); the warning fires on the first keystroke",
+          "acceptable": [
+            "empty, then the warning on the first keystroke",
+            "stays empty; warns when the user types",
+            "empty; warning on typing x"
+          ],
+          "explanation": "`useState(user.name)` reads `user.name` once, on the first render, when it's undefined; react.dev says the initial value is ignored after that. So when the fetch resolves, `name` is still undefined — the field stays empty and nothing switches, so no warning. Typing calls `setName(\"x\")`, `value` goes from undefined to a string, and *that* render logs the warning. Writing `useState(user.name ?? \"\")` silences the warning but still never shows \"Ada\". To edit loaded data, render the field once the data exists or remount it with a `key`."
         }
       ]
     },
