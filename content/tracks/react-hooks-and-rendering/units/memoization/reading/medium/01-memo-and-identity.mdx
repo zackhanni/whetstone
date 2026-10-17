@@ -21,7 +21,7 @@ it's a new reference every time — and `memo`'s shallow check fails:
 function List({ items }) {
   return items.map((it) => (
     // ❌ new arrow + new object each render → Row re-renders every time
-    <Row key={it.id} label={it.label} onClick={() => pick(it)} style={{ pad: 4 }} />
+    <Row key={it.id} label={it.label} onClick={() => pick(it)} style={{ padding: 4 }} />
   ));
 }
 ```

@@ -1,6 +1,6 @@
 ---
 id: usecallback-and-caveat
-title: useCallback keeps a handler stable — and the "don't memo everything" caveat
+title: useCallback keeps a handler stable — and when memoization buys nothing
 ---
 
 A `memo` child that takes a function prop re-renders on every parent update if the
@@ -34,21 +34,39 @@ Bumping `count` re-renders `Form`, but `onSave` keeps its identity, so `memo` sk
 `Child`. Note the deps: because the closure reads `draft`, it must be a dep —
 otherwise `onSave` would save a **stale** draft.
 
-`useCallback(fn, deps)` is literally `useMemo(() => fn, deps)`: one caches a
-function, the other caches a value.
+react.dev's simplified model: `useCallback(fn, deps)` behaves like
+`useMemo(() => fn, deps)` — one caches a function, the other caches a value.
 
-## The caveat: don't memo everything
+## When memoization buys nothing
 
-Memoization isn't free. Each `useMemo`/`useCallback` allocates a cache, stores its
-deps, and runs a comparison on every render; `memo` runs a shallow prop scan. For
-cheap work and fast components, that overhead can **cost more than the re-render you
-avoided** — and it clutters the code with deps you now have to keep correct.
+react.dev names the cases where it pays off:
 
-Memoize deliberately:
+- a calculation that is noticeably slow (measure it: around 1ms or more) and whose inputs
+  rarely change;
+- a value or function passed to a `memo` child;
+- a value or function used as another Hook's dependency (an Effect's, say).
 
-- Wrap a child in `memo` **and** stabilize its object/function props (otherwise
-  `memo` is dead weight).
-- Use `useMemo` for genuinely expensive computations or references that flow into a
-  `memo` child or an effect's deps.
-- Otherwise, leave it out. Re-rendering is usually cheap; profile first, then
-  memoize the hot path — not everything.
+Anywhere else it skips nothing. The comparison itself is cheap — react.dev calls
+over-memoizing "no significant harm" — but it isn't free in other ways: the code is harder
+to read, every dep array is one more thing to keep correct (a missing dep is a stale-value
+bug), and a single always-new prop silently turns the whole chain into dead weight. Wrap a
+child in `memo` **and** stabilize its object and function props, or do neither.
+
+<!--more-->
+
+## React Compiler
+
+React Compiler (stable since v1.0, October 2025; works with React 17 and up) does this at
+build time: it memoizes components, values and callbacks automatically, usually as precisely as
+hand-written code or more so. It's a build plugin you add to your bundler setup (a few
+new-project templates, such as Expo SDK 54+, switch it on by default). In a project that
+enables it:
+
+- you typically don't need `memo`, and new code can skip most `useMemo`/`useCallback`;
+- keep `useMemo`/`useCallback` as escape hatches where you need control — for example, to
+  keep an Effect dependency from changing;
+- leave existing memoization in place, or test before removing it: removal can change the
+  compiled output.
+
+Everything above still applies to code the compiler doesn't touch — and you need the mental
+model either way, to read the profiler and to know why a dependency keeps changing.
