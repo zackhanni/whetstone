@@ -1,0 +1,45 @@
+---
+id: spread-is-shallow
+title: A copy made with spread is one level deep
+---
+
+A variable holding an object or array holds a **reference** — an arrow pointing at the object,
+not the object itself. Copying the variable copies the arrow:
+
+```js
+const a = { name: "Ada" };
+const b = a;      // same object, two arrows
+b.name = "Grace";
+a.name;           // "Grace"
+```
+
+Spread (`{ ...obj }`, `[...arr]`) makes a **new outer object** and copies each property into it.
+But a property that holds an object holds an arrow too, and the arrow is what gets copied:
+
+```js
+const state = { user: { name: "Ada" }, count: 1 };
+const next = { ...state, count: 2 };
+
+next === state;           // false — a new outer object
+next.user === state.user; // true  — the SAME inner object
+next.user.name = "Grace";
+state.user.name;          // "Grace" — the "copy" changed the original
+```
+
+That's what **shallow** means: one level copied, everything below it shared.
+
+To change something nested without touching the original, copy **every level on the path** from
+the top down to the thing you change, and nothing else:
+
+```js
+const next = {
+  ...state,                          // new outer object
+  user: { ...state.user, name: "Grace" }, // new user object with the change
+};
+
+state.user.name; // "Ada" — untouched
+```
+
+Everything you didn't change is still shared between `state` and `next` — and that's fine, as
+long as nobody mutates it. "Immutable updates" means exactly this: never change an existing
+object; build a new one with the change, reusing the parts that stayed the same.

@@ -1,0 +1,61 @@
+---
+id: sharing-and-no-ops
+title: Structural sharing, no-op updates, and the reducer contract
+---
+
+An immutable update produces a new root, new objects along the changed path, and **the same
+objects everywhere else**. That reuse — structural sharing — is not a shortcut; it's the
+information other code relies on:
+
+```ts
+const next = toggleCard(board, "c1", "b");
+next === board;                           // false: something changed
+next.columns[1] === board.columns[1];     // true:  this column didn't
+next.columns[0].cards[0] === board.columns[0].cards[0]; // true: this card didn't
+```
+
+A selector, a `memo` comparison or a dependency array can answer "did this part change?" with one
+`===` instead of a deep comparison — but only if unchanged parts keep their identity and changed
+parts never do.
+
+## When nothing changed, return the same state
+
+The other half of the contract: if an action changes nothing, return the **existing** state object,
+not a fresh copy. React's `Object.is` bail-out then skips the re-render; a new object, even an
+identical-looking one, always counts as a change.
+
+```ts
+case "toggled": {
+  if (!state.todos.some((t) => t.id === action.id)) return state; // unknown id: no-op
+  return {
+    ...state,
+    todos: state.todos.map((t) => (t.id === action.id ? { ...t, done: !t.done } : t)),
+  };
+}
+```
+
+`map` always returns a new array, even when its callback returns every item unchanged — so a
+reducer that maps first and asks questions later never produces a no-op.
+
+## Selectors must not mutate either
+
+Reading code mutates too: `state.todos.sort(byTitle)` inside a selector or a component's render
+reorders the state in place — for every other reader, and for the previous state an undo history
+or a devtools timeline still holds. A read path should use `toSorted` (or copy first) just like a
+write path.
+
+## Testing that a reducer is pure
+
+Three checks catch nearly every mutation:
+
+1. Snapshot the input (`JSON.stringify(state)` or `structuredClone(state)`), run the reducer, and
+   assert the input still matches.
+2. Assert `next !== state` for a real change and `next === state` for a no-op.
+3. Or deep-freeze the input, so any write throws at the guilty line.
+
+<!--more-->
+
+State libraries rely on the same contract. Zustand, for example, decides whether a component
+re-renders by comparing the selected value with `Object.is`, and its `set` merges your object into
+the state only one level deep (the zustand-basics unit covers both) — the nested levels are still
+yours to copy.

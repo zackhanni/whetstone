@@ -1,0 +1,58 @@
+---
+id: nested-updates
+title: Nested updates, line by line
+---
+
+A board holds columns, each column holds cards. Every update below returns a new board and leaves
+the old one exactly as it was:
+
+```ts
+type Card = { id: string; title: string; done: boolean; tags: string[] };
+type Board = { name: string; columns: { id: string; cards: Card[] }[] };
+
+// Toggle one card: copy the board, the columns array, the one column, its cards array, the card.
+function toggleCard(board: Board, columnId: string, cardId: string): Board {
+  return {
+    ...board,
+    columns: board.columns.map((col) =>
+      col.id !== columnId
+        ? col // untouched columns are reused as-is
+        : {
+            ...col,
+            cards: col.cards.map((card) =>
+              card.id === cardId ? { ...card, done: !card.done } : card,
+            ),
+          },
+    ),
+  };
+}
+
+// Add a tag: the tags array is one level deeper, so it gets its own copy.
+const tagged = { ...card, tags: [...card.tags, "urgent"] };
+
+// Insert, remove, replace, move — the ES2023 copying methods:
+const inserted = cards.toSpliced(2, 0, newCard);      // insert at index 2
+const removed = cards.filter((c) => c.id !== cardId); // remove by id
+const replaced = cards.with(index, updatedCard);      // replace at an index
+const moved = cards.toSpliced(from, 1).toSpliced(to, 0, cards[from]); // move one card
+const sorted = cards.toSorted((a, b) => a.title.localeCompare(b.title));
+```
+
+What to notice:
+
+- **`map` is the workhorse.** It returns a new array, and the callback decides per item: return the
+  same object (unchanged) or a new one (changed). Unchanged items keep their identity — which is
+  what lets memoized children and selectors skip work.
+- **Every level on the path gets a spread**: board → `columns` → the column → `cards` → the card.
+  Miss one and you are mutating something the old board still points to.
+- **`{ ...card, tags: [...card.tags, "urgent"] }`, not `{ ...card }` then `push`.** Spreading the
+  card copies the *arrow* to its `tags` array; pushing into it changes the original card's tags
+  too.
+- **`with(index, value)`** throws a `RangeError` for an index outside the array (negative indexes
+  count from the end, like `at`). `arr[index] = value` on a copy would silently grow the array
+  instead.
+
+When the nesting gets deeper than this, the spreads become hard to read, and that's the usual
+argument for flattening state (store cards by id, columns as lists of ids) or for a helper library.
+React's docs point to Immer, which lets you write `draft.columns[0].cards[2].done = true` against a
+draft and produces the copies for you.

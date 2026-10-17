@@ -1,0 +1,59 @@
+---
+id: why-react-cares
+title: Why mutation breaks React
+---
+
+React decides whether state changed by comparing the old and new value with **`Object.is`** — by
+identity, not by contents. Three bugs follow directly.
+
+## 1. Mutate, then set the same object: nothing happens
+
+```tsx
+const [items, setItems] = useState<string[]>([]);
+
+const add = (item: string) => {
+  items.push(item);   // the array changed…
+  setItems(items);    // …but it's the same array, so Object.is says "no change"
+};
+```
+
+React skips the re-render because the next state is identical to the current one. The data *did*
+change, so it shows up later, when something unrelated re-renders — the "it updates one click
+late" bug. The fix is a new array: `setItems([...items, item])`, or the functional form
+`setItems((prev) => [...prev, item])` when updates can stack up.
+
+## 2. A new outer object around mutated insides: it renders, then lies
+
+```ts
+const next = { ...state };
+next.todos.push(todo); // mutates the array the previous state also holds
+```
+
+This *does* re-render (the outer object is new). But the previous state was changed too, so
+anything that compares old and new — an effect depending on `state.todos`, a `memo` child receiving
+`todos`, an undo history holding past states — sees the same array before and after, and decides
+nothing happened (the memoization unit covers how `memo` compares props).
+
+## 3. In development, StrictMode runs your reducer twice
+
+React's docs: in Strict Mode, React calls your reducer (and `useState` updater functions) twice
+in development, uses one result and discards the other — to surface impure ones. A pure reducer
+can't tell. A mutating one can:
+
+```ts
+case "added":
+  state.todos.push(action.todo); // runs twice, against the same state.todos
+  return { ...state };
+```
+
+Both calls push into the one shared array, so every "Add" shows the todo **twice** in development
+and once in production. The duplicate isn't a StrictMode bug; it's StrictMode showing you the
+mutation. Fix the reducer, not the StrictMode wrapper:
+
+```ts
+case "added":
+  return { ...state, todos: [...state.todos, action.todo] };
+```
+
+The rule that covers all three: **treat state as read-only.** Build the next value; never edit
+the current one.
