@@ -104,7 +104,7 @@
             { "id": "undefined", "text": "`undefined`, unless the route declares a type" }
           ],
           "answer": "string",
-          "explanation": "TypeScript annotations are erased at runtime — they never convert anything. `\"42\"` stays a string until something at runtime parses it, which is exactly the job of a pipe (`ParseIntPipe`, or the global `ValidationPipe` with `transform: true`)."
+          "explanation": "A TypeScript annotation never converts anything at runtime — at most, it's emitted as metadata Nest can read. `\"42\"` stays a string until something at runtime parses it, which is exactly the job of a pipe: `ParseIntPipe`, or — when the parameter is declared `number` — a global `ValidationPipe` with `transform: true`. Declared `string`, as here, it stays `\"42\"` either way."
         },
         {
           "id": "parameter-property",
@@ -204,7 +204,7 @@
             { "id": "c1", "accept": ["Post"] },
             { "id": "c2", "accept": ["Body"] }
           ],
-          "explanation": "`POST` is the verb for creating a resource (repeat it and you get two orders — that's expected). `@Body()` hands you the parsed JSON. On its own it does **no** checking: the `CreateOrderDto` annotation is erased at runtime, so validating the shape is a pipe's job."
+          "explanation": "`POST` is the verb for creating a resource (repeat it and you get two orders — that's expected). `@Body()` hands you the parsed JSON. On its own it does **no** checking: the `CreateOrderDto` annotation only tells Nest which class to expect (emitted as metadata), and nothing compares the body against it — validating the shape is a pipe's job."
         },
         {
           "id": "constructor-injection",
@@ -242,11 +242,11 @@
         },
         {
           "id": "guard-context",
-          "prompt": "Reach the HTTP request from inside a guard.",
+          "prompt": "Reach the HTTP request from inside a guard (this one admits read requests only).",
           "code": [
             "canActivate(context: ExecutionContext): boolean {",
             "  const request = context.___().getRequest();",
-            "  return Boolean(request.headers.authorization);",
+            "  return request.method === \"GET\";",
             "}"
           ],
           "blanks": [{ "id": "f1", "accept": ["switchToHttp"] }],

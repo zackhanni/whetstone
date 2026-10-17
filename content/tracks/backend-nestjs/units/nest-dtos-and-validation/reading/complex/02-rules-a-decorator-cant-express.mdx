@@ -1,0 +1,62 @@
+---
+id: rules-a-decorator-cant-express
+title: Rules a decorator can't express, and config as input
+---
+
+## Rules a decorator can't express
+
+Two shapes for anything cross-field or database-dependent:
+
+```ts
+// 1. A custom constraint, for a pure cross-field rule
+@ValidatorConstraint({ name: "EndsAfterStart" })
+class EndsAfterStartConstraint implements ValidatorConstraintInterface {
+  validate(endsAt: string, args: ValidationArguments) {
+    return new Date(endsAt) > new Date((args.object as BookingDto).startsAt);
+  }
+  defaultMessage() { return "endsAt must be after startsAt"; }
+}
+
+class BookingDto {
+  @IsISO8601() startsAt: string;
+  @IsISO8601() @Validate(EndsAfterStartConstraint) endsAt: string;
+}
+```
+
+```ts
+// 2. …but uniqueness/existence checks belong in the service, not the pipe
+const existing = await this.users.findByEmail(dto.email);
+if (existing) throw new ConflictException("email already registered");   // 409, not 400
+```
+
+A validator that queries the database is possible (`class-validator`'s async constraints with
+a DI-enabled container) and usually a mistake: it hides I/O in the request pipeline, races
+with the write it's protecting (only a unique index actually prevents duplicates), and models
+a *conflict* as a *malformed request*. Keep the pipe about shape and syntax; keep invariants
+that need state in the service layer, with the status code the situation deserves.
+
+## Validate configuration the same way
+
+The `.env` file is untrusted input too, and a missing variable should stop the process at boot
+rather than 500 an hour later:
+
+```ts
+ConfigModule.forRoot({
+  validate: (raw) => {
+    const config = plainToInstance(EnvDto, raw, { enableImplicitConversion: true });
+    const errors = validateSync(config, { skipMissingProperties: false });
+    if (errors.length) throw new Error(errors.toString());
+    return config;
+  },
+});
+```
+
+Same DTO idea, applied to a different boundary: fail fast, in one place, with a message that
+names the field. Implicit conversion works for numbers here, but a boolean variable needs an
+explicit `@Transform`: `DEBUG=false` would otherwise become `Boolean("false")`, which is `true`.
+
+<!--more-->
+
+This custom `validate` function is still documented for Nest 12's `@nestjs/config`, but the
+package's own `validationSchema` option moved from Joi to Standard Schema in v12, and the docs
+now lead with a Zod schema there. Either way the point is the same: reject bad config at boot.

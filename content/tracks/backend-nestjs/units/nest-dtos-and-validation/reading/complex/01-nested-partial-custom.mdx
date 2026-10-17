@@ -1,6 +1,6 @@
 ---
 id: nested-partial-custom
-title: Nested objects, PATCH, and rules a decorator can't express
+title: Nested objects and PATCH — what slips past the decorators
 ---
 
 ## Nested objects need two decorators
@@ -18,7 +18,7 @@ export class CreateCustomerDto {
   @IsString() name: string;
 
   @ValidateNested()          // recurse into it
-  @Type(() => AddressDto)    // …as an AddressDto (needs transform: true)
+  @Type(() => AddressDto)    // …as an AddressDto
   address: AddressDto;
 
   @ValidateNested({ each: true })
@@ -28,9 +28,14 @@ export class CreateCustomerDto {
 }
 ```
 
-Forget `@Type` and the nested value stays a plain object, so its decorators are never found —
-silently unvalidated. Forget `@ValidateNested` and the whole subtree is skipped. This pair is
-the single most common validation hole in a Nest codebase.
+`@Type` doesn't need `transform: true`: `ValidationPipe` always converts the body to class
+instances before validating, and `transform` only decides whether the handler receives them.
+
+Forget `@ValidateNested` and the whole subtree is skipped. Forget `@Type` and the nested value
+stays a plain object, so its decorators are never found — silently unvalidated. With
+`whitelist: true` it's worse: the plain object's keys count as undecorated and get stripped, so
+the handler receives `address: {}`. This pair is the single most common validation hole in a
+Nest codebase.
 
 ## PATCH: derive, don't duplicate
 
@@ -38,59 +43,35 @@ the single most common validation hole in a Nest codebase.
 export class UpdateOrderDto extends PartialType(CreateOrderDto) {}
 ```
 
-`PartialType` (from `@nestjs/mapped-types` / `@nestjs/swagger`) copies every property and its
-decorators, adding `@IsOptional()`. `PickType`, `OmitType` and `IntersectionType` cover the
-rest. Hand-copying a DTO for the update route means the day someone adds `@MaxLength` to
-create, PATCH quietly accepts a 10 000-character note.
+`PartialType` (from `@nestjs/mapped-types`, or `@nestjs/swagger` if you use Swagger) copies every
+property and its decorators, adding `@IsOptional()`. `PickType`, `OmitType` and
+`IntersectionType` cover the rest. Hand-copying a DTO for the update route means the day
+someone adds `@MaxLength` to create, PATCH quietly accepts a 10 000-character note.
 
-Note what `@IsOptional()` means: *absent is fine*. It is not "nullable" — `null` still fails
-unless you allow it explicitly. And with `whitelist: true`, "absent" and "present but
-stripped" look identical to your handler, which matters when your update is a partial write.
-`exposeUnsetFields: false` (a `class-transformer` option) is how you stop `undefined` keys
-from turning into `null` columns.
-
-## Rules a decorator can't express
-
-Two shapes for anything cross-field or database-dependent:
+Know exactly what `@IsOptional()` lets through: it skips every validator on the property when
+the value is `undefined` **or `null`**. So the derived DTO accepts `{ "customerId": null }`,
+and a handler that writes the DTO straight to the row nulls a required column — a database
+error at best. To mean "may be absent, never null":
 
 ```ts
-// 1. A custom decorator, for a pure cross-field rule
-@ValidatorConstraint({ name: "EndsAfterStart" })
-class EndsAfterStartConstraint implements ValidatorConstraintInterface {
-  validate(endsAt: string, args: ValidationArguments) {
-    return new Date(endsAt) > new Date((args.object as BookingDto).startsAt);
-  }
-  defaultMessage() { return "endsAt must be after startsAt"; }
-}
+export class UpdateOrderDto extends PartialType(CreateOrderDto, { skipNullProperties: false }) {}
+
+// on a hand-written DTO, the same rule:
+@ValidateIf((_, value) => value !== undefined)
+@IsString()
+note?: string;
 ```
 
-```ts
-// 2. …but uniqueness/existence checks belong in the service, not the pipe
-const existing = await this.users.findByEmail(dto.email);
-if (existing) throw new ConflictException("email already registered");   // 409, not 400
-```
+`skipNullProperties: false` makes `PartialType` add that `@ValidateIf` instead of
+`@IsOptional()`, so `null` meets the original validators and fails them. And with
+`whitelist: true`, "absent" and "present but stripped" look identical to your handler, which
+matters when your update is a partial write.
 
-A validator that queries the database is possible (`class-validator`'s async constraints with
-a DI-enabled container) and usually a mistake: it hides I/O in the request pipeline, races
-with the write it's protecting (only a unique index actually prevents duplicates), and models
-a *conflict* as a *malformed request*. Keep the pipe about shape and syntax; keep invariants
-that need state in the service layer, with the status code the situation deserves.
+<!--more-->
 
-## Validate configuration the same way
-
-The `.env` file is untrusted input too, and a missing variable should stop the process at boot
-rather than 500 an hour later:
-
-```ts
-ConfigModule.forRoot({
-  validate: (raw) => {
-    const config = plainToInstance(EnvDto, raw, { enableImplicitConversion: true });
-    const errors = validateSync(config, { skipMissingProperties: false });
-    if (errors.length) throw new Error(errors.toString());
-    return config;
-  },
-});
-```
-
-Same DTO idea, applied to a different boundary: fail fast, in one place, with a message that
-names the field.
+Two settings change the missing-`@Type` failure mode. `forbidUnknownValues: true` turns it
+into a 400 ("an unknown value was passed to the validate function") instead of a silent pass —
+Nest's `ValidationPipe` defaults that option to `false`, even though `class-validator` itself
+has defaulted to `true` since 0.14. And `enableImplicitConversion` can infer a single nested
+class from the property's TypeScript type, but never an array's element type: `AddressDto[]` is
+just `Array` at runtime. Write `@Type` every time rather than remembering which case you're in.

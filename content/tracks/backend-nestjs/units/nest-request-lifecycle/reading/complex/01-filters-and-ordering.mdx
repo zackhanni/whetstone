@@ -1,6 +1,6 @@
 ---
 id: filters-and-ordering
-title: Errors, filters, and who wraps whom
+title: Errors, and which filter gets them
 ---
 
 ## The default error contract
@@ -44,68 +44,15 @@ export class DomainErrorFilter implements ExceptionFilter {
 ```
 
 - `@Catch(SomeError)` narrows what it handles; bare `@Catch()` catches everything.
-- Nest picks **one** filter — the most specific match, with handler-level beating
-  controller-level beating global. Filters don't chain, so a catch-all global filter must
-  re-implement the default response shape or delegate to `BaseExceptionFilter`.
+- Nest picks **one** filter by position, not by how specific its `@Catch` is: it checks
+  route-level filters, then controller-level, then global, and the first whose `@Catch`
+  matches wins. So a route-level `@Catch()` beats a controller-level `@Catch(DomainError)`,
+  even for a `DomainError`. (Within one `@UseFilters(A, B)`, `B` is tried first, which is why
+  the docs say to list a catch-all first.)
+- Filters don't chain: the chosen one owns the response. A catch-all must re-implement the
+  default response shape or delegate to `BaseExceptionFilter`.
 - A global filter registered with `useGlobalFilters(new X())` can't inject; use
   `{ provide: APP_FILTER, useClass: X }` when it needs a logger or config.
 
 Filters own **presentation** of the error. They're not a substitute for handling errors where
 the context is: a filter can't retry, and it can't know which of your three DB calls failed.
-
-## Who wraps whom
-
-Guards and interceptors compose outside-in, in registration order:
-
-```
-global interceptor
-  controller interceptor
-    handler interceptor
-      pipes -> HANDLER
-```
-
-Consequences worth predicting:
-
-- A **cache interceptor** registered globally short-circuits the inner ones: if it returns
-  `of(cached)` without calling `next.handle()`, no inner interceptor's pre-handler code runs,
-  no pipe validates, and the handler never executes. Guards are the exception — every guard has
-  already run before any interceptor starts, so a cache hit can't skip authorization.
-- A **global timing interceptor** measures every inner interceptor too — including the caching
-  and serialization work — so its number is "time in Nest", not "time in my handler".
-- `ClassSerializerInterceptor` runs on the way *out*, so `@Exclude()` is applied after your
-  handler returns. Return the entity instance, not `JSON.parse(JSON.stringify(entity))`, or the
-  metadata is gone and nothing is excluded.
-
-## Order in one line
-
-```
-middleware → guards → interceptors(pre) → pipes → handler → interceptors(post) → filters
-```
-
-Two more implications:
-
-- **Pipes run after guards**, so validation cost is only paid by authorized requests — and a
-  guard can never see a validated DTO.
-- **Interceptors run before pipes**, so an interceptor's pre-handler code runs even for a
-  request that's about to be rejected with a 400. A rate-limit counter in an interceptor
-  therefore counts malformed requests too; if that's wrong for you, use a guard instead
-  (`ThrottlerGuard` is a guard for exactly this reason).
-
-## Testing the lifecycle
-
-Guards and interceptors are classes with one method, so unit-test them by handing over a fake
-`ExecutionContext`:
-
-```ts
-const context = {
-  getHandler: () => handler,
-  getClass: () => Controller,
-  switchToHttp: () => ({ getRequest: () => ({ user: { roles: ["admin"] } }) }),
-} as unknown as ExecutionContext;
-
-expect(guard.canActivate(context)).toBe(true);
-```
-
-For the wiring itself (is it actually applied to that route? in the right order?), an e2e test
-with `Test.createTestingModule({ imports: [AppModule] })` + `supertest` is the only honest
-check — the order is a property of the app, not of the class.

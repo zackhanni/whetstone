@@ -14,14 +14,16 @@ in `AGENTS.md` → "Working with this repo".
   - State & Data Flow accuracy pass — all 14 `docs/content-review.md` findings fixed and
     independently reviewed (PR #15).
   - React Hooks & Rendering accuracy pass — all 21 findings fixed and reviewed; 6 challenges
-    tightened so the obvious shortcut fails.
+    tightened so the obvious shortcut fails (PR #16).
+  - Backend with NestJS accuracy pass — 12 findings handled against Nest 12 (current major);
+    `docs/content-review.md` now has no open findings.
 - Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
   Vercel build runs both.
 
 ## Next up
 
 1. Review and merge the content stack bottom-up.
-2. The remaining `docs/content-review.md` findings (NestJS) land in the PR above this one.
+2. New tracks from `docs/ROADMAP.md` → "Content tracks" land in the PRs above this one.
 3. A production spot-check after merging: a changed challenge's _Run tests_ (fails) and _Show
    solution_ (passes); a "Flag" link opening a prefilled issue.
 

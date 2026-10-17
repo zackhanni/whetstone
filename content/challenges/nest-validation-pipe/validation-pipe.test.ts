@@ -32,6 +32,14 @@ describe("validateBody", () => {
     }
   });
 
+  it("coerces \"false\" to false, not to Boolean(\"false\") === true", () => {
+    const result = run({ customerId: "c_1", quantity: "3", express: "false" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.express).toBe(false);
+    }
+  });
+
   it("reports every failing field, not just the first", () => {
     const result = run({ customerId: 42, quantity: 0, note: "far too long to fit" });
     expect(result.ok).toBe(false);
@@ -57,11 +65,21 @@ describe("validateBody", () => {
     }
   });
 
-  it("does not coerce a non-numeric string into NaN", () => {
-    const result = run({ customerId: "c_1", quantity: "two" });
+  it("rejects an int string that isn't a whole number, instead of NaN or a partial parse", () => {
+    for (const quantity of ["two", "3abc"]) {
+      const result = run({ customerId: "c_1", quantity });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.includes("quantity"))).toBe(true);
+      }
+    }
+  });
+
+  it("rejects a boolean string other than \"true\" / \"false\"", () => {
+    const result = run({ customerId: "c_1", quantity: 2, express: "yes" });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some((e) => e.includes("quantity"))).toBe(true);
+      expect(result.errors.some((e) => e.includes("express"))).toBe(true);
     }
   });
 });
