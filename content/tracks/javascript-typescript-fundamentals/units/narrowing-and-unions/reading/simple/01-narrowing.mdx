@@ -1,0 +1,42 @@
+---
+id: what-narrowing-is
+title: Narrowing — a runtime check the compiler follows
+---
+
+A **union type** says a value could be one of several things: `string | number`,
+`User | null`. You can't use it as either until you check which one you have. **Narrowing** is
+TypeScript following your ordinary JavaScript checks through `if`s, `switch`es and early returns,
+and shrinking the type in each branch:
+
+```ts
+function label(id: string | number) {
+  if (typeof id === "string") {
+    return id.toUpperCase(); // here id is string
+  }
+  return id.toFixed(0);      // here id is number — the string case returned
+}
+```
+
+No new syntax: the check is plain JavaScript that runs at runtime, and TypeScript reads it. Five
+checks cover almost everything:
+
+| Check | Narrows | Example |
+| --- | --- | --- |
+| `typeof x === "string"` | primitives (`"string"`, `"number"`, `"boolean"`, `"undefined"`, `"function"`, `"object"`, …) | `string \| number` → `string` |
+| `x === null`, `x === "admin"` | to the exact value | `Role \| null` → `null` |
+| `if (x)` | drops `null`/`undefined` (at runtime it also skips `0` and `""`) | `User \| undefined` → `User` |
+| `"swim" in x` | object types by a property they have | `Fish \| Bird` → `Fish` |
+| `x instanceof Error` | class instances | `unknown` → `Error` |
+
+One trap is built into JavaScript itself: **`typeof null` is `"object"`**. So
+`typeof x === "object"` leaves `null` in the type — TypeScript shows `object | null` in that
+branch, and makes you rule out `null` before you touch a property:
+
+```ts
+if (typeof value === "object" && value !== null) {
+  Object.keys(value); // value is object here
+}
+```
+
+Narrowing is only as good as the check. Writing `x as User` is not narrowing — it skips the check
+and tells the compiler to believe you.

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "narrow-unknown-events",
+  "title": "Narrow an untrusted webhook body into a typed event",
+  "skills": ["typescript", "narrowing"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "events.ts",
+  "acceptanceCriteria": [
+    "Valid `signup`, `payment` and `cancel` bodies parse with `ok: true`",
+    "`parseEvent(null)` returns `ok: false` instead of throwing",
+    "A payment whose `amountCents` is the string `\"1200\"` is rejected",
+    "A body with an unknown `kind` is rejected instead of being passed through",
+    "`feedLine` describes a cancel as `\"u1 cancelled: too expensive\"`, or `\"u2 cancelled\"` without a reason",
+    "`feedLine` throws for a `kind` that isn't in `AppEvent`, instead of returning a fallback line"
+  ]
+}

@@ -1,0 +1,47 @@
+---
+id: discriminated-unions
+title: Discriminated unions — make impossible states unrepresentable
+---
+
+A request has three states. The common first draft is a bag of optional fields:
+
+```ts
+type RequestState = {
+  loading: boolean;
+  data?: Order[];
+  error?: string;
+};
+```
+
+That type allows `{ loading: true, error: "timeout" }` and `{ loading: false }` with neither data
+nor error. Every consumer has to guess which combinations can really happen.
+
+A **discriminated union** lists the states instead, each tagged with a literal field — the
+*discriminant*:
+
+```ts
+type RequestState =
+  | { status: "loading" }
+  | { status: "success"; data: Order[] }
+  | { status: "error"; error: string };
+```
+
+Now the impossible combinations don't type-check, and checking the tag narrows to one shape:
+
+```ts
+function render(state: RequestState) {
+  switch (state.status) {
+    case "loading":
+      return "Loading…";
+    case "success":
+      return `${state.data.length} orders`; // data exists here, and only here
+    case "error":
+      return `Failed: ${state.error}`;
+  }
+}
+```
+
+The TypeScript handbook's definition: when every member of a union has a common property with a
+literal type, TypeScript treats it as a discriminated union and narrows on it. `status`, `kind`
+and `type` are the usual names. The tag is an ordinary property that exists at runtime, which is
+what makes the `switch` work — types themselves are erased.

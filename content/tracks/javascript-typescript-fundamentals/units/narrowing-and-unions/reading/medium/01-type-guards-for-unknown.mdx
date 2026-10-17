@@ -1,0 +1,62 @@
+---
+id: type-guards-for-unknown
+title: Type guards for data you didn't create
+---
+
+`JSON.parse`, `response.json()`, `localStorage`, a `catch (err)` and a `postMessage` event all give
+you data whose shape nobody has checked. Type it as **`unknown`**, not `any`: `unknown` forces a
+check before use, `any` switches checking off.
+
+To narrow `unknown` to your own type, write a **type guard** — a function whose return type is a
+*type predicate*, `x is Order`:
+
+```ts
+type Order = { id: string; totalCents: number };
+
+function isOrder(x: unknown): x is Order {
+  return (
+    typeof x === "object" &&
+    x !== null &&                       // typeof null is "object"
+    "id" in x && typeof x.id === "string" &&
+    "totalCents" in x && typeof x.totalCents === "number"
+  );
+}
+
+const body: unknown = await response.json();
+if (!isOrder(body)) throw new Error("unexpected response shape");
+body.totalCents; // Order from here on
+```
+
+Line by line:
+
+- **`typeof x === "object" && x !== null`** — the only way to get from `unknown` to "an object I
+  can look inside". Skip the `null` check and `"id" in x` throws a `TypeError` at runtime for a
+  `null` body (`in` only works on objects).
+- **`"id" in x && typeof x.id === "string"`** — `in` proves the key exists; `typeof` proves what's
+  in it. Since TS 4.9, `"id" in x` also lets you read `x.id` (as `unknown`) on an object that
+  wasn't declared to have it.
+- **`x is Order`** — the predicate. When `isOrder(body)` returns `true`, TypeScript narrows `body`
+  to `Order` in that branch, and in the `else` branch knows it isn't one.
+
+## TypeScript trusts the predicate
+
+The compiler checks that a guard returns a boolean. It does **not** check that the body proves
+what the predicate claims:
+
+```ts
+function isOrder(x: unknown): x is Order {
+  return typeof x === "object" && x !== null && "id" in x; // never checks totalCents
+}
+```
+
+This compiles, and every caller now treats `{ id: "1", totalCents: "1200" }` as an `Order` —
+`order.totalCents + 100` produces the string `"1200100"`. A type guard is a promise you make to
+the compiler, like `as`, so test it like code. For anything bigger than a few fields, a schema
+library that derives the type from the check (zod and its peers) keeps the two from drifting.
+
+<!--more-->
+
+**Errors are `unknown` too.** With `strict` (specifically `useUnknownInCatchVariables`, TS 4.4+),
+`catch (err)` gives `err: unknown`, because anything can be thrown. `err instanceof Error` is the
+usual guard; `"message" in err` doesn't compile on `unknown`, and would throw at runtime for a
+thrown string.

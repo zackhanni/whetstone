@@ -1,0 +1,55 @@
+---
+id: exhaustiveness-with-never
+title: Exhaustiveness — make a new case break the build
+---
+
+Discriminated unions grow. Six months after `PaymentState` shipped with three states, someone adds
+`"refunded"`. Every `switch` that renders, labels or bills a payment now needs a case — and
+nothing reminds anyone, because a `switch` with a fallback `default` compiles fine.
+
+The fix uses `never`, the type with no values. After every case has been handled, the narrowed
+type in `default` *is* `never`, and assigning to `never` is allowed. Leave a case unhandled, and
+the leftover member can't be assigned to `never` — a compile error, at that exact line:
+
+```ts
+type Payment =
+  | { kind: "pending" }
+  | { kind: "paid"; paidAt: string }
+  | { kind: "failed"; reason: string }
+  | { kind: "refunded"; refundedAt: string }; // the new member
+
+function label(p: Payment): string {
+  switch (p.kind) {
+    case "pending":
+      return "Waiting for payment";
+    case "paid":
+      return `Paid ${p.paidAt}`;
+    case "failed":
+      return `Failed: ${p.reason}`;
+    default: {
+      const unhandled: never = p;
+      // ❌ Type '{ kind: "refunded"; refundedAt: string; }' is not assignable to type 'never'.
+      throw new Error(`Unhandled payment: ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+```
+
+Two parts, two jobs:
+
+- **`const unhandled: never = p`** — the compile-time check. It turns "add a member to the union"
+  into a list of errors at every switch that doesn't handle it yet. Since TS 4.9 you can write
+  `p satisfies never;` for the same check without the variable.
+- **The `throw`** — the runtime check. Types are erased, and data from outside (an old API
+  version, a stale cache) can still carry a `kind` your code has never heard of. Failing loudly
+  beats rendering "undefined".
+
+Compare the habit it replaces:
+
+```ts
+default:
+  return "Unknown"; // compiles forever, shows "Unknown" for every refunded payment
+```
+
+A fallback `default` is fine when the input really is open-ended (a free-text status from a
+third party). For a union you own, it trades a compile error for a silent wrong answer.
