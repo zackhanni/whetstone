@@ -1,0 +1,20 @@
+---
+id: date-bsd-vs-gnu
+title: date — relative dates and parsing differ on macOS
+---
+
+Formatting output is portable; arithmetic and parsing are not.
+
+| Task | GNU (Linux) | macOS (BSD) |
+| --- | --- | --- |
+| two days ago | `date -d '2 days ago' +%F` | `date -v-2d +%F` |
+| from epoch seconds | `date -d @0` | `date -r 0` |
+| parse a date | `date -d 2026-10-17 +%A` | `date -j -f %Y-%m-%d 2026-10-17 +%A` |
+
+On macOS `date -d` fails with `illegal option -- d`; `-j` there means "don't try to set the
+clock", and fields `-f` doesn't parse come from the current time. Both agree on format strings:
+
+```bash
+date -u +%Y-%m-%dT%H:%M:%SZ   # 2026-10-17T14:50:53Z — ISO 8601 in UTC
+date +%s                      # seconds since the Unix epoch
+```

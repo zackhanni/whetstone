@@ -1,0 +1,22 @@
+---
+id: ls-la
+title: ls -la — every entry, in the long format
+---
+
+`-l` is the long format; `-a` adds the dot-entries (`.env`, `.git`) that a plain `ls` hides.
+
+```text
+$ ls -la
+drwxr-xr-x@  5 ada  staff  160 Oct 17 10:42 .
+drwxr-xr-x@  3 ada  staff   96 Oct 17 10:42 ..
+-rw-r--r--@  1 ada  staff    7 Oct 17 10:42 .env
+-rwxr-xr-x   1 ada  staff  214 Oct 17 10:42 deploy.sh
+```
+
+Columns: type and permissions (`d` = directory, then `rwx` for owner, group and others), link
+count, owner, group, size in bytes, last modified, name. On macOS a trailing `@` on the permissions
+means the file has extended attributes, and `+` means an access control list.
+
+Flags you'll combine with it: `-A` (dot-files, minus `.` and `..`), `-h` (sizes with `K`/`M`/`G`
+units), `-t` (newest first) and `-r` (reverse the sort). `ls -lahtr` puts the newest file at the
+bottom, right above your prompt.
