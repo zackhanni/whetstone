@@ -1,0 +1,48 @@
+---
+id: choosing-by-who-calls-you
+title: Choosing by who calls you — and where GraphQL fits
+---
+
+The useful question isn't "which style is best" but "**who has to understand this contract,
+and what do they already have?**"
+
+| Callers | Reach for | Because |
+| --- | --- | --- |
+| Third-party developers, partners, any language | **REST** (resource-shaped JSON, described with OpenAPI) | They have curl and an HTTP library, nothing else of yours. Caching, retries and status codes work without your docs |
+| Your own services in several languages, high volume, streaming | **gRPC** | One `.proto` generates every client; HTTP/2 streams, deadlines and binary protobuf; a contract the compiler checks across languages |
+| One TypeScript app and its own backend, same repo, same deploy | **tRPC** | The router's type *is* the contract — no schema file, no generator, compile errors on mismatch |
+| Many client screens wanting different slices of a connected graph of data | **GraphQL** (below) | Clients ask for exactly the fields they need in one round trip |
+
+Mixed answers are normal: gRPC between internal services and a REST edge for the public;
+tRPC for the web app and a small REST surface for a partner integration.
+
+## The three questions that decide it
+
+1. **Can the caller share your build?** If yes (same repo, TypeScript), tRPC's type sharing is
+   nearly free. If no, the contract must be a document both sides can read: OpenAPI or `.proto`.
+2. **Does HTTP's shared meaning pay for itself?** Public reads that a CDN can cache, links people
+   paste into curl, retries by generic clients — that's resource-shaped HTTP. Service-to-service
+   calls inside one platform rarely need any of it.
+3. **Is streaming part of the feature?** gRPC has it in the contract (server, client and
+   bidirectional streams). Plain HTTP APIs reach for SSE or WebSockets — the subject of this
+   track's last unit.
+
+## GraphQL in one paragraph
+
+A GraphQL server exposes **one endpoint** (usually `/graphql`) and a typed schema; the client sends
+a query naming exactly the fields it wants, across related objects, and gets that shape back. It
+fixes over- and under-fetching for many varied clients. The costs move to the server: every
+operation goes to the same URL, usually as a `POST` (`GET` is allowed only for queries, and long
+queries outgrow URL limits), so HTTP caching needs extra machinery such as persisted documents;
+resolvers can turn one query into N+1 backend calls unless you batch them (DataLoader); and
+arbitrary queries need depth and complexity limits. Partial failures come back
+as an `errors` array next to `data` — with a `2xx` status when `data` is present, since HTTP has
+no "partial success" code.
+
+<!--more-->
+
+**Versioning differs by style.** REST APIs version in the URL or a header and add fields freely.
+Protobuf evolves by adding fields with new numbers and `reserved`-ing removed ones, so old and new
+binaries interoperate. tRPC's compile-time checks only cover code compiled together — a mobile
+build already on phones, or a browser tab holding yesterday's bundle, still needs backward-compatible
+changes.

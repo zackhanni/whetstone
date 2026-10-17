@@ -1,0 +1,67 @@
+---
+id: trpc-types-without-codegen
+title: tRPC — the contract is a TypeScript type
+---
+
+gRPC gets its contract from a `.proto` file and a code generator. tRPC (v11 at the time of
+writing) gets it from the server's own TypeScript: the client imports the router's **type**, and
+the compiler checks every call against it. Its docs' summary: "fully typesafe APIs without
+schemas or code generation".
+
+```ts
+// server/appRouter.ts
+import { initTRPC } from "@trpc/server";
+import { z } from "zod";
+
+const t = initTRPC.create();
+
+export const appRouter = t.router({
+  userById: t.procedure.input(z.string()).query(({ input }) => db.users.find(input)),
+  userCreate: t.procedure
+    .input(z.object({ name: z.string() }))
+    .mutation(({ input }) => db.users.create(input)),
+});
+
+export type AppRouter = typeof appRouter;   // the whole contract, as a type
+```
+
+```ts
+// client/index.ts
+import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import type { AppRouter } from "../server/appRouter";   // type-only: stripped at build time
+
+const trpc = createTRPCClient<AppRouter>({
+  links: [httpBatchLink({ url: "http://localhost:3000/trpc" })],
+});
+
+const user = await trpc.userById.query("1");          // typed result; a typo is a compile error
+await trpc.userCreate.mutate({ name: "Katt" });
+```
+
+Rename `userById` on the server and the client stops compiling. That's the whole pitch, and it
+comes with the whole condition: **client and server must be TypeScript, and the client must be
+able to import the server's type** — in practice, one repository (a monorepo) or a published
+types package. tRPC v11 requires TypeScript 5.7.2 or later and recommends `strict` mode.
+
+## It's still plain HTTP underneath
+
+Queries are `GET`s with the input JSON-encoded in the query string; mutations are `POST`s with a
+JSON body. A procedure's URL is its path, so `userById` is `/trpc/userById`, and a nested
+`post.byId` is `/trpc/post.byId`. `httpBatchLink` combines parallel calls into one request
+(`/trpc/userById,userList?batch=1&input=…`). You can curl it, cache its `GET`s, and see it in the
+network tab — but the URL format is tRPC's own, not something a third party would want to code
+against.
+
+## Where it fits
+
+A Next.js or React app and its own backend, written by one team, deployed together: tRPC removes
+the API layer's busywork. A public API, a mobile app on someone's phone running last month's build,
+or a consumer in another language: those need a contract that lives outside one TypeScript
+compiler run — OpenAPI over REST, or gRPC.
+
+<!--more-->
+
+**Deployed clients aren't recompiled.** Type safety holds between code compiled together. A
+mobile app or a browser tab that loaded yesterday's bundle still calls yesterday's procedure
+shape, so breaking changes to a tRPC router need the same care (add, then remove later) as any
+other API.

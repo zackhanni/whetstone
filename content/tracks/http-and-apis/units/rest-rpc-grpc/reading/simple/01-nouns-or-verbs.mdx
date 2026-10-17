@@ -1,0 +1,57 @@
+---
+id: nouns-or-verbs
+title: Nouns or verbs — the same feature, two API shapes
+---
+
+Here is one feature — orders you can list, create, read, change and cancel — designed twice.
+
+**Resource-shaped** (what people usually mean by "a REST API"): URLs name *things*, and the HTTP
+method says what to do to them.
+
+```http
+GET    /orders?status=open          list
+POST   /orders                      create      -> 201 Created, Location: /orders/43
+GET    /orders/43                   read
+PATCH  /orders/43                   change some fields
+DELETE /orders/43                   remove
+POST   /orders/43/cancellation      cancel (an action modelled as a thing you create)
+```
+
+**Procedure-shaped** (RPC — remote procedure call): URLs name *functions*, and almost every call
+is a `POST` with the arguments in the body.
+
+```http
+POST /rpc/listOrders       {"status":"open"}
+POST /rpc/createOrder      {"sku":"TEA-1","qty":2}
+POST /rpc/getOrder         {"id":43}
+POST /rpc/cancelOrder      {"id":43,"reason":"duplicate"}
+```
+
+Neither is wrong. They put the meaning in different places, and that decides what the
+infrastructure around you can do without reading your docs.
+
+## What the resource shape gets from HTTP
+
+- **Caching.** A `GET` response is cacheable by browsers, CDNs and proxies (RFC 9110, section
+  9.3.1). `POST /rpc/getOrder` is a `POST`, so nothing caches it.
+- **Retries.** Clients and proxies know `GET`, `PUT` and `DELETE` are idempotent and can resend
+  them after a dropped connection. Every RPC call looks like a non-idempotent `POST`.
+- **Generic tooling.** Status codes, `Location`, `ETag`, logs grouped by method and path, curl
+  commands anyone can read — all of it works without knowing your API.
+
+## What the procedure shape gets
+
+- **Names that match the code.** `cancelOrder(id, reason)` on the client is
+  `POST /rpc/cancelOrder` on the wire. No debate about whether a cancellation is a resource.
+- **One obvious way to add an operation:** add a function. Resource APIs need a design
+  conversation for every verb that isn't create/read/update/delete.
+
+That trade-off — HTTP's shared meaning versus the code's own vocabulary — runs through every
+choice in this unit. gRPC and tRPC are both procedure-shaped; they differ in *how* the
+procedure's contract reaches the client.
+
+<!--more-->
+
+**"REST" in practice.** The term comes from Roy Fielding's dissertation, which describes more
+constraints (such as clients navigating by links in responses) than most "REST APIs" follow. In
+day-to-day use it means "resource-oriented JSON over HTTP", and that's how this track uses it.
