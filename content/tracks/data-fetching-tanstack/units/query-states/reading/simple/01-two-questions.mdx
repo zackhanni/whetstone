@@ -1,0 +1,57 @@
+---
+id: two-questions
+title: Two questions — "do we have data?" and "is it fetching?"
+---
+
+A `useQuery` result answers two **independent** questions, and most loading bugs come from
+reading one when you meant the other.
+
+| Field | Question | Values |
+| --- | --- | --- |
+| `status` | Do we have data? | `pending` (none yet) · `error` · `success` |
+| `fetchStatus` | Is the `queryFn` running right now? | `fetching` · `paused` (offline) · `idle` |
+
+Every combination happens. A list that's already on screen and refetching in the background
+is `success` **and** `fetching`. A query waiting on a condition (`enabled: false`) with no data
+is `pending` **and** `idle` — nothing loaded, nothing loading.
+
+The booleans you'll actually write are shorthands for those fields:
+
+- `isPending` — `status === "pending"`: **no data yet**.
+- `isFetching` — `fetchStatus === "fetching"`: **a request is in flight**, first load or
+  background refetch alike.
+- `isLoading` — `isPending && isFetching`: the **first** load is in flight.
+
+Here's one query over its life, as TanStack Query v5 reports it:
+
+| Moment | `status` | `fetchStatus` | `isPending` | `isFetching` | `isLoading` |
+| --- | --- | --- | --- | --- | --- |
+| First render, no cache | pending | fetching | true | true | true |
+| Data arrived | success | idle | false | false | false |
+| Background refetch | success | fetching | false | true | false |
+| Disabled, no data | pending | idle | true | false | false |
+
+So the rule for a full-screen spinner is **"no data yet"** — `isPending` — and `isFetching`
+is for a small "refreshing" hint *next to* data you keep showing:
+
+```tsx
+const { data, isPending, isFetching } = useQuery({ queryKey: ["todos"], queryFn: fetchTodos });
+
+if (isPending) return <Spinner />;           // nothing to show yet
+return (
+  <>
+    {isFetching && <small>Refreshing…</small>} {/* data stays on screen */}
+    <TodoTable rows={data} />
+  </>
+);
+```
+
+Gate the whole screen on `isFetching` instead and every background refetch — a refocused
+tab, a reconnect, an invalidation after a save — wipes a perfectly good table.
+
+<!--more-->
+
+**Names changed in v5.** In v4 the "no data yet" state was `status: "loading"` and
+`isLoading`; v5 renamed it to `"pending"` / `isPending`, and reused the name `isLoading` for
+`isPending && isFetching` (v4's `isInitialLoading`). Code or answers written for v4 read
+differently — check the version before trusting a snippet.

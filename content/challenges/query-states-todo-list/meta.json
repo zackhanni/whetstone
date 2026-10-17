@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "slug": "query-states-todo-list",
+  "title": "Stop the list from blanking on every fetch",
+  "skills": ["tanstack-query", "data-fetching", "caching"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "TodoList.tsx",
+  "dependencies": { "@tanstack/react-query": "5.104.1" },
+  "acceptanceCriteria": [
+    "The first load shows a loading state (not *No todos*), then the list",
+    "A background refetch (**Refresh**) keeps the list on screen and shows *Refreshing…*",
+    "A failed refetch keeps the list on screen and adds an error banner",
+    "A failed first load shows the error instead of a list",
+    "**Next** keeps the current page on screen until the next page arrives, and is disabled meanwhile",
+    "*No todos* appears only once an empty list has loaded"
+  ]
+}
