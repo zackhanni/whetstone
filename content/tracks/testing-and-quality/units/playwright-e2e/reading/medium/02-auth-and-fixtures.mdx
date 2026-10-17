@@ -1,0 +1,85 @@
+---
+id: auth-and-fixtures
+title: Sign in once, and share setup with fixtures
+---
+
+## Isolation comes free
+
+Each test gets a fresh **browser context** — its own cookies, storage and cache — so tests don't
+leak into each other through the browser. Playwright's guide: *"Each test should be completely
+isolated from another test"*. The cost: every test starts signed out.
+
+## Sign in once with a setup project
+
+Signing in through the UI in every test is slow. Instead, a **setup project** signs in once and
+saves the browser state; the real tests start from that file.
+
+```ts
+// e2e/auth.setup.ts
+import { test as setup } from "@playwright/test";
+
+setup("authenticate", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(process.env.E2E_EMAIL!);
+  await page.getByLabel("Password").fill(process.env.E2E_PASSWORD!);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.waitForURL("/dashboard");
+  await page.context().storageState({ path: "playwright/.auth/user.json" });
+});
+```
+
+```ts
+// playwright.config.ts
+projects: [
+  { name: "setup", testMatch: /.*\.setup\.ts/ },
+  {
+    name: "chromium",
+    use: { ...devices["Desktop Chrome"], storageState: "playwright/.auth/user.json" },
+    dependencies: ["setup"],              // run setup first
+  },
+],
+```
+
+The state file holds cookies and local storage — plus IndexedDB if you pass `indexedDB: true` to
+`storageState()` (since 1.51), for apps like Firebase Auth that keep the token there. Session
+storage is **never** saved; Playwright has no API to persist it. The file is a live login: the docs
+warn it *"may contain sensitive cookies and headers that could be used to impersonate you or your
+test account"*, so add `playwright/.auth` to `.gitignore`.
+
+Because `setup` is a dependency, it runs — and rewrites the file — before every normal run. UI mode
+skips setup projects by default, and that's where an expired session bites: delete the file, or run
+the setup project.
+
+One shared account is right when tests don't change server-side state the others depend on. When they
+do (one test deletes the item another reads), give each parallel worker its own account.
+
+## Fixtures: setup that tests ask for by name
+
+`page` is a fixture: Playwright creates it for each test that asks for it and cleans it up after.
+You can define your own with `test.extend`:
+
+```ts
+// e2e/fixtures.ts
+import { test as base, expect } from "@playwright/test";
+
+export const test = base.extend<{ todoPage: TodoPage }>({
+  todoPage: async ({ page }, use) => {
+    await page.goto("/todos");
+    await use(new TodoPage(page));   // the test runs here
+    // anything after `use` is teardown
+  },
+});
+export { expect };
+```
+
+```ts
+import { test, expect } from "./fixtures";
+
+test("adds a todo", async ({ todoPage }) => {
+  await todoPage.add("Buy milk");
+  await expect(todoPage.items).toHaveText(["Buy milk"]);
+});
+```
+
+A fixture runs only for tests that name it, and its teardown runs even when the test fails — tidier
+than a `beforeEach` that every test in the file pays for.

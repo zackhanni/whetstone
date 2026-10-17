@@ -1,0 +1,59 @@
+---
+id: where-did-my-output-go
+title: Where did my output go? Reporters, CI and agents
+---
+
+The same suite prints different things depending on *where* it runs, and Vitest decides some of it
+for you from the environment.
+
+## What changes in CI
+
+Vitest reads the environment (through the `std-env` package) and, when it detects CI:
+
+- **doesn't start watch mode** — the default is `!process.env.CI && process.stdin.isTTY`;
+- **rejects `.only`** — `allowOnly` defaults to `!process.env.CI`, so a forgotten `it.only` fails the
+  run instead of silently skipping the rest of the file;
+- **adds the GitHub Actions reporter** when `GITHUB_ACTIONS` is `"true"` and you haven't configured
+  `reporters`, which turns failures into annotations on the PR.
+
+## What changes under an AI coding agent
+
+Since Vitest 4.1, when Vitest detects it's being run by a coding agent (Claude Code, for instance)
+and no `reporters` option is set, it swaps the default reporter for the **`agent`** (minimal)
+reporter (4.0 has no such switch). Its docs: it
+*"outputs a minimal report containing only failed tests and their error messages"*, and console
+logs from passing tests are suppressed.
+
+Checked under Vitest 4.1.12: a test that runs `console.log("HELLO")` and passes prints nothing in an
+agent session; the same run with `--reporter=default`, or with the agent's environment variables
+unset, prints `HELLO`. Logs from *failing* tests still appear. So a debugging `console.log` that
+"never runs" may be running fine — the reporter is just dropping it. Ask for it back:
+
+```bash
+vitest run --reporter=verbose          # or --reporter=default
+```
+
+or pin `reporters: ["default"]` in the config so humans and agents see the same thing. The reverse
+switch exists too: `silent: "passed-only"` hides passing tests' logs on purpose, for any reporter.
+
+## The other reporters
+
+`default` (summary, plus the tree for failures or a single file), `verbose` (every test as it
+finishes), `tree`, `dot`, and machine-readable ones like `json` and `junit`. Vitest 4 removed the
+`basic` reporter (use `["default", { summary: false }]`).
+
+## When you upgrade to Vitest 5
+
+Vitest 5 shipped in September 2026. Behaviour this track describes that changes (the first two
+checked by running the same file on 4.1.12 and 5.0.5):
+
+- an un-awaited `.resolves`/`.rejects` **fails** the test, even when the expectation is right
+  (Vitest 4 auto-awaits it with a warning);
+- `clearMocks` defaults to **`true`**, so call history no longer carries over between tests — a test
+  that counted a module-level mock's calls across tests goes red;
+- it needs Node 22.12+ and Vite 6.4+, and `vite` is no longer bundled: it becomes a required peer
+  dependency (npm and pnpm install peers for you; Yarn users add it themselves);
+- the `json` and `junit` reporters write to files by default instead of stdout.
+
+Read the [migration guide](https://vitest.dev/guide/migration/) before bumping; the full list is
+longer.

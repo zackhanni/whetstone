@@ -1,0 +1,48 @@
+---
+id: locators
+title: Find elements the way a user does
+---
+
+A Playwright test drives a real browser: go to a page, find things, act on them, check the result.
+Everything starts with a **locator** — a description of how to find an element. This is
+Playwright 1.64.
+
+```ts
+import { expect, test } from "@playwright/test";
+
+test("adds a todo", async ({ page }) => {
+  await page.goto("/todos");
+  await page.getByLabel("New todo").fill("Buy milk");
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByRole("listitem")).toHaveText(["Buy milk"]);
+});
+```
+
+Playwright's docs list the built-in locators in a recommended order, **`getByRole` first**, because
+it *"reflects how users and assistive technology perceive the page"*:
+
+1. `getByRole("button", { name: "Add" })` — the element's role plus its accessible name
+2. `getByText("Buy milk")` — visible text
+3. `getByLabel("New todo")` — form fields by their label
+4. `getByPlaceholder`, `getByAltText`, `getByTitle`
+5. `getByTestId("todo-input")` — matches `data-testid` by default; for when nothing a user can
+   see identifies the element
+
+CSS and XPath selectors work, but the docs advise against them: *"the DOM can often change leading
+to non resilient tests"*. A class name is styling; a role and a label are the contract with the user.
+And a test that can't find "the Add button" by role has found an accessibility bug too.
+
+## Locators are strict, and lazy
+
+A locator isn't an element — it's re-resolved every time you use it, so it always sees the current
+page. And it must match **exactly one** element when you act on it:
+
+```text
+Error: locator.click: Error: strict mode violation: getByRole('button', { name: 'Save' })
+resolved to 2 elements
+```
+
+That error is Playwright refusing to guess. Narrow the locator rather than reaching for `.first()`:
+scope it to a region (`page.getByRole("dialog").getByRole("button", { name: "Save" })`) or give the
+buttons distinct names. Testing Library's query priority makes the same call — role first, test IDs
+as the last resort — for the same reason.
