@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "nest-modules-and-providers",
   "title": "Modules, providers & the injector",
   "skills": [

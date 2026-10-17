@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "nest-dtos-and-validation",
   "title": "DTOs & validation: the contract at the edge",
   "skills": ["backend", "nestjs", "dto", "validation", "pipes", "architecture"],
@@ -150,8 +150,7 @@
     {
       "type": "challenge",
       "id": "challenge-validation-pipe",
-      "challengeSlug": "nest-validation-pipe",
-      "mode": "in-browser"
+      "challengeSlug": "nest-validation-pipe"
     }
   ]
 }

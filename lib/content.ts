@@ -138,23 +138,17 @@ export const loadUnit = cache(async (trackSlug: string, unitSlug: string): Promi
   return { track: { slug: track.slug, title: track.title }, unit, readings, challenges };
 });
 
-/** Enumerate every track/unit pair, for static generation. */
+/**
+ * Enumerate every track/unit pair, for static generation. A track.json that fails to parse
+ * throws, failing the build — returning [] for it would silently drop all its lessons from the
+ * site while the build stayed green.
+ */
 export async function listUnits(): Promise<{ track: string; unit: string }[]> {
   const tracksDir = path.join(ROOT, "content", "tracks");
-  let trackSlugs: string[] = [];
-  try {
-    trackSlugs = await fs.readdir(tracksDir);
-  } catch {
-    return [];
-  }
   const nested = await Promise.all(
-    trackSlugs.map(async (track) => {
-      try {
-        const parsed = TrackSchema.parse(await readJson(path.join(tracksDir, track, "track.json")));
-        return parsed.units.map((unit) => ({ track, unit }));
-      } catch {
-        return [];
-      }
+    (await listTrackSlugs()).map(async (track) => {
+      const parsed = TrackSchema.parse(await readJson(path.join(tracksDir, track, "track.json")));
+      return parsed.units.map((unit) => ({ track, unit }));
     }),
   );
   return nested.flat();

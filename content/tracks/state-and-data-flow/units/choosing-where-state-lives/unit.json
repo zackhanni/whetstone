@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "choosing-where-state-lives",
   "title": "Choosing where state lives",
   "skills": ["react", "state-management", "context", "zustand", "tanstack-query", "architecture", "frontend"],
@@ -105,8 +105,7 @@
     {
       "type": "challenge",
       "id": "challenge-context-value-rerender",
-      "challengeSlug": "context-value-rerender",
-      "mode": "in-browser"
+      "challengeSlug": "context-value-rerender"
     }
   ]
 }

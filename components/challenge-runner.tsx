@@ -10,6 +10,7 @@ import {
 } from "@codesandbox/sandpack-react";
 import clsx from "clsx";
 import type { ChallengeBundle } from "@/lib/content";
+import { RUNNER_DEPENDENCIES } from "@/learning/sandbox";
 import { WhetstoneButton } from "./whetstone-button";
 
 type SandpackFile = { code: string; active?: boolean; readOnly?: boolean; hidden?: boolean };
@@ -71,8 +72,9 @@ export function ChallengeRunner({ bundle }: { bundle: ChallengeBundle }) {
         options={{ activeFile: entryPath }}
         customSetup={{
           dependencies: {
-            "@testing-library/react": "16.1.0",
-            "@testing-library/dom": "10.4.0",
+            ...RUNNER_DEPENDENCIES,
+            // A challenge may declare its own packages (e.g. TanStack Query) in meta.json.
+            ...meta.dependencies,
           },
         }}
       >

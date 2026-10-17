@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(pnpm:*), Bash(npx:*), Bash(vi
 
 # /improve-lesson — refine lessons from feedback
 
-Read `learning/PLAYBOOK.md` first. This skill also owns the repo's **learning loop**: it may be
+Read `docs/handoff.md` and `learning/PLAYBOOK.md` first. This skill also owns the repo's **learning loop**: it may be
 invoked with no feedback at all ("take what you just learned and make the system better").
 
 ## Steps
@@ -31,17 +31,23 @@ invoked with no feedback at all ("take what you just learned and make the system
       point the PLAYBOOK at it.
 3. **Edit.**
    - _Local fix:_ edit the unit/challenge directly.
-   - _General fix:_ change the validator / `learning/schema.ts` / `PLAYBOOK.md`. A **schema**
-     change (not a validator or prose change) **bumps `schemaVersion`** and sweeps every
-     affected lesson as ONE self-contained change set — nothing unrelated in it.
-   - Keep content edits and system edits in separate change sets either way, so the developer
-     can stage them as separate commits (you don't commit — see step 5).
-4. **Gate.** `pnpm check` + `pnpm build`. If a challenge changed, re-verify it **in the
-   browser** (starter FAILS, _Show solution_ PASSES) — there's no headless run; reuse the
-   dev server already on :3002/:3000 instead of starting another.
-5. **Log.** Append to `docs/lesson-changelog.md` (`YYYY-MM-DD — <track>/<unit> — what changed`)
-   and update `docs/ROADMAP.md` if the change closes or opens a follow-up. Clear the handled
-   feedback files. Leave everything uncommitted for the developer to review.
+   - _General fix:_ change the validator / `learning/schema.ts` / `PLAYBOOK.md`. A **breaking**
+     schema change (a field removed or renamed, or its meaning changed) **bumps `schemaVersion`**
+     and sweeps every content file as ONE self-contained change set — nothing unrelated in it.
+     An added optional field is not breaking and needs no bump.
+   - Apart from that schema bump (whose content sweep must stay with it), keep content edits
+     and system edits in separate change sets, so the developer can stage them as separate
+     commits (you don't commit — see step 5).
+4. **Gate.** `pnpm check` (which includes `pnpm test:challenges`, the headless proof that each
+   starter fails and each solution passes) + `pnpm build`. If a challenge changed, also open it
+   **in the browser** once (starter FAILS, _Show solution_ PASSES), since the headless grader is
+   happy-dom, not Sandpack; reuse the dev server already on :3002 instead of starting another.
+5. **Log.** Append **one line** to `docs/lesson-changelog.md`
+   (`YYYY-MM-DD — <track>/<unit> — what changed`); a PR-review round gets one line too, with the
+   triage detail (applied / pushed back, and why) in the PR, not the changelog. Update
+   `docs/ROADMAP.md` if the change closes or opens a follow-up, and the START HERE block in
+   `docs/handoff.md`. Clear the handled feedback files. Leave everything uncommitted for the
+   developer to review.
 
 ## Where the recurring problems have actually been
 
@@ -50,12 +56,18 @@ Check these before inventing new ones — each has bitten at least once:
 - **Adjacent units overlapping** (two units teaching the same quiz question from different
   angles). Fix: sharpen the later unit's angle, don't delete the earlier one.
 - **The challenge contract**, because it's graded in an iframe: missing `App.tsx`, a `vitest`
-  import, a jest-dom matcher, `jest.mock`, or a solution that no longer differs from the
-  starter. These are now validator errors — if you find a _new_ one, add it there too.
-- **Sandpack limits leaking into lesson design:** no third-party deps, real timers, singleton
-  stores leaking across test cases.
+  import, a jest-dom matcher, `jest.mock`, a solution that no longer differs from the starter,
+  or a solution that doesn't pass its own grader. These are now validator / `pnpm
+  test:challenges` errors — if you find a _new_ one, add it there too.
+- **Sandpack limits leaking into lesson design:** real timers, singleton stores leaking across
+  test cases, and third-party packages (declare them in `meta.json` `dependencies` with an exact
+  version that matches a devDependency, or hand-roll the mechanism).
 - **Taxonomy drift:** a lesson's `skills` tag that isn't in `learning/taxonomy.ts`, or a
   taxonomy edit that silently breaks `lib/tags.test.ts` fixtures.
+- **Content the renderer silently ignores.** Readings are Markdown, not MDX (a JSX tag shows as
+  literal text); frontmatter is not YAML (quotes are kept); zod used to drop unknown keys. The
+  validator and `.strict()` schema now reject each of these — keep it that way when adding a
+  field: if the app doesn't read it, the schema shouldn't accept it.
 - **An acceptance criterion no test asserts.** `meta.json`/README promise something (cleanup on
   unmount is the classic) that the grader never checks, so a leaky solution passes. Fix the
   grader, not the promise.

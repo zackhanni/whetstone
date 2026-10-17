@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "use-state-fix-counter",
   "title": "Fix the counter that only adds 1",
   "prompt": "The \"Add 3\" button calls setCount(count + 1) three times but the count only goes up by 1. Make it add 3 with the functional updater.",
@@ -7,7 +7,6 @@
   "difficulty": "core",
   "estimatedMinutes": 10,
   "runner": "in-browser",
-  "stack": ["react", "ts"],
   "entry": "Counter.tsx",
   "acceptanceCriteria": [
     "Clicking \"Add 3\" increases the count by 3",

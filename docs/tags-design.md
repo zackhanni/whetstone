@@ -1,13 +1,14 @@
 # Tags & Interest Filtering — Design
 
-> Status: **design** (not built). A hierarchical, validated tag taxonomy layered on the
-> existing `skills` field, plus an "interest filter" that reorders the catalog to what a
-> learner wants to study. Build order in the last section; steps 1–3 ship independently.
+> Status: **built** — all five build steps shipped (PR #9). Kept as the design record: a
+> hierarchical, validated tag taxonomy layered on the `skills` field, plus an "interest filter"
+> that reorders the catalog to what a learner wants to study. "Planned dimensions" (near the end)
+> is the one living section: update it as tracks land.
 
 ## The core idea
 
-We already have a tag system: `skills: string[]` on tracks, units, and challenges
-(`learning/schema.ts`). It is flat and free-text — `use-effect` is tagged
+We already have a tag system: `skills: string[]` on units and challenges (and, until schema v2,
+on tracks) in `learning/schema.ts`. It is flat and free-text — `use-effect` is tagged
 `["react","hooks","useEffect","data-fetching"]`, mixing a broad tag, a mid tag, and a leaf,
 with the hierarchy only implied. This design **formalizes** that field; it does not add a
 parallel `tags` field.
@@ -27,11 +28,13 @@ _computed_ by walking the tree, never by re-tagging lessons with every ancestor.
   hard-hide once the catalog is large.
 - **Hierarchy shape: multi-parent DAG.** A tag (`testing`, `typescript`, `data-fetching`) may
   sit under more than one dimension. The validator must reject cycles.
-- **Tag source of truth: unit-level.** Only units carry `skills`. A track's displayed tags are
-  the deduped union of its units' skills, so track and unit tags can never drift. (`track.skills`
-  may remain as an optional curated headline subset, but the union is authoritative for display.)
-- **No `schemaVersion` bump.** Unit/track shapes are unchanged; this adds a sibling registry and
-  a validator rule only.
+- **Tag source of truth: unit-level.** Only units (and challenges) carry `skills`. A track's
+  displayed tags are the deduped union of its units' skills, so track and unit tags can never
+  drift. Schema v2 removed `track.skills` outright: nothing read it, and it had already drifted
+  (the React track listed 4 tags while its units used 21).
+- **No `schemaVersion` bump for this feature.** It left unit/track shapes unchanged, adding only
+  a sibling registry and a validator rule. (Removing `track.skills` later was a breaking change,
+  so it shipped as part of schema v2.)
 
 ## Data model
 
@@ -164,6 +167,26 @@ when it migrates.
 - **PLAYBOOK checklist:** upgrade "Skills tagged…" to "tags exist in the taxonomy and sit at the
   right altitude (leaf where specific, broad where the lesson is broad)."
 - **`docs/lesson-changelog.md`:** taxonomy edits get a line.
+
+## Planned dimensions
+
+Roots (dimensions) are the top row of the interest filter, so they should be few and stable.
+Today there are two: `frontend` and `backend`. The backlog in `docs/ROADMAP.md` needs more. The
+list below is where new roots should go, so that each authoring session doesn't invent its own.
+**Add a root only when a lesson needs it** (an unused root is an orphan warning):
+
+| Root (slug) | For tracks like | Re-parent when it lands |
+| --- | --- | --- |
+| `languages` → `javascript`, `typescript` | JS & TS fundamentals, Async JS & Timing, Dates & Time | `async` (today under `frontend` only) gains `javascript` as a parent |
+| `web` | HTTP & APIs, Next.js & the Network, CORS/caching | `http` (today under `backend` only) gains `web` |
+| `security` | Web Security (XSS, CSP, CSRF, OWASP) | `auth` gains `security` |
+| `testing` | Testing & Quality (Vitest, Playwright) | — |
+| `databases` | Databases | — |
+| `tooling` | Terminal, Git & GitHub | — |
+| `system-design`, `infrastructure` | Capstone tracks | `architecture` may gain `system-design` |
+
+Re-parenting is free: a tag gaining a parent changes no content file, because units store only
+the leaf tag.
 
 ## Build order
 

@@ -1,16 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "state-and-data-flow",
   "title": "State & Data Flow",
   "description": "Deciding where state should live and which tool should own it: local state, lifting, React Context, client stores (Zustand), server-state libraries (TanStack Query), and the URL — plus the re-render, SSR, and persistence trade-offs that decide between them.",
-  "skills": [
-    "react",
-    "state-management",
-    "architecture",
-    "context",
-    "zustand",
-    "frontend"
-  ],
   "units": [
     "choosing-where-state-lives",
     "context-vs-store-vs-server-state",

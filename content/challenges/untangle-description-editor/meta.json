@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "untangle-description-editor",
   "title": "Untangle the three effects in DescriptionEditor",
   "prompt": "DescriptionEditor has three effects and three bugs: a stale derived count, a prop→state sync that clobbers typing, and a resize listener with no cleanup. Derive, delete, and fix the subscription.",
@@ -7,7 +7,6 @@
   "difficulty": "advanced",
   "estimatedMinutes": 20,
   "runner": "in-browser",
-  "stack": ["react", "ts"],
   "entry": "DescriptionEditor.tsx",
   "acceptanceCriteria": [
     "The user can type: the input keeps what was typed instead of reverting to the prop",

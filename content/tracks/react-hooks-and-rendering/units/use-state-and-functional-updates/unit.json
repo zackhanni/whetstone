@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "use-state-and-functional-updates",
   "title": "useState & functional updates",
   "skills": ["react", "hooks", "useState", "state"],
@@ -78,8 +78,7 @@
     {
       "type": "challenge",
       "id": "challenge-fix-counter",
-      "challengeSlug": "use-state-fix-counter",
-      "mode": "in-browser"
+      "challengeSlug": "use-state-fix-counter"
     }
   ]
 }

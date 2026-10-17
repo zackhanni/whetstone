@@ -10,16 +10,17 @@
 ## Build, Run & Validate
 
 ```bash
-pnpm dev       # Next dev server — this project runs on :3002 (another app owns :3000)
-pnpm build     # production build (SSG) — gate for any routing/content change
-pnpm check     # lint + typecheck + validate + test — the primary gate
-pnpm validate  # zod schema + reading-tier + challenge-contract + taxonomy checks (scripts/validate.ts)
-pnpm test      # Vitest — pure lib/* and learning/* logic; jsdom-free, runs in the gate
+pnpm dev              # Next dev server — this project runs on :3002 (another app owns :3000)
+pnpm build            # production build (SSG) — gate for any routing/content change
+pnpm check            # lint + typecheck + validate + test + test:challenges — the primary gate
+pnpm validate         # schema + reading files + slugs + taxonomy + challenge contract (scripts/validate.ts)
+pnpm test             # Vitest — pure lib/* and learning/* logic, node environment
+pnpm test:challenges  # every challenge grader, headless: starter must fail, solution must pass
 ```
 
-**`pnpm check` and `pnpm build` are gates — a change isn't done until both pass.** Challenge
-tests (Sandpack) can't run headlessly: verify those **in the browser** (starter must fail, "Show
-solution" must pass).
+**`pnpm check` and `pnpm build` are gates — a change isn't done until both pass.** The headless
+challenge grader runs in happy-dom, not Sandpack, so a new or changed challenge also gets one run
+**in the browser** (starter fails, "Show solution" passes).
 
 ## Stack
 
@@ -29,25 +30,29 @@ solution" must pass).
 
 ## Where things live
 
-- `content/` — all lessons (`tracks/…/units/…/unit.json` + `reading/{simple,medium,complex}/*.mdx`) and `challenges/`. Schema: `learning/schema.ts`; authoring judgment: `learning/PLAYBOOK.md`.
+- `content/` — all lessons (`tracks/…/units/…/unit.json` + `reading/{simple,medium,complex}/*.mdx`) and `challenges/`.
+- `learning/` — the authoring system: `schema.ts` (zod, the shape of content), `taxonomy.ts` (the tag registry), `sandbox.ts` (what a challenge can import, and the pinned versions), `PLAYBOOK.md` (authoring judgment).
+- `scripts/validate.ts` + `scripts/check-challenges.ts` — the content gates (`vitest.challenges.config.ts` is the headless grader's config).
 - `lib/content.ts` — file-based content loader (React `cache()`, path-traversal guarded).
-- `lib/progress.ts` + `components/progress-provider.tsx` — the local-first progress store (Context today).
-- `docs/` — `ROADMAP.md` (plan + conventions), `zustand-migration.md`, `shadcn-local-patches.md`, `lesson-changelog.md`.
+- `lib/progress.ts` + `components/progress-provider.tsx` — the local-first progress store (Context). `lib/stores/interests-store.ts` — the interest filter (Zustand).
+- `docs/` — `handoff.md` (START HERE), `ROADMAP.md` (plan + backlog), `lesson-changelog.md`, and design notes: `tags-design.md`, `cards-and-lesson-depth.md`, `zustand-migration.md`, `shadcn-local-patches.md`.
 
 ## Authoring content
 
-Add lessons with the **`/new-lesson`** skill (`.claude/skills/new-lesson`) — it scaffolds against
-the schema and gates on `pnpm validate` + `pnpm build`. Don't hand-roll content around the schema;
-if the schema genuinely can't express something, change the schema as its **own** commit + a
-cross-lesson sweep (see PLAYBOOK). Append a line to `docs/lesson-changelog.md` for every content change.
+Add lessons with the **`/new-lesson`** skill (`.claude/skills/new-lesson`) and change shipped ones
+with **`/improve-lesson`** — both scaffold against the schema and gate on `pnpm check` + `pnpm build`.
+Don't hand-roll content around the schema; if the schema genuinely can't express something, change
+it as its **own** change set (a breaking change also bumps `schemaVersion` and sweeps every file —
+see PLAYBOOK). Append **one line** to `docs/lesson-changelog.md` for every content change.
 
 ## State management
 
-Client state is local-first in `localStorage`, read **once** and shared via React **Context**
-(`ProgressProvider`) — not per-component reads. Stay on Context while there's a single persisted
-store; the plan and trigger for moving to **Zustand** (when a 2nd/3rd store lands) is in
-`docs/zustand-migration.md`. (Choosing where state lives is itself a lesson:
-`content/tracks/state-and-data-flow`.)
+Client state is local-first in `localStorage`. Progress is read **once** and shared via React
+**Context** (`ProgressProvider`) — not per-component reads. The interest filter is the first
+**Zustand** store (`lib/stores/interests-store.ts`, `persist` + a `useMounted` hydration gate).
+Its arrival was the trigger for moving progress and drill history to Zustand too — that migration
+is planned, not done (`docs/zustand-migration.md`). (Choosing where state lives is itself a
+lesson: `content/tracks/state-and-data-flow`.)
 
 ## Code style / Patterns to avoid
 
@@ -66,6 +71,9 @@ store; the plan and trigger for moving to **Zustand** (when a 2nd/3rd store land
 - **Don't commit, push, or merge automatically** — leave changes uncommitted for the developer to
   review and commit (they run CodeRabbit on the PR).
 - Plan before non-trivial/multi-file work; just do small, obvious edits.
+- **Start every session with `docs/handoff.md`**, and end any session that changed something by
+  updating its START HERE block (status, what's next, open items). It is a briefing, not a
+  history: replace stale lines rather than appending.
 - Verify with `pnpm check` + `pnpm build` before claiming done; report failures with their output.
 - The dev server runs on **:3002** — only ever kill that port, never a blanket port-kill.
 - Be direct and objective, not sycophantic.

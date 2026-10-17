@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "zustand-basics",
   "title": "Zustand basics: create, selectors, set, persist",
   "skills": [
@@ -319,8 +319,7 @@
     {
       "type": "challenge",
       "id": "challenge-selector-store",
-      "challengeSlug": "selector-store-subscription",
-      "mode": "in-browser"
+      "challengeSlug": "selector-store-subscription"
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "use-effect-fix-fetch",
   "title": "Fix the search-as-you-type effect",
   "prompt": "A live user search has a race condition and leaks in-flight requests. Make the tests pass by adding cleanup and a race guard.",
@@ -7,7 +7,6 @@
   "difficulty": "core",
   "estimatedMinutes": 20,
   "runner": "in-browser",
-  "stack": ["react", "ts"],
   "entry": "SearchUsers.tsx",
   "acceptanceCriteria": [
     "Typing a query shows that query's results",

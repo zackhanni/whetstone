@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "debounced-input-and-autosave",
   "title": "Debounced input & autosave with timers",
   "skills": [
@@ -276,8 +276,7 @@
     {
       "type": "challenge",
       "id": "challenge-debounce-autosave",
-      "challengeSlug": "debounce-autosave-title",
-      "mode": "in-browser"
+      "challengeSlug": "debounce-autosave-title"
     }
   ]
 }

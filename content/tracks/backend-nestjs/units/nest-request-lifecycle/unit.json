@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "nest-request-lifecycle",
   "title": "The request lifecycle: guards, interceptors & filters",
   "skills": [

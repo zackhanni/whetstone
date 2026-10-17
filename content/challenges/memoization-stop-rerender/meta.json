@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "memoization-stop-rerender",
   "title": "Stop the memo child from re-rendering",
   "prompt": "A memo()-wrapped child re-renders on every unrelated parent update because it receives a fresh inline callback each render. Stabilize the callback so the child re-renders only when it has to.",
@@ -7,7 +7,6 @@
   "difficulty": "advanced",
   "estimatedMinutes": 15,
   "runner": "in-browser",
-  "stack": ["react", "ts"],
   "entry": "Parent.tsx",
   "acceptanceCriteria": [
     "The child renders once on initial mount (render count shows 1)",
