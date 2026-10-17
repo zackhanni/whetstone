@@ -1,0 +1,48 @@
+---
+id: keys-name-and-point
+title: A primary key names a row; a foreign key points at one
+---
+
+A table is a set of rows that share the same columns. Two kinds of key turn a pile of tables
+into a database:
+
+- A **primary key** is the column (or columns) that names exactly one row. PostgreSQL enforces
+  it: the value must be unique and not null, and declaring it builds a unique B-tree index.
+- A **foreign key** is a column whose value must match a key in another table. It's how an
+  order says "I belong to customer 1" — and how the database refuses an order for a customer
+  that doesn't exist.
+
+```sql
+CREATE TABLE customers (
+  id   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name text NOT NULL
+);
+
+CREATE TABLE orders (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  customer_id bigint NOT NULL REFERENCES customers (id),
+  total       numeric(10,2) NOT NULL
+);
+```
+
+`GENERATED ALWAYS AS IDENTITY` makes the database hand out the ids (1, 2, 3…).
+`REFERENCES customers (id)` is the foreign key. From now on the database guards the
+relationship from both ends:
+
+```sql
+INSERT INTO orders (customer_id, total) VALUES (42, 10);
+-- ERROR: insert or update on table "orders" violates foreign key
+--        constraint "orders_customer_id_fkey"
+
+DELETE FROM customers WHERE id = 1;   -- customer 1 still has orders
+-- ERROR: update or delete on table "customers" violates foreign key
+--        constraint "orders_customer_id_fkey" on table "orders"
+```
+
+This is a **one-to-many** relationship: one customer, many orders. The foreign key lives on the
+"many" side — each order holds one `customer_id`; the customer row holds no list of orders.
+"All of customer 1's orders" is a query (`WHERE customer_id = 1`), not a column.
+
+Why let the database check this rather than your application code? Because every writer goes
+through the same check — your API, a one-off script, a teammate in the SQL editor. A check in
+application code guards only the code paths that remember to call it.
