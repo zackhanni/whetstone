@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "bearer-token-guard",
+  "title": "Fix the bearer-token check in front of the orders API",
+  "skills": ["auth", "jwt", "http"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "runner": "in-browser",
+  "entry": "authenticate.ts",
+  "acceptanceCriteria": [
+    "A valid `HS256` token with the required scope is accepted, with `userId` from `sub`",
+    "No credentials → `401` with `WWW-Authenticate: Bearer realm=\"api\"` and no error code",
+    "The `Bearer` scheme is matched case-insensitively",
+    "A token that isn't a correctly signed `HS256` token — edited payload, wrong secret, `alg: none`, malformed — gets `401` with `error=\"invalid_token\"`",
+    "A token is rejected from its `exp` second on (`exp` is in seconds), and a token with no `exp` is rejected",
+    "A valid token without the required scope gets `403` with `error=\"insufficient_scope\", scope=\"…\"`"
+  ]
+}
