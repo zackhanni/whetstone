@@ -1,0 +1,64 @@
+---
+id: deadlocks-and-lock-waits
+title: Deadlocks, lock waits, and transactions held open too long
+---
+
+## A deadlock is two transactions each waiting for the other
+
+Two transfers in opposite directions:
+
+```text
+A: BEGIN;  UPDATE accounts SET balance = balance - 10 WHERE id = 1;   -- A locks row 1
+B: BEGIN;  UPDATE accounts SET balance = balance - 10 WHERE id = 2;   -- B locks row 2
+A: UPDATE accounts SET balance = balance + 10 WHERE id = 2;           -- waits for B
+B: UPDATE accounts SET balance = balance + 10 WHERE id = 1;           -- waits for A
+-- after about a second (deadlock_timeout), PostgreSQL detects the cycle:
+A: ERROR 40P01: deadlock detected
+B: UPDATE 1 … COMMIT
+```
+
+Neither can proceed, so PostgreSQL aborts one of them — which one is, per the manual, difficult to
+predict and shouldn't be relied on. The other completes. The aborted one must roll back and retry.
+
+The fix is an **order**: if every transaction locks rows in the same order, a cycle can't form.
+For a transfer, update the lower id first, whatever the direction. When locking several rows up
+front, sort them in the query:
+
+```sql
+SELECT id FROM accounts WHERE id IN ($1, $2) ORDER BY id FOR UPDATE;
+```
+
+Deadlocks also come from mixing orders across code paths (checkout locks cart then inventory; a
+restock job locks inventory then cart). Retrying `40P01` keeps users unaffected; fixing the order
+makes it stop happening.
+
+## Not waiting at all: `NOWAIT` and `SKIP LOCKED`
+
+```sql
+SELECT … FOR UPDATE NOWAIT;         -- ERROR 55P03 instead of waiting, if the row is locked
+SELECT id FROM jobs WHERE NOT done
+ORDER BY id LIMIT 1
+FOR UPDATE SKIP LOCKED;             -- take the next row nobody else has locked
+```
+
+`SKIP LOCKED` is how several workers pull from a jobs table without fighting: in a two-session
+test, worker A got job 1 and worker B, running the same query, got job 2 instead of waiting.
+
+## Bound every wait: `lock_timeout`
+
+A session can wait for a lock indefinitely by default. `SET lock_timeout = '200ms'` makes a
+statement give up with `55P03: canceling statement due to lock timeout` instead. Useful in request
+handlers (fail fast, retry) and essential in migrations (the migrations unit shows why).
+
+## Keep transactions short
+
+Every row a transaction has written or locked stays locked until it ends. So:
+
+- **Never hold a transaction open across something slow** — an HTTP call to a payment provider, a
+  queue publish, waiting for user input. Do the slow part before `BEGIN` or after `COMMIT`.
+- **Watch for "idle in transaction".** A connection that ran `BEGIN` and then stopped (an
+  unhandled promise rejection that skipped the `ROLLBACK`, a missing `release()` on a pooled
+  client) keeps its locks until the connection closes. `idle_in_transaction_session_timeout` (off
+  by default — `0`) terminates such sessions after a limit.
+- **One transaction per unit of work**, scoped in code so that every path ends in `COMMIT` or
+  `ROLLBACK` (`try { … COMMIT } catch { ROLLBACK; throw }`, with the client released in `finally`).

@@ -1,0 +1,82 @@
+---
+id: four-fixes-for-a-lost-update
+title: Four fixes for a lost update, and when each fits
+---
+
+Reserving stock: read the product, check there's enough, write the new stock. Four ways to make
+that safe with concurrent requests, cheapest first.
+
+## 1. One atomic statement
+
+```sql
+UPDATE products SET stock = stock - $2
+WHERE id = $1 AND stock >= $2
+RETURNING stock;
+```
+
+Row count 1: reserved. Row count 0: not enough stock (or no such product). Use this whenever the
+whole decision fits in one statement — it needs no retry logic and holds the row lock for the
+shortest possible time.
+
+## 2. Pessimistic: lock the row first — `SELECT … FOR UPDATE`
+
+When the decision needs application logic between read and write:
+
+```sql
+BEGIN;
+SELECT stock FROM products WHERE id = $1 FOR UPDATE;   -- locks the row until COMMIT
+-- …application decides, maybe calls other code…
+UPDATE products SET stock = $2 WHERE id = $1;
+COMMIT;
+```
+
+A second transaction's `SELECT … FOR UPDATE` on the same row **waits** until the first commits,
+then reads the committed value. In a two-session run (stock 100, each session reserving 30), B's
+locking read waited until A committed, then saw 70 instead of 100, and the final stock was 40 — both
+reservations counted. The cost:
+everyone queues behind the lock, so keep these transactions short.
+
+## 3. Optimistic: a version column
+
+Don't lock; detect the conflict at write time instead.
+
+```sql
+SELECT stock, version FROM products WHERE id = $1;              -- stock 100, version 1
+
+UPDATE products SET stock = $2, version = version + 1
+WHERE id = $1 AND version = $3;                                   -- $3 = the version you read
+```
+
+If someone else wrote since your read, `version` is no longer 1, the `WHERE` matches nothing, and
+the row count is **0**. That's the signal: re-read the row, redo the decision, try again — a
+bounded number of times. Run concurrently, the second writer got `UPDATE 0` both when the first had
+already committed and when it was still open (it waited, then re-checked `version = 1` against the
+committed row). Good fit when conflicts are rare, or when the read and the write are far apart — a
+form loaded at 10:00 and saved at 10:20, where holding a lock for 20 minutes isn't an option.
+
+## 4. A stricter isolation level, plus retry
+
+```sql
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT stock FROM products WHERE id = 1;          -- snapshot taken here, for the whole transaction
+UPDATE products SET stock = 70 WHERE id = 1;
+-- if another transaction changed this row and committed after the snapshot:
+-- ERROR 40001: could not serialize access due to concurrent update
+```
+
+Under REPEATABLE READ (and SERIALIZABLE), the whole transaction sees one snapshot, and writing a row
+that changed after it is an error rather than a silent overwrite. The application must catch
+`40001` and **retry the entire transaction** — re-running the reads and the logic, not just the
+failed statement. This is the general tool when many statements and rows are involved; the complex
+tier shows the case only SERIALIZABLE catches.
+
+## Choosing
+
+| Situation                                         | Fix                            |
+| ------------------------------------------------- | ------------------------------ |
+| The rule fits in one `UPDATE … WHERE`             | 1 — atomic statement           |
+| Short read-decide-write inside one request        | 2 — `FOR UPDATE`               |
+| Rare conflicts, or read and write far apart       | 3 — version column + retry     |
+| Many rows and statements; invariants across rows  | 4 — SERIALIZABLE + retry       |
+
+Fixes 3 and 4 both need a retry loop with a limit. Writing one is this unit's challenge.

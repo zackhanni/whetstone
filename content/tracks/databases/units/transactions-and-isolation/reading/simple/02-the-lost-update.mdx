@@ -1,0 +1,43 @@
+---
+id: the-lost-update
+title: The lost update — two writers, one overwritten
+---
+
+A post has 5 comments. Two people comment at the same moment, and each request runs this:
+
+```ts
+const { rows } = await db.query("SELECT comment_count FROM posts WHERE id = $1", [postId]);
+const next = rows[0].comment_count + 1;
+await db.query("UPDATE posts SET comment_count = $1 WHERE id = $2", [next, postId]);
+```
+
+Interleaved, which is exactly what concurrent requests do:
+
+| time | request A                | request B                |
+| ---- | ------------------------ | ------------------------ |
+| 1    | reads 5                  |                          |
+| 2    |                          | reads 5                  |
+| 3    | writes 6                 |                          |
+| 4    |                          | writes 6                 |
+
+Two comments, and the count went from 5 to 6. B's write is based on a value that was already
+stale, and it overwrote A's. That's a **lost update**, and wrapping each request in
+`BEGIN … COMMIT` doesn't fix it: under PostgreSQL's default isolation level each `SELECT` simply
+reads the latest committed value, and 5 was the latest committed value when both read it. (With
+each request wrapped in `BEGIN … COMMIT` and run against a real server, B's `UPDATE` even waits for
+A's to commit — and then writes 6 anyway, because 6 is the number B computed.)
+
+The bug isn't in either request; it's in the gap between reading and writing. Close the gap and
+it's gone. The simplest way: let the database do the arithmetic, in one statement.
+
+```sql
+UPDATE posts SET comment_count = comment_count + 1 WHERE id = $1;
+```
+
+Now each `UPDATE` reads the current value at the moment it writes it. If A's update hasn't
+committed yet, B's waits for it, then adds 1 to A's result: 5 → 6 → 7.
+
+The same shape hides everywhere: decrementing stock, spending a balance, incrementing a version,
+appending to a JSON array you read, edited, and wrote back. Whenever code **reads a value, computes
+in the application, and writes the result**, ask what happens if someone else writes in between.
+The medium tier has the fixes for when one `UPDATE` isn't enough.

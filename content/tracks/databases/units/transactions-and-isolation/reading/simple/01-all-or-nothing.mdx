@@ -1,0 +1,57 @@
+---
+id: all-or-nothing
+title: A transaction is all or nothing
+---
+
+Moving 10 from account 1 to account 2 is two statements. If the server dies between them, 10 has
+vanished. A **transaction** bundles statements so that either all of them take effect or none do:
+
+```sql
+BEGIN;
+UPDATE accounts SET balance = balance - 10 WHERE id = 1;
+UPDATE accounts SET balance = balance + 10 WHERE id = 2;
+COMMIT;      -- both changes become visible to everyone, together
+```
+
+`ROLLBACK` instead of `COMMIT` throws both away. Without `BEGIN`, PostgreSQL wraps every single
+statement in its own transaction (an implicit `BEGIN` and, if it succeeds, `COMMIT`).
+
+The guarantees go by **ACID**:
+
+- **Atomic** — all of it or none of it.
+- **Consistent** — constraints (`NOT NULL`, foreign keys, `CHECK`, `UNIQUE`) hold when it commits.
+- **Isolated** — other sessions don't see your changes until you commit, and you see theirs only
+  in the ways your isolation level allows (the rest of this unit).
+- **Durable** — once `COMMIT` returns, the change survives a crash (with the default
+  `synchronous_commit = on`).
+
+## An error poisons the whole transaction
+
+```sql
+BEGIN;
+UPDATE accounts SET balance = balance - 10 WHERE id = 1;
+INSERT INTO accounts VALUES (1, 0);
+-- ERROR 23505: duplicate key value violates unique constraint "accounts_pkey"
+UPDATE accounts SET balance = balance + 10 WHERE id = 2;
+-- ERROR 25P02: current transaction is aborted, commands ignored until end of transaction block
+COMMIT;
+-- the server answers ROLLBACK
+```
+
+After any error the transaction is **aborted**: every following statement is refused, and
+`COMMIT` rolls back — run from Node with `pg`, the `COMMIT` doesn't even throw; its result's
+command is `ROLLBACK`. So if your code catches an error inside a transaction, logs it and carries
+on, the "successful" commit at the end silently discarded everything. On error: roll back and
+retry or report — never continue.
+
+When one step is genuinely allowed to fail, mark a **savepoint** and roll back to just that:
+
+```sql
+BEGIN;
+UPDATE accounts SET balance = balance - 10 WHERE id = 1;
+SAVEPOINT before_insert;
+INSERT INTO accounts VALUES (1, 0);              -- fails
+ROLLBACK TO SAVEPOINT before_insert;             -- the transaction is usable again
+UPDATE accounts SET balance = balance + 10 WHERE id = 2;
+COMMIT;                                          -- both updates commit
+```

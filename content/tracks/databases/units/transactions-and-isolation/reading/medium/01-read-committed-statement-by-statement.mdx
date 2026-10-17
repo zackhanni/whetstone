@@ -1,0 +1,70 @@
+---
+id: read-committed-statement-by-statement
+title: READ COMMITTED, statement by statement
+---
+
+**READ COMMITTED is PostgreSQL's default isolation level**, and most application code runs under
+it without knowing. Two rules describe almost everything it does.
+
+## Rule 1: every statement takes a fresh snapshot
+
+A statement sees the data as committed at the instant *that statement* starts (plus your own
+uncommitted changes). The next statement in the same transaction takes a new snapshot:
+
+```text
+A: BEGIN;
+A: SELECT balance FROM accounts WHERE id = 1;     -- 100
+B: UPDATE accounts SET balance = 50 WHERE id = 1; -- B autocommits
+A: SELECT balance FROM accounts WHERE id = 1;     -- 50  (same transaction, new answer)
+A: COMMIT;
+```
+
+That's a **non-repeatable read**, and READ COMMITTED allows it. Never assume a value you `SELECT`ed
+earlier in the transaction is still true when you write.
+
+You never see another transaction's *uncommitted* work, though — no dirty reads at any level in
+PostgreSQL (asking for `READ UNCOMMITTED` gets you READ COMMITTED).
+
+## Rule 2: a write to a row someone else is changing waits, then re-checks
+
+When an `UPDATE`, `DELETE` or `SELECT … FOR UPDATE` reaches a row that another open transaction has
+already changed, it **waits** for that transaction to finish. If the other one commits, the waiting
+statement takes the *new* version of the row, **re-evaluates its `WHERE` clause** against it, and
+applies its change to that version if it still matches (or skips the row if it doesn't).
+
+That rule is why the one-statement fix from the simple tier works:
+
+```text
+A: BEGIN;
+A: UPDATE posts SET comment_count = comment_count + 1 WHERE id = 1;  -- 5 → 6, row locked
+B: UPDATE posts SET comment_count = comment_count + 1 WHERE id = 1;  -- waits…
+A: COMMIT;
+B:                                     -- …re-reads the committed row (6), writes 7
+```
+
+And it's why a **guarded** update is safe — the guard is re-checked against the row as it is now:
+
+```text
+-- stock is 3; both want 2
+A: BEGIN;
+A: UPDATE products SET stock = stock - 2 WHERE id = 1 AND stock >= 2 RETURNING stock;  -- 1
+B: UPDATE products SET stock = stock - 2 WHERE id = 1 AND stock >= 2 RETURNING stock;  -- waits
+A: COMMIT;
+B:                                     -- re-checks: stock is 1, 1 >= 2 is false → UPDATE 0
+```
+
+`UPDATE 0` is the answer "not enough stock" — check the row count in your code. A `CHECK (stock >= 0)`
+constraint is the backstop for any writer that forgets the guard.
+
+## What READ COMMITTED does not protect
+
+It re-checks the row being *written*, not the other rows you *read* to decide what to write. The
+PostgreSQL manual says it plainly: an updating command can see the effects of concurrent updates on
+the rows it's updating, but not their effects on other rows. So:
+
+- read-modify-write in the application (read 5, compute 6, write 6) still loses updates — the
+  `UPDATE` re-checks its `WHERE`, but the value it writes was computed from the old read;
+- a decision based on *other* rows ("is anyone else on call?", "does this email exist yet?") can
+  be invalidated by a concurrent transaction and nothing notices.
+
+The next tier is the toolkit for both.

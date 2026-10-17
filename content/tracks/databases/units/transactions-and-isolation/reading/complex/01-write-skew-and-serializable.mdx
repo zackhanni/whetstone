@@ -1,0 +1,74 @@
+---
+id: write-skew-and-serializable
+title: Invariants across rows — write skew, check-then-insert, and SERIALIZABLE
+---
+
+Row locks and version checks protect the row you write. Some rules are about **other** rows.
+
+## Write skew: both checks pass, the rule breaks
+
+Rule: at least one doctor stays on call. Alice and Bob are both on call; each asks to go off duty
+at the same moment, through the same code:
+
+```sql
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT count(*) FROM on_call WHERE on_duty;                      -- 2, so it's safe to leave
+UPDATE on_call SET on_duty = false WHERE doctor = 'alice';       -- (Bob's session: 'bob')
+COMMIT;
+```
+
+Run two sessions side by side — both checks, then both updates, then both commits — and both
+commit: **zero** doctors on call. Each transaction's check was true in its own snapshot, and they
+wrote *different* rows, so no row lock or version check ever collided. READ COMMITTED and
+REPEATABLE READ both allow it (tested). Under **SERIALIZABLE** the same interleaving ends with:
+
+```text
+B: COMMIT;
+ERROR 40001: could not serialize access due to read/write dependencies among transactions
+```
+
+SERIALIZABLE guarantees the result matches *some* one-at-a-time order of the committed
+transactions. It tracks what each transaction read, notices that each one's read was invalidated by
+the other's write, and fails one so the invariant survives (one doctor stayed on call). Note the
+error can arrive at `COMMIT`, not only at a statement — and where it arrives depends on the timing:
+had A committed before B's `UPDATE`, that `UPDATE` would have been the statement that failed.
+
+## Check-then-insert: the same bug with `INSERT`
+
+```text
+A: SELECT count(*) FROM signups WHERE email = 'ada@x.io';   -- 0
+B: SELECT count(*) FROM signups WHERE email = 'ada@x.io';   -- 0
+A: INSERT …;  B: INSERT …;  A: COMMIT;  B: COMMIT;          -- two Adas
+```
+
+Every "does it exist? no → create it" in application code has this race. Here the right fix isn't
+an isolation level — it's a **constraint**. With `UNIQUE (email)`, B's insert waits for A, then
+fails with `23505` (under SERIALIZABLE, after a check that read the key, it fails with `40001`
+instead). Either way the duplicate never commits — at every isolation level and for every writer,
+including ones that skip the check. Reach for SERIALIZABLE when the invariant *can't* be written as a constraint (the on-call
+count can't be a `UNIQUE` or `CHECK`).
+
+## Retrying correctly
+
+The manual's guidance, in practice:
+
+- **Always retry `40001`** (`serialization_failure`); consider retrying **`40P01`**
+  (`deadlock_detected`) too. Treat `23505` as retryable only when your logic chose the conflicting
+  value from a read (it may also be a permanent error).
+- **Retry the complete transaction**, including the reads and the application logic that decided
+  what to write. Replaying just the failed statement replays the stale decision. That's why
+  PostgreSQL offers no automatic retry.
+- **Bound it.** A few attempts with a short random back-off; then surface the error.
+- **Keep side effects out.** An email sent or an HTTP call made inside the transaction will happen
+  once per attempt. Do them after `COMMIT`.
+
+<!--more-->
+
+**Why not make everything SERIALIZABLE?** You can, and some teams do. The costs: every transaction
+that touches contended data needs the retry wrapper, and the database has to track what each
+transaction read. That tracking is coarse in places — the manual notes that a sequential scan
+always takes a relation-level predicate lock, which raises the rate of serialization failures — so
+some transactions fail that a truly serial run wouldn't have. Its performance advice: declare
+read-only transactions `READ ONLY`, keep transactions small, and don't leave sessions idle in a
+transaction. READ COMMITTED plus the targeted fixes from the medium tier is the common default;
+SERIALIZABLE for the code paths that guard cross-row invariants.
