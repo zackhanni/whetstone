@@ -20,19 +20,21 @@ export function SearchUsers() {
     searchUsers(query).then(setResults);
   }, [query]);
 
-  // An empty box shows no results. That's derived during render, not set from the effect.
-  const visibleResults = query ? results : [];
-
   return (
     <div>
       <input
         aria-label="search"
         value={query}
         placeholder="Search users…"
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => {
+          // A new search starts in this event, so clear the old results here too: the list
+          // never shows another query's results, and an empty box shows nothing.
+          setQuery(e.target.value);
+          setResults([]);
+        }}
       />
       <ul>
-        {visibleResults.map((u) => (
+        {results.map((u) => (
           <li key={u.id}>{u.name}</li>
         ))}
       </ul>
