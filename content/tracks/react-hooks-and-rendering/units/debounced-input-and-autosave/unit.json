@@ -24,7 +24,10 @@
     { "title": "MDN: setTimeout()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/setTimeout" },
     { "title": "MDN: clearTimeout()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Window/clearTimeout" },
     { "title": "React docs: useRef", "url": "https://react.dev/reference/react/useRef" },
-    { "title": "React docs: Synchronizing with Effects", "url": "https://react.dev/learn/synchronizing-with-effects" }
+    { "title": "React docs: Synchronizing with Effects", "url": "https://react.dev/learn/synchronizing-with-effects" },
+    { "title": "React docs: useEffectEvent", "url": "https://react.dev/reference/react/useEffectEvent" },
+    { "title": "React blog: React 19.2 (useEffectEvent)", "url": "https://react.dev/blog/2025/10/01/react-19-2" },
+    { "title": "React 18 Upgrade Guide (no warning about setState on unmounted components)", "url": "https://react.dev/blog/2022/03/08/react-18-upgrade-guide" }
   ],
   "blocks": [
     {
@@ -82,7 +85,7 @@
             }
           ],
           "answer": "stale",
-          "explanation": "State updates don't mutate the `text` const; they schedule a render that creates a new one. Inside this handler `text` is the value from the render that created the handler — one keystroke behind. Read the fresh value off the event (or use the functional form) whenever you need the value you just typed."
+          "explanation": "State updates don't mutate the `text` const; they schedule a render that creates a new one. Inside this handler `text` is the value from the render that created the handler — one keystroke behind. Read the fresh value off the event whenever you need the value you just typed. (The functional form `setText(t => …)` doesn't help here: it fixes what goes into state, not what the timer callback reads.)"
         },
         {
           "id": "unmount-cleanup",
@@ -106,7 +109,7 @@
             }
           ],
           "answer": "fires-after-unmount",
-          "explanation": "Timers outlive components. Without the cleanup, a timer scheduled a moment before unmount still fires and calls `onCommit` — a write the user didn't ask for, sometimes against a closed modal or a different record. (Modern React no longer warns about setState after unmount, so this bug is silent.) One timeout is not a meaningful memory leak; the unwanted side effect is the problem."
+          "explanation": "Timers outlive components. Without the cleanup, a timer scheduled a moment before unmount still fires and calls `onCommit` — a write the user didn't ask for, sometimes against a closed modal or a different record. (Since React 18, React no longer warns about setting state after unmount, and `onCommit` usually isn't a setState anyway, so this bug is silent.) One timeout is not a meaningful memory leak; the unwanted side effect is the problem."
         },
         {
           "id": "blur-behavior",
@@ -205,7 +208,8 @@
             {
               "id": "e1",
               "accept": [
-                "() =>"
+                "() =>",
+                "function ()"
               ]
             },
             {
@@ -305,7 +309,7 @@
             "hell (one character behind)",
             "one character behind"
           ],
-          "explanation": "The surviving timer is the one scheduled by the last keystroke — but that handler closed over the `text` from the render *before* it, which was \"hell\". The state update to \"hello\" hasn't rendered yet when `schedule()` runs. Passing `e.target.value` explicitly (or reading through a ref updated every render) is what makes the committed value the value on screen."
+          "explanation": "The surviving timer is the one scheduled by the last keystroke — but that handler closed over the `text` from the render *before* it, which was \"hell\". The state update to \"hello\" hasn't rendered yet when `schedule()` runs. Passing `e.target.value` explicitly is what makes the committed value the value on screen."
         },
         {
           "id": "no-unmount-cleanup",
@@ -322,7 +326,7 @@
             "yes ~800ms later",
             "yes, 1s after the keystroke even though the component is gone"
           ],
-          "explanation": "Unmounting a component does not cancel its timers — the callback is queued on the platform, not on React. It fires ~800ms after the modal closes and commits an edit the user abandoned. React no longer warns about this, so the only defense is the cleanup that calls `clearTimeout` on unmount."
+          "explanation": "Unmounting a component does not cancel its timers — the callback is queued on the platform, not on React. It fires ~800ms after the modal closes and commits an edit the user abandoned. React doesn't warn about it (there's no setState involved, and since React 18 React doesn't warn about setState after unmount either), so the only defense is the cleanup that calls `clearTimeout` on unmount."
         }
       ]
     },

@@ -23,6 +23,7 @@
     "Blur with no edit commits nothing",
     "A blur **after** the debounce already saved does not save the same value again",
     "Editing again after a save does commit the new value",
+    "Two rename fields on the same page debounce independently",
     "Unmounting cancels a pending commit"
   ]
 }
