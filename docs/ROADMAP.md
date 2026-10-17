@@ -95,12 +95,14 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ **Narrowing & unions** (`narrowing-and-unions`) — types, not values: `typeof`/`in`/`instanceof`/equality narrowing, custom type guards as unchecked promises, discriminated unions + the `never` exhaustiveness check, enums vs unions (runtime objects, `const enum` under `isolatedModules`, TS 5.8 `erasableSyntaxOnly` and Node type stripping), `as const` objects, `satisfies`. Owns the enum language facts the Testing track links to. Challenge: parse an `unknown` payload into a discriminated union.
   - ✅ **Immutable updates** (`immutable-updates`) — changing data without changing the old copy: spread is shallow, nested updates, copying (`toSorted`/`toSpliced`/`with`, ES2023) vs mutating array methods, `structuredClone` and what it can't clone, `Object.freeze` is shallow, why mutation breaks React's `Object.is` bail-out and doubles a pushed item under StrictMode. Challenge: a todo reducer with planted mutations.
   - ✅ Browser run of each new challenge (2026-10-17): starter fails and _Show solution_ passes in Sandpack for `index-orders-with-maps`, `resolve-player-options`, `narrow-unknown-events` and `todo-reducer-mutations`. `todo-reducer-mutations`' preview wraps itself in `<StrictMode>` on purpose (the doubled todo is the symptom).
-- ⬜ **Dates & Time**
-  - ⬜ The `Date` API in practice — `new Date()`, `getFullYear`, `getMonth` (0-indexed trap), `toISOString`, epoch ms
-  - ⬜ **UTC vs local time** — when to store UTC, when to render local, server/client hydration mismatches
-  - ⬜ Parsing & formatting — ISO 8601, `Intl.DateTimeFormat`, locale/timezone options
-  - ⬜ Date-only vs instant (birthdays vs timestamps), DST and off-by-one-day bugs
-  - ⬜ _card:_ when to reach for a library (`date-fns` / Temporal) instead
+- ✅ **Dates & Time** (`dates-and-time`) — 5 units, in this order
+  - ✅ **The Date object** (`date-api-basics`) — one machine, one zone: a `Date` is one number (ms since the epoch), the constructor forms and 0-indexed months, `getDate` vs `getDay`, setters that mutate and overflow (Jan 31 + 1 month), Invalid Date. Time zones are deliberately left to the next unit.
+  - ✅ **UTC vs local time** (`utc-vs-local`) — one instant, many wall clocks: store UTC and render in the viewer's zone, `getHours` vs `getUTCHours`, offsets vs IANA zones, the server's zone vs the browser's (an SSR hydration mismatch), and a test that passes on UTC CI but fails on a laptop.
+  - ✅ **Parsing & formatting** (`parsing-and-formatting`) — strings in and out: which ISO shapes parse as UTC and which as local, never parsing non-ISO strings with `Date`, `Intl.DateTimeFormat` (`timeZone`, `dateStyle`/`timeStyle`, `formatToParts`), `Intl.RelativeTimeFormat`.
+  - ✅ **Date-only values & DST** (`date-only-and-dst`) — calendar dates that aren't instants: `YYYY-MM-DD` arithmetic in UTC days, 23- and 25-hour DST days, the date-only-vs-ISO-instant string prefix trap, and validating a real calendar date. Challenge: `date-only-helpers` (correct in every time zone).
+  - ✅ _card:_ **Date libraries** (`date-libraries`) — when `Date` + `Intl` are enough, `date-fns` v4 (functions on `Date`), Luxon (a zone-carrying `DateTime`), `Temporal`'s shipping status, and why not Moment for new code.
+  - ✅ Browser run of `date-only-helpers` (2026-10-17): starter fails 9/13 with both "used local time" trap messages, _Show solution_ passes 13/13 in Sandpack. Test names must be unique across `describe` blocks — Sandpack keys its results list by name (duplicates log a React key error).
+  - ⬜ _later:_ when Safari ships Temporal (MDN "Limited availability" as of October 2026), refresh `date-libraries` → `temporal-status`, and consider a `Temporal.PlainDate` variant of the date-only challenge.
 
 ### Backend, network & data
 

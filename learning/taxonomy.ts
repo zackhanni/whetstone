@@ -247,6 +247,14 @@ export const TAXONOMY: TagNode[] = [
   { slug: "enums", label: "Enums", parents: ["typescript"] },
   // Immutable updates are a language skill that every state owner (React state, a store) relies on.
   { slug: "immutability", label: "Immutability", parents: ["javascript", "state-management"] },
+
+  // ── dates-and-time ──
+  { slug: "dates", label: "Dates & Time", parents: ["javascript"] },
+  { slug: "time-zones", label: "Time Zones", parents: ["dates"] },
+  { slug: "date-arithmetic", label: "Date Arithmetic", parents: ["dates"] },
+  { slug: "date-libraries", label: "Date Libraries", parents: ["dates"] },
+  // Intl formats numbers, lists and plural rules too, so it sits under the language, not under dates.
+  { slug: "intl", label: "Intl", parents: ["javascript"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
