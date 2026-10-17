@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 3,
+  "slug": "developer-tooling",
+  "title": "Terminal, Git & GitHub",
+  "description": "The tools every change passes through, on macOS with zsh: how the shell turns a line into a program run (quoting, word splitting, redirection, exit codes, PATH), how git proves who you are to GitHub (SSH keys, tokens, the gh CLI), git's working tree / index / commit model and branch upstreams, undoing things at the right layer (restore, reset, stash, revert, reflog), rebase vs merge and safe force-pushes, and the pull-request workflow up to draining a stack of PRs.",
+  "units": [
+    "terminal-survival-kit",
+    "ssh-and-github-cli",
+    "everyday-git",
+    "git-recovery",
+    "rebase-vs-merge",
+    "pull-request-workflow"
+  ]
+}

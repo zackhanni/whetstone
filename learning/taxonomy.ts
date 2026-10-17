@@ -303,7 +303,7 @@ export const TAXONOMY: TagNode[] = [
   // ── reference-cards ──
   { slug: "status-codes", label: "Status Codes", parents: ["http"] },
   { slug: "regex", label: "Regular Expressions", parents: ["javascript"] },
-  { slug: "terminal", label: "Terminal", parents: ["tooling"] },
+  { slug: "terminal", label: "Terminal & Shell", parents: ["tooling"] },
 
   // ── web-security ──
   { slug: "xss", label: "XSS", parents: ["security"] },
@@ -343,6 +343,17 @@ export const TAXONOMY: TagNode[] = [
   { slug: "coverage", label: "Code Coverage", parents: ["testing"] },
   { slug: "e2e-testing", label: "End-to-End Testing", parents: ["testing"] },
   { slug: "playwright", label: "Playwright", parents: ["e2e-testing"] },
+
+  // ── developer-tooling ──
+  { slug: "ssh", label: "SSH", parents: ["tooling"] },
+  { slug: "git", label: "Git", parents: ["tooling"] },
+  { slug: "github", label: "GitHub", parents: ["tooling"] },
+  { slug: "gh-cli", label: "GitHub CLI", parents: ["github", "terminal"] },
+  { slug: "branches", label: "Branches & Remotes", parents: ["git"] },
+  { slug: "undoing-changes", label: "Undoing Changes", parents: ["git"] },
+  { slug: "rebase", label: "Rebase & Merge", parents: ["git"] },
+  { slug: "pull-requests", label: "Pull Requests", parents: ["github", "git"] },
+  { slug: "code-review", label: "Code Review", parents: ["pull-requests"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
