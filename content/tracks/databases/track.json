@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 3,
+  "slug": "databases",
+  "title": "Databases",
+  "description": "Relational fundamentals, taught on PostgreSQL 18: keys and joins (and the queries that silently drop rows), normalization and the columns that can disagree, indexes and reading a query plan, transactions under concurrent writers, N+1 queries and paging, choosing relational vs document vs graph storage, and schema migrations that don't lock production.",
+  "units": [
+    "keys-and-joins",
+    "normalization",
+    "indexes",
+    "transactions-and-isolation",
+    "n-plus-one-queries",
+    "relational-document-graph",
+    "migrations"
+  ]
+}

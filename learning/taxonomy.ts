@@ -313,6 +313,25 @@ export const TAXONOMY: TagNode[] = [
   { slug: "secrets", label: "Secrets & Config", parents: ["security"] },
   { slug: "security-headers", label: "Security Headers", parents: ["security", "http"] },
   { slug: "owasp", label: "OWASP Top 10", parents: ["security"] },
+
+  // ── databases ──
+  { slug: "databases", label: "Databases", parents: [] },
+  { slug: "sql", label: "SQL", parents: ["databases"] },
+  { slug: "postgres", label: "PostgreSQL", parents: ["databases"] },
+  { slug: "data-modeling", label: "Data Modeling", parents: ["databases"] },
+  { slug: "constraints", label: "Keys & Constraints", parents: ["data-modeling", "sql"] },
+  { slug: "joins", label: "Joins", parents: ["sql"] },
+  { slug: "normalization", label: "Normalization", parents: ["data-modeling"] },
+  { slug: "query-performance", label: "Query Performance", parents: ["databases"] },
+  { slug: "indexes", label: "Indexes", parents: ["query-performance"] },
+  { slug: "n-plus-one", label: "N+1 Queries", parents: ["query-performance"] },
+  { slug: "pagination", label: "Pagination", parents: ["query-performance"] },
+  { slug: "transactions", label: "Transactions", parents: ["databases"] },
+  { slug: "locking", label: "Locking & Concurrency", parents: ["transactions"] },
+  { slug: "migrations", label: "Migrations", parents: ["databases"] },
+  { slug: "jsonb", label: "jsonb", parents: ["postgres", "data-modeling"] },
+  { slug: "document-databases", label: "Document Databases", parents: ["data-modeling"] },
+  { slug: "graph-databases", label: "Graph Databases", parents: ["data-modeling"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
