@@ -40,7 +40,9 @@ in `AGENTS.md` → "Working with this repo".
     answers "can you use enums in tests?" with the four real failure modes (PR #29).
   - New track **Terminal, Git & GitHub** (6 units, 2 challenges), macOS + zsh (PR #30).
   - New capstone track **Systems Design** (3 units, 2 challenges): design reasoning that links
-    back to the HTTP, Next.js, Databases and NestJS units instead of re-teaching them.
+    back to the HTTP, Next.js, Databases and NestJS units instead of re-teaching them (PR #31).
+  - New capstone track **Infrastructure** (3 units, 3 challenges): Terraform 1.16, environments and
+    CI/CD on GitHub Actions, observability with OpenTelemetry and Prometheus.
 - Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
   Vercel build runs both. A new or changed challenge also gets `pnpm test:challenges:browser
   <slug>` (real Sandpack, headless Chrome, needs `pnpm dev`).
