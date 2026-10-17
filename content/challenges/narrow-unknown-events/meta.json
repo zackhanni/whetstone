@@ -8,7 +8,7 @@
   "runner": "in-browser",
   "entry": "events.ts",
   "acceptanceCriteria": [
-    "Valid `signup`, `payment` and `cancel` bodies parse with `ok: true`",
+    "Valid `signup`, `payment` and `cancel` bodies parse with `ok: true` and every field intact",
     "`parseEvent(null)` returns `ok: false` instead of throwing",
     "A payment whose `amountCents` is the string `\"1200\"` is rejected",
     "A body with an unknown `kind` is rejected instead of being passed through",

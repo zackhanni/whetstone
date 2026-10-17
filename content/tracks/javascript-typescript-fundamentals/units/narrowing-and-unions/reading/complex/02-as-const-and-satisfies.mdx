@@ -57,16 +57,21 @@ literal widen to `string` either way (`satisfies` doesn't stop that; `as const` 
 when the inferred type is more precise than the one you check against — a heterogeneous object:
 
 ```ts
-const routes: Record<string, string | ((id: string) => string)> = {
+const annotated: Record<string, string | ((id: string) => string)> = {
   home: "/",
   user: (id: string) => `/u/${id}`,
 };
-routes.user("7"); // ❌ not callable: TypeScript only knows string | function
+annotated.user("7"); // ❌ not callable: TypeScript only knows string | function
 
-const routes = { home: "/", user: (id: string) => `/u/${id}` }
-  satisfies Record<string, string | ((id: string) => string)>;
-routes.user("7"); // ✅ still a function
+const checked = {
+  home: "/",
+  user: (id: string) => `/u/${id}`,
+} satisfies Record<string, string | ((id: string) => string)>;
+checked.user("7"); // ✅ still a function
 ```
+
+Keep `satisfies` (and `as`) on the same line as the end of the value: TypeScript doesn't accept
+a line break before either one.
 
 The two combine: `{ … } as const satisfies Record<Status, string>` keeps the readonly literals
 *and* checks the keys.

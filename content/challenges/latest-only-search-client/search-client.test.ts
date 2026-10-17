@@ -4,6 +4,15 @@ import { TIMEOUT_MS } from "./config";
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Waits until `done()` is true, or gives up after `timeoutMs`. Used instead of one fixed sleep
+ * for "this should happen eventually": a background tab can stretch a timer to ~1 s.
+ */
+async function until(done: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!done() && Date.now() < deadline) await sleep(TIMEOUT_MS / 5);
+}
+
 type Request = { resolve: (results: string[]) => void; reject: (error: unknown) => void; signal: AbortSignal };
 
 /**
@@ -112,6 +121,19 @@ describe("createSearchClient", () => {
     void client.search("slow");
     await sleep(TIMEOUT_MS * 2 + 20);
     // Giving up on the request isn't enough (that's all Promise.race does): it must be aborted.
+    expect(requests["slow"].signal.aborted).toBe(true);
+    const state = client.getState();
+    expect(state.status).toBe("error");
+    expect(state.error).toBe("Search timed out");
+  });
+
+  it("reports a timeout even when the request wraps the abort in its own error", async () => {
+    // The request rejects with Error("request cancelled"), not a TimeoutError, so only your own
+    // bookkeeping (did the deadline pass?) can tell that the search timed out.
+    const requests = controllable({ wrapAbort: true });
+    const client = createSearchClient();
+    void client.search("slow");
+    await until(() => client.getState().status !== "loading");
     expect(requests["slow"].signal.aborted).toBe(true);
     const state = client.getState();
     expect(state.status).toBe("error");

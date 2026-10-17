@@ -11,7 +11,7 @@ otherwise write by hand:
 const city = user?.address?.city;
 
 // expands to (roughly):
-const city =
+const sameCity =
   user === null || user === undefined ? undefined
   : user.address === null || user.address === undefined ? undefined
   : user.address.city;

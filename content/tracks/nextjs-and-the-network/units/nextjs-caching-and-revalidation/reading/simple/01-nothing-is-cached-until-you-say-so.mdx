@@ -31,8 +31,9 @@ export async function getProducts() {
 ```
 
 The first call runs the query and stores the result; later calls with the same arguments get
-the stored result until its lifetime runs out. Arguments are part of the key, so
-`getProduct("a")` and `getProduct("b")` are separate entries.
+the stored result until its lifetime runs out. Arguments are part of the key, so a
+`getProduct(id)` written the same way stores `getProduct("a")` and `getProduct("b")` as separate
+entries.
 
 If you learned Next on an older version, your habits point the other way:
 

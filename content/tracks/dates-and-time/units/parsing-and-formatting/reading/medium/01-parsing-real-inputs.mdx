@@ -45,3 +45,8 @@ await save({ startsAt: instant.toISOString() }); // New York user: "2026-03-10T1
 Sending the raw `"2026-03-10T09:30"` instead makes the server parse it in **its** zone. MDN also
 notes the control has no way to set a zone. If the time belongs to a different place than the
 user's device (an event in another city), collect the zone separately and convert with it.
+
+`new Date(value)` never refuses a time, even one the clock skipped. On March 8, 2026,
+`"2026-03-08T02:30"` doesn't exist in New York and becomes 03:30; on November 1, `01:30` happens
+twice and you get the first. For a booking or a reminder, check that the instant still reads back
+as the time the user picked, and ask when it doesn't. The `date-only-and-dst` unit covers both.

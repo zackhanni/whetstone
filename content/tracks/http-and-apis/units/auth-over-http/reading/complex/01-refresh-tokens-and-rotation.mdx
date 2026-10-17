@@ -5,8 +5,9 @@ title: Refresh tokens, rotation, and the refresh race you cause yourself
 
 A JWT access token can't be revoked before its `exp` without adding a lookup back in, so you keep
 it short — the local API's lasts 900 seconds. A **refresh token** is the long-lived credential
-that gets new access tokens: opaque, stored server-side, sent only to the refresh endpoint (the
-API sets it as an `HttpOnly` cookie with `Path=/auth`, so the browser sends it nowhere else).
+that gets new access tokens: opaque, stored server-side, sent only to the auth endpoints (the
+API sets it as an `HttpOnly` cookie with `Path=/auth`, so the browser sends it to `/auth` and the
+paths below it — `/auth/refresh`, but also `/auth/login` and `/auth/signup` — and nowhere else).
 
 ```console
 $ curl -i -b jar.txt -c jar.txt -X POST http://localhost:4123/auth/refresh

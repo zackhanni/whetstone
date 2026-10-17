@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { __setApi, type Panel } from "./api";
 import { loadDashboard } from "./loader";
 
@@ -29,15 +29,21 @@ function install({ failUser, failPanel }: Scenario) {
 
 export default function App() {
   const [output, setOutput] = useState("Pick a scenario.");
+  // Each click starts a new run. Only the newest may write the output, or a slow earlier run
+  // that finishes last would show its result under the scenario picked after it.
+  const latestRun = useRef(0);
 
   const run = async (scenario: Scenario) => {
+    const runId = ++latestRun.current;
     install(scenario);
     setOutput("Loading…");
     const start = performance.now();
     try {
       const dashboard = await loadDashboard("u1");
+      if (runId !== latestRun.current) return;
       setOutput(`Loaded in ${Math.round(performance.now() - start)} ms\n${JSON.stringify(dashboard, null, 2)}`);
     } catch (error) {
+      if (runId !== latestRun.current) return;
       setOutput(`Rejected after ${Math.round(performance.now() - start)} ms: ${(error as Error).message}`);
     }
   };

@@ -304,7 +304,7 @@
               ]
             }
           ],
-          "explanation": "`isPending` (no data) is the only state that deserves a full-screen spinner. Past it, a missing `data` means the first load failed. `isFetching` covers first loads and background refetches alike, so it's for a hint beside the data. Below the gates, `isError` can only mean a refetch failed while data remains — `isRefetchError` names that exactly."
+          "explanation": "`isPending` (no data) is the only state that deserves a full-screen spinner. Past it, a missing `data` means this key's first load failed (a failed page change included). `isFetching` covers first loads and background refetches alike, so it's for a hint beside the data. Below the gates, `isError` can only mean a refetch failed while data remains — `isRefetchError` names that exactly."
         },
         {
           "id": "keep-previous",

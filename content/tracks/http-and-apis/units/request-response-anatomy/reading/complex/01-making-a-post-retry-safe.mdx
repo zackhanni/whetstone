@@ -18,7 +18,7 @@ into a double charge; not retrying turns outcome 1 into a lost order.
 
 The fix is to make the `POST` *recognisable*. The client generates a unique key for the
 **operation** — the user's one click on "Pay" — and sends it on the first attempt and on every
-retry of that attempt:
+retry of that operation:
 
 ```ts
 async function createPayment(input: PaymentInput, send: typeof fetch) {
@@ -73,7 +73,9 @@ that saved response was a `500`. Read the provider's docs before you rely on the
 
 **The server's half is a unique constraint.** "Look up the key, then insert it" races when two
 retries arrive together. Insert the key first under a unique index (status `processing`), and
-let the second insert fail — that's what turns into the `409`.
+let the second insert fail. A failed insert isn't the answer yet: read the row it collided with
+and branch as above — still `processing` → `409`, finished → the stored response, a different
+body → `422`.
 
 **Not every retry is yours.** SDKs, HTTP client libraries and service-mesh retry policies can
 retry too. If two layers each retry three times, one click can become nine requests — another

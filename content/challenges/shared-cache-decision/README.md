@@ -27,4 +27,5 @@ lowercased, `seconds()` for numeric arguments).
 - RFC 9111 §4.2.1: in a shared cache, `s-maxage` replaces `max-age` whether it is longer or
   shorter. Use `??`, not `Math.max`.
 - A copy is fresh while `age < lifetime`. `stale-while-revalidate=N` stretches *serving* (not
-  freshness) to `age < lifetime + N`.
+  freshness) to `age < lifetime + N`. `must-revalidate` takes that away: once the copy is stale, it
+  can't be reused until the origin validates it (RFC 9111 §5.2.2.2).

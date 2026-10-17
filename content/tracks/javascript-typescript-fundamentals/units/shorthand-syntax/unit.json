@@ -40,7 +40,7 @@
             { "id": "null", "text": "`null` if any step is missing, otherwise `user.profile.avatarUrl`" }
           ],
           "answer": "nullish-steps",
-          "explanation": "Each `?.` checks the value to its left for `null`/`undefined` and, if so, ends the whole expression as `undefined`. The `&&` chain differs: it stops at *any* falsy value and returns that value — `null`, `\"\"`, `0` — not `undefined`. `?.` catches nothing: a getter that throws still throws. And it never produces `null`."
+          "explanation": "Each `?.` checks the value to its left for `null`/`undefined` and, if so, ends the whole expression as `undefined`. The `&&` chain differs: it stops at *any* falsy value and returns that value — `null`, `\"\"`, `0` — not `undefined`. `?.` catches nothing: a getter that throws still throws. When it stops early the result is `undefined`, never `null`; a `null` stored in `avatarUrl` itself still comes back as `null`."
         },
         {
           "id": "optional-call",

@@ -22,7 +22,7 @@ back** and **who may read it**. From MDN's `Set-Cookie` reference:
 | `Max-Age=1209600` | Keeps it 14 days; with neither `Max-Age` nor `Expires` it's a session cookie, gone when the browser session ends. `Max-Age` wins if both are set |
 
 Read the example line again: a refresh token that scripts can't read, travels only over HTTPS,
-only from this site, and only to the refresh endpoints, for two weeks.
+only from this site, and only to the `/auth` endpoints, for two weeks.
 
 ## Defaults differ, so set what you mean
 

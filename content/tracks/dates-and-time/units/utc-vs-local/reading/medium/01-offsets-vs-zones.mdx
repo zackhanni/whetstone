@@ -37,9 +37,9 @@ new Date("2026-07-13T09:00:00-05:00")
 // "10:00 AM": the meeting moved an hour
 ```
 
-Store `{ time: "09:00", timeZone: "America/New_York" }` and compute each occurrence's instant
-when you need it. Turning a wall time plus zone into an instant is awkward with `Date`; that is
-the job of a zone-aware library (the last unit in this track).
+Store `{ weekday: "monday", time: "09:00", timeZone: "America/New_York" }` and compute each
+occurrence's instant when you need it. Turning a wall time plus zone into an instant is awkward
+with `Date`; that is the job of a zone-aware library (the last unit in this track).
 
 <!--more-->
 
