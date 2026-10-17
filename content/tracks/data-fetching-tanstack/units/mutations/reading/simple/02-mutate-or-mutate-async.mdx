@@ -1,0 +1,38 @@
+---
+id: mutate-or-mutate-async
+title: mutate or mutateAsync
+---
+
+Both start the same mutation. They differ in what they hand back.
+
+**`mutate(variables, callbacks?)` returns nothing.** It's fire-and-forget: the outcome arrives
+through the hook's state (`isPending`, `error`, `data`) and through callbacks. Errors are
+caught for you — a failed `mutate` never becomes an unhandled promise rejection.
+
+```tsx
+<button onClick={() => saveTodo.mutate(draft)}>Save</button>
+{saveTodo.isError && <p role="alert">{saveTodo.error.message}</p>}
+```
+
+**`mutateAsync(variables)` returns a promise** that resolves with the data or **rejects** with
+the error. Use it when the next step has to wait for the write:
+
+```tsx
+async function onPublish() {
+  try {
+    const post = await createPost.mutateAsync(draft);
+    await uploadCover.mutateAsync({ postId: post.id, file });
+    navigate(`/posts/${post.id}`);
+  } catch {
+    // the error is also on createPost.error / uploadCover.error — render it from there
+  }
+}
+```
+
+The catch is not optional. Fire `mutateAsync` without awaiting or catching it, and a failure is
+an **unhandled promise rejection** (run headlessly, `void m.mutateAsync()` on a failing write
+raised one; `m.mutate()` didn't). The hook's `error` state still updates either way.
+
+Rule of thumb: **`mutate` in event handlers**, with callbacks for side effects; **`mutateAsync`
+when you compose** several async steps or a form library wants a promise from `onSubmit` — and
+then you own the `try/catch`.

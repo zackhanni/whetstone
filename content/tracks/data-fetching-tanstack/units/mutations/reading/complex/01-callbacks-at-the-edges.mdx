@@ -1,0 +1,76 @@
+---
+id: callbacks-at-the-edges
+title: Where mutation callbacks surprise you
+---
+
+The rule "cache work in the hook, UI work on the `mutate` call" comes from three behaviours
+that the docs state and that were each checked here against TanStack Query v5.104.
+
+## Call-level callbacks skip after unmount
+
+```tsx
+function EditDialog({ onClose }) {
+  const save = useSaveTodo(); // hook-level onSuccess: nothing
+  return (
+    <button
+      onClick={() => {
+        save.mutate(draft, { onSuccess: () => queryClient.invalidateQueries({ queryKey: todoKeys.all }) });
+        onClose(); // ❌ the dialog unmounts before the save finishes
+      }}
+    >
+      Save
+    </button>
+  );
+}
+```
+
+The save succeeds, but the call-level `onSuccess` never runs — "those additional callbacks
+won't run if your component unmounts *before* the mutation finishes" — so nothing is
+invalidated and the list stays stale. Run headlessly: after unmount, the hook's `onSuccess`
+fired and the call's didn't. Anything that must happen after every successful save goes in the
+hook.
+
+## Consecutive calls: call-level fires once, for the last call
+
+```ts
+for (const title of ["Todo 1", "Todo 2", "Todo 3"]) {
+  addTodo.mutate(title, { onSuccess: (todo) => toast(`Added ${todo.title}`) });
+}
+```
+
+Three requests go out (mutations run in parallel). The **hook's** `onSuccess` runs three times,
+in the order the responses arrive. The **call's** `onSuccess` runs **once**, for "Todo 3" — even
+when "Todo 1" happens to finish last — because each `mutate` re-subscribes the hook's observer
+to the newest mutation. One toast for three saves is the visible symptom. Per-item feedback
+belongs in hook-level callbacks (they get `variables`), or in one `Promise.all` over
+`mutateAsync` calls.
+
+## Only hook-level promises keep the mutation pending
+
+Return a promise from the hook's `onSuccess`/`onError`/`onSettled` and the mutation stays
+`pending` until it settles. Return one from a `mutate(…, { onSuccess })` callback and nothing
+waits: by the time call-level callbacks run, the mutation is already `success`. An invalidation
+moved from the hook into the form therefore loses two things — it no longer runs for other
+callers, and the button no longer stays disabled until the list is fresh.
+
+## Parallel by default — unless you scope them
+
+Mutations aren't deduplicated or queued. Two quick saves of the same record can reach the
+server in either order. Give them a scope and they run one after another, later ones starting in
+`isPaused` until their turn:
+
+```ts
+useMutation({ mutationFn: saveDraft, scope: { id: `draft-${draftId}` } });
+```
+
+## Offline writes pause
+
+With the default `networkMode: "online"`, a mutation started offline doesn't fail: it waits
+(`isPaused`) and runs when the connection returns. Show that state — "Will save when you're back
+online" — rather than a spinner that never ends.
+
+<!--more-->
+
+**The `onMutate` return value.** Whatever `onMutate` returns is passed to `onError`,
+`onSuccess` and `onSettled` as their third argument (`onMutateResult` in current docs). The
+optimistic-updates unit uses it to carry a snapshot for rollback.

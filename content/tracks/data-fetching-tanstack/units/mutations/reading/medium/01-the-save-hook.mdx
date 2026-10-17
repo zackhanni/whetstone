@@ -1,0 +1,74 @@
+---
+id: the-save-hook
+title: A save hook and its form, line by line
+---
+
+Split the work by **who must react**. The cache must be refreshed after every successful save,
+no matter which screen saved — that belongs in the hook. Clearing an input or closing a dialog
+belongs to one component — that goes on the `mutate` call.
+
+```tsx
+export function useAddTodo() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (title: string) => api.createTodo(title),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: todoKeys.lists() }),
+  });
+}
+
+export function AddTodoForm() {
+  const [title, setTitle] = useState("");
+  const addTodo = useAddTodo();
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        addTodo.mutate(title.trim(), { onSuccess: () => setTitle("") });
+      }}
+    >
+      <input value={title} onChange={(e) => setTitle(e.target.value)} aria-label="New todo" />
+      <button type="submit" disabled={addTodo.isPending}>
+        {addTodo.isPending ? "Saving…" : "Save"}
+      </button>
+      {addTodo.isError && <p role="alert">Couldn't save: {addTodo.error.message}</p>}
+    </form>
+  );
+}
+```
+
+- **`onSuccess` *returns* the invalidation.** A promise returned from a hook-level callback is
+  awaited before the mutation counts as finished, so `isPending` stays `true` until the list
+  has refetched. Write `onSuccess: () => { queryClient.invalidateQueries(...) }` (braces, no
+  `return`) and the button re-enables while the list still shows the old rows. Run headlessly,
+  the difference is one row: *with* the return, the mutation is still `pending` while the list
+  refetches; *without* it, it's already `success`.
+- **`todoKeys.lists()`, not one list.** The hook can't know which filtered lists the new todo
+  lands in; the prefix reaches them all and only the visible ones refetch now.
+- **The call-level `onSuccess` clears the input.** Clearing straight after `mutate(...)` would
+  wipe the user's text even when the save fails. Callbacks passed to `mutate` run *after* the
+  hook's own (so after the refetch, here), and only if this component is still mounted — exactly
+  right for UI that belongs to it.
+- **`disabled={addTodo.isPending}`.** Mutations aren't deduplicated: a second click sends a
+  second POST. Disabling while pending is the simplest guard.
+- **`addTodo.error`** is typed `Error` by default in v5 (v4 used `unknown`), and stays set until
+  the next `mutate` or `reset()`.
+
+The callbacks run in this order (checked against v5.104):
+
+```text
+success: hook onMutate → hook onSuccess → hook onSettled → mutate's onSuccess → mutate's onSettled
+error:   hook onMutate → hook onError   → hook onSettled → mutate's onError   → mutate's onSettled
+```
+
+`onSettled` runs after success *or* failure. Invalidating there instead of in `onSuccess` also
+resyncs after a failed write that may have partly applied on the server.
+
+<!--more-->
+
+**Callback arguments since v5.89.** Hook-level callbacks now receive a fourth argument,
+`context`, carrying `client` (the `QueryClient`), `meta` and `mutationKey`:
+`onSuccess: (data, variables, onMutateResult, context) => context.client.invalidateQueries(...)`.
+The third argument is whatever `onMutate` returned; older v5 docs called *that* `context`, so
+read snippets with the version in mind. Using `useQueryClient()` in the hook, as above, works in
+every v5 release.

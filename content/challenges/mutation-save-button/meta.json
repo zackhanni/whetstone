@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "mutation-save-button",
+  "title": "Fix the save button that double-submits and never refreshes",
+  "skills": ["tanstack-query", "mutations"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "AddTodo.tsx",
+  "dependencies": { "@tanstack/react-query": "5.104.1" },
+  "acceptanceCriteria": [
+    "After a save through `useAddTodo`, the todo list refetches and shows the new todo — whichever component called the hook",
+    "The mutation stays pending (**Save** disabled) until the refreshed list shows the new todo",
+    "Clicking **Save** again while a save is running doesn't send a second request",
+    "A failed save keeps what the user typed and shows the error",
+    "A successful save clears the input"
+  ]
+}
