@@ -197,6 +197,15 @@ const ERROR_CASES: [string, () => Promise<unknown>, string][] = [
   ],
   ["runner package drifted from its devDependency", () => set("package.json", ["devDependencies", "@testing-library/dom"], "^10.4.1"), 'learning/sandbox.ts: "@testing-library/dom" is pinned to 10.4.0'],
   [
+    "two tests with the same name in different describe blocks",
+    () =>
+      write(
+        "content/challenges/c/Thing.test.tsx",
+        'describe("a", () => { it("works", () => {}); });\ndescribe("b", () => { it("works", () => {}); });\n',
+      ),
+    'two tests are named "works"',
+  ],
+  [
     "an unreferenced challenge is still validated",
     async () => {
       await copy("content/challenges/c", "content/challenges/standalone");
@@ -240,6 +249,21 @@ describe("validateContent non-errors", () => {
     const { errors, warnings } = await validateContent(root);
     expect(errors).toEqual([]);
     expect(warnings.some((w) => w.includes("u/cards/01-a.mdx: 160 words"))).toBe(true);
+  });
+
+  it("ignores import-looking text inside a comment in a challenge file", async () => {
+    await write(
+      "content/challenges/c/Thing.tsx",
+      '// the list comes from "the server", not from "lodash"\n/* import x from "lodash" */\nexport function Thing() {\n  return null;\n}\n',
+    );
+    expect((await validateContent(root)).errors).toEqual([]);
+  });
+
+  it("warns, without failing, when a track description contains Markdown", async () => {
+    await set(TRACK, ["description"], "Learn `useEffect` the **right** way");
+    const { errors, warnings } = await validateContent(root);
+    expect(errors).toEqual([]);
+    expect(warnings.some((w) => w.includes("track t: description contains Markdown"))).toBe(true);
   });
 
   it("allows tags and imports inside code, and the Go deeper marker", async () => {
