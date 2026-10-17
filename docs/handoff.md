@@ -24,7 +24,9 @@ in `AGENTS.md` → "Working with this repo".
   - New track **Data Fetching with TanStack** (6 units, 6 challenges): the first challenges to
     use `dependencies` (real `@tanstack/react-query` / `@tanstack/react-router`), proven in Sandpack
     (PR #21).
-  - New track **HTTP & APIs in Practice** (6 units, 4 challenges).
+  - New track **HTTP & APIs in Practice** (6 units, 4 challenges) (PR #22).
+  - New track **Next.js & the Network** (4 units, 2 challenges), written for Next 16 (checked
+    against 16.2.9, which the repo runs, and 16.4.2, npm `latest`).
 - Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
   Vercel build runs both.
 
