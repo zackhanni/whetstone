@@ -1,0 +1,39 @@
+---
+id: store-utc-render-local
+title: Store UTC, render in the viewer's zone
+---
+
+The rule that prevents most time-zone bugs:
+
+1. **Store and send instants in UTC**: an ISO string with a `Z` (`"2026-03-10T15:00:00.000Z"`),
+   epoch milliseconds, or a database type that stores an instant.
+2. **Convert to a zone only to show it to a person**, at the last moment, in their zone.
+
+```js
+// API payload: one unambiguous instant
+{ "placedAt": "2026-03-10T15:00:00.000Z" }
+
+// In the browser, the default zone IS the viewer's
+new Date(placedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+// New York: "Mar 10, 2026, 11:00 AM"    Tokyo: "Mar 11, 2026, 12:00 AM"
+
+// On a server, in an email or a PDF, there is no viewer: name the zone
+new Date(placedAt).toLocaleString("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: user.timeZone, // e.g. "America/New_York"
+});
+```
+
+Where does `user.timeZone` come from? The browser knows it:
+
+```js
+Intl.DateTimeFormat().resolvedOptions().timeZone; // "America/New_York"
+```
+
+Save it to the user's profile (or a cookie), and every server-side rendering, email and report
+can format in the user's zone instead of the server's.
+
+What goes wrong without the rule: a local string like `"3/10/2026, 11:00:00 AM"` in the
+database has lost which zone it was in, so it can never be converted back to an instant, and
+two servers in different zones write different strings for the same order.
