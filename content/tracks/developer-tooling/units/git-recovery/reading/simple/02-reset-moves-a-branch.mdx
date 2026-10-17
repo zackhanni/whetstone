@@ -1,0 +1,56 @@
+---
+id: reset-moves-a-branch
+title: Reset moves a branch; the mode says how far it reaches
+---
+
+`git reset <target>` always does one thing first: it moves the branch you're on to `<target>`.
+The mode decides whether it then also overwrites the index, and the working tree:
+
+```text
+            branch    index     working tree
+--soft        ✓
+--mixed       ✓         ✓                       ← the default
+--hard        ✓         ✓          ✓  (tracked files only)
+```
+
+The same repo, reset three ways. `HEAD~1` means "the parent of the current commit". The commit
+being undone changed `a.txt` from `a1` to `a2` and added `b.txt`; `scratch.txt` is an untracked
+file that was never added. Each reset starts from the same state (real output, Git 2.50):
+
+```sh
+% git reset -q --soft HEAD~1 && git status --short
+M  a.txt            # the undone changes, still staged
+A  b.txt
+?? scratch.txt
+
+% git reset -q --mixed HEAD~1 && git status --short   # --mixed is the default
+ M a.txt            # changes still on disk, now unstaged
+?? b.txt            # not in the index any more → untracked
+?? scratch.txt
+
+% git reset -q --hard HEAD~1 && git status --short
+?? scratch.txt      # a.txt back to "a1", b.txt deleted, scratch.txt untouched
+```
+
+How to choose:
+
+- **`--soft`** — "uncommit, keep everything staged." Recommit differently, or squash the last few
+  commits into one: `git reset --soft HEAD~3 && git commit`.
+- **`--mixed`** — "uncommit and unstage, keep the files." Re-pick what goes into the commit.
+- **`--hard`** — "make the index and every tracked file match that commit." Uncommitted edits to
+  tracked files are discarded. Untracked files survive (removing those is `git clean`'s job).
+
+## What reset doesn't do
+
+It doesn't delete commits. The commit you "undid" still exists; git just records where the branch
+used to point — in `ORIG_HEAD` and in the reflog:
+
+```sh
+% git log -1 --format=%s ORIG_HEAD
+Second
+% git reset --hard ORIG_HEAD        # undo the reset
+```
+
+That's why reset is safe on commits **only you** have. On a pushed commit, the branch on the
+remote still points at the old tip, and pushing your moved branch is rejected unless you force
+it — the next examples are about that.
