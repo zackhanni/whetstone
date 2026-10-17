@@ -1,0 +1,73 @@
+---
+id: a-complete-debounce
+title: A complete debounce, line by line
+---
+
+The version you'd actually ship forwards `this`, always uses the latest call's arguments, and
+exposes `cancel()` and `flush()`:
+
+```ts
+export function debounce<F extends (...args: any[]) => void>(fn: F, wait: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined; // set ⇔ a call is pending
+  let lastArgs: Parameters<F> | undefined;
+  let lastThis: ThisParameterType<F> | undefined;
+
+  function invoke() {
+    const args = lastArgs!;
+    const thisArg = lastThis;
+    timer = lastArgs = lastThis = undefined; // nothing is pending any more
+    fn.apply(thisArg, args);
+  }
+
+  function debounced(this: ThisParameterType<F>, ...args: Parameters<F>) {
+    lastArgs = args;
+    lastThis = this;
+    clearTimeout(timer);
+    timer = setTimeout(invoke, wait);
+  }
+
+  debounced.cancel = () => {
+    clearTimeout(timer);
+    timer = lastArgs = lastThis = undefined;
+  };
+
+  debounced.flush = () => {
+    if (timer === undefined) return; // nothing pending: don't run anything
+    clearTimeout(timer);
+    invoke();
+  };
+
+  return debounced;
+}
+```
+
+What each piece is for:
+
+- **`function debounced`, not an arrow.** A `function` gets `this` from how it's called, so
+  `editor.save = debounce(saveDraft, 500); editor.save()` gives `saveDraft` the editor. Saving
+  `this` alongside the arguments and calling `fn.apply(thisArg, args)` passes both through.
+- **`lastArgs` is overwritten on every call.** The timer callback reads them when it fires, so
+  the run always uses the final call's arguments. Closing over the `args` of the call that
+  _created_ a timer is the classic way to get stale arguments (the throttle reading shows it).
+- **`timer` doubles as the "pending" flag.** It's set while a run is scheduled and cleared in
+  `invoke`. That one invariant is what makes `flush` correct. Forget to clear it when the
+  timer fires, and a later `flush()` runs `fn` again with old arguments.
+- **`cancel` must call `clearTimeout`.** Setting `timer = undefined` alone forgets the handle,
+  but the scheduled run still fires. Clearing the handle is what stops it.
+- **`flush` cancels the timer _before_ running.** Run `fn` without cancelling, and the timer
+  fires again `wait` ms later: two runs for one burst.
+
+When do you need them? `cancel()` on teardown: the screen is going away, so drop the pending
+write. `flush()` when the user does something explicit: they pressed Save or closed the tab, so
+run the pending call now rather than in 500 ms.
+
+<!--more-->
+
+### Typing notes
+
+`Parameters<F>` and `ThisParameterType<F>` derive the argument tuple and the `this` type from
+the function you pass in, so the debounced function is called exactly like the original.
+`ReturnType<typeof setTimeout>` keeps the handle type correct in both browsers and Node (see the
+`timers` unit). The wrapper returns `void`: it can't return `fn`'s result, because `fn` hasn't
+run yet. Lodash's debounce returns the result of the _previous_ run instead, which is rarely
+what a caller expects.

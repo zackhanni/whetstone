@@ -1,0 +1,94 @@
+---
+id: throttle-with-a-trailing-call
+title: Throttle with leading and trailing calls, and the stale-arguments bug
+---
+
+A throttle that runs immediately, then at most once per `wait`, and always ends on the latest
+call. Here is the version most people write first. It looks right:
+
+```js
+// ❌ The trailing call uses the wrong arguments
+function throttle(fn, wait) {
+  let lastRun = 0;
+  let timer;
+  return function (...args) {
+    const remaining = wait - (Date.now() - lastRun);
+    if (remaining <= 0) {
+      lastRun = Date.now();
+      fn.apply(this, args);
+    } else if (!timer) {
+      timer = setTimeout(() => {
+        lastRun = Date.now();
+        timer = undefined;
+        fn.apply(this, args); // ← the `args` of the call that *created* the timer
+      }, remaining);
+    }
+  };
+}
+
+const report = throttle((y) => console.log("scrollY", y), 100);
+report(0); report(40); report(80); report(120); // one fast burst
+// scrollY 0     (leading)
+// scrollY 40    (trailing, 100 ms later), but the page is at 120
+```
+
+The timer callback is an arrow function created inside the call that saw `40`, so it closes over
+_that_ call's `args`. Calls `80` and `120` find a timer already pending, skip the `else if`, and
+their arguments vanish. The trailing call, whose whole job is to report the final value,
+reports a stale one.
+
+The fix is to store the latest arguments (and `this`) on **every** call, and have the timer read
+them when it fires:
+
+```js
+// ✅ Leading + trailing, trailing uses the latest call
+function throttle(fn, wait) {
+  let lastRun = 0;
+  let timer, pendingArgs, pendingThis;
+
+  function run(thisArg, args) {
+    lastRun = Date.now();
+    fn.apply(thisArg, args);
+  }
+
+  function throttled(...args) {
+    const remaining = wait - (Date.now() - lastRun);
+    if (remaining <= 0 && timer === undefined) {
+      run(this, args); // the gate is open: leading call
+      return;
+    }
+    pendingArgs = args;  // the gate is closed: remember only the latest call
+    pendingThis = this;
+    if (timer === undefined) {
+      timer = setTimeout(() => {
+        const args = pendingArgs, thisArg = pendingThis;
+        timer = pendingArgs = pendingThis = undefined;
+        run(thisArg, args); // trailing call, and it restarts the window
+      }, remaining);
+    }
+  }
+
+  throttled.cancel = () => {
+    clearTimeout(timer);
+    timer = pendingArgs = pendingThis = undefined;
+  };
+  return throttled;
+}
+```
+
+The same burst now logs `0`, then `120`. Three details:
+
+- **`run` updates `lastRun` for trailing calls too**, so a call just after the trailing run waits
+  a full window instead of going straight through. Without that you get two runs a few ms apart.
+- **A lone call runs once.** Nothing arrives during the window, so no timer is set and there's
+  no duplicate trailing run.
+- **`cancel()` drops the pending trailing call.** Call it on teardown, or the trailing run fires
+  against a screen that no longer exists.
+
+<!--more-->
+
+### It's the same bug as a stale closure in React
+
+"A callback that runs later reads the variables from when it was _created_" is the stale-closure
+pattern from the React units. The cure is the same, too: read the latest value from shared,
+mutable state when the callback runs, rather than capturing it when the callback is created.

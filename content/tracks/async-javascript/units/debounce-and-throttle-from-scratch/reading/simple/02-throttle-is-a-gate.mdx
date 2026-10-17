@@ -1,0 +1,52 @@
+---
+id: throttle-is-a-gate
+title: A throttle is a gate that opens once per window
+---
+
+A throttled function runs **during** a burst, but at most once per `wait` ms. Picture a gate:
+the first call goes through and closes it, calls that arrive while it's closed are held back,
+and it opens again `wait` ms later.
+
+The shortest version runs only on the **leading edge**, the first call of each window, and drops
+everything else:
+
+```js
+function throttleLeadingOnly(fn, wait) {
+  let last = 0;
+  return (...args) => {
+    const now = Date.now();
+    if (now - last >= wait) {
+      last = now;
+      fn(...args);
+    }
+    // else: dropped, gone for good
+  };
+}
+```
+
+That "gone for good" is the bug. Throttle a scroll handler with it and fling the page: the
+handler runs at the start of the fling and every 100 ms during it, but the **last** few scroll
+events land inside a closed window and are dropped. Your sticky header or "back to top" button
+reflects a position from up to 100 ms before the page stopped moving, and stays that way until
+the user scrolls again.
+
+The fix is a **trailing call**: if anything arrived while the gate was closed, run once more
+when it reopens, with the **latest** arguments:
+
+```
+calls:     a  b  c  d                  (all within one 100 ms window)
+leading:   a                           runs immediately
+trailing:                     d        runs at 100 ms, with the last arguments
+```
+
+Leading plus trailing is what most throttles do by default (lodash's `throttle` does). It
+answers both "respond now" and "end on the true final value". The medium tier builds it, and
+shows the one-line mistake that makes the trailing call use `b` instead of `d`.
+
+<!--more-->
+
+### Debounce or throttle?
+
+Both cut a noisy stream of calls down. The difference is **when** they run: debounce once,
+after the burst, and throttle repeatedly, during it, capped at a rate. Which one a UI needs is
+covered in the `debounced-input-and-autosave` unit.
