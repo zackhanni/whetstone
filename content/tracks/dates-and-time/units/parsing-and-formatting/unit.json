@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 3,
+  "slug": "parsing-and-formatting",
+  "title": "Parsing & formatting dates",
+  "skills": ["javascript", "dates", "intl", "time-zones"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Predict which instant `new Date(string)` builds from each ISO shape: date-only is UTC midnight, a date-time without an offset is local, `Z` or an offset is exact",
+    "Keep non-ISO strings (`\"10/03/2026\"`) away from `Date` parsing, parse a known format by hand, and read `<input type=\"date\">` values as date-only strings",
+    "Format for people with `Intl.DateTimeFormat` (`dateStyle`/`timeStyle`, `timeZone`), and build machine strings with `toISOString()` or `formatToParts` instead of slicing localized output",
+    "Write relative times with `Intl.RelativeTimeFormat`, computing the value and unit yourself (`numeric: \"auto\"` gives \"yesterday\")"
+  ],
+  "sources": [
+    { "title": "MDN: Date — date time string format", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date#date_time_string_format" },
+    { "title": "MDN: Date.parse()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/parse" },
+    { "title": "ECMAScript spec: Date Time String Format", "url": "https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-date-time-string-format" },
+    { "title": "MDN: Intl.DateTimeFormat() constructor", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat/DateTimeFormat" },
+    { "title": "MDN: Intl.DateTimeFormat.prototype.formatToParts()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat/formatToParts" },
+    { "title": "MDN: Date.prototype.toLocaleDateString()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toLocaleDateString" },
+    { "title": "MDN: Intl.RelativeTimeFormat", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/RelativeTimeFormat" },
+    { "title": "MDN: <input type=\"date\">", "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input/date" },
+    { "title": "MDN: <input type=\"datetime-local\">", "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input/datetime-local" },
+    { "title": "HTML spec: the date state (valueAsDate is midnight UTC)", "url": "https://html.spec.whatwg.org/multipage/input.html#date-state-(type=date)" },
+    { "title": "ECMA-402 spec: CreateDateTimeFormat (styles vs components)", "url": "https://tc39.es/ecma402/#sec-createdatetimeformat" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-parse-format", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-parse-format",
+      "questions": [
+        {
+          "id": "date-only-in-new-york",
+          "prompt": "On a machine in New York, what does `new Date(\"2026-03-10\").getDate()` return?",
+          "options": [
+            { "id": "nine", "text": "`9`" },
+            { "id": "ten", "text": "`10`" },
+            { "id": "nan", "text": "`NaN`: a date needs a time to parse" },
+            { "id": "engine", "text": "It depends on the browser" }
+          ],
+          "answer": "nine",
+          "explanation": "A date-only ISO string is parsed as **UTC** midnight (the spec's rule, which MDN calls a historical error kept for web compatibility). Midnight UTC is 8 p.m. on March 9 in New York, and `getDate()` reads the local day. It's standardized, so every engine agrees. `\"2026-03-10T00:00\"` (a date-time with no offset) would have been local midnight, and `getDate()` would be 10."
+        },
+        {
+          "id": "unambiguous-instant",
+          "prompt": "Which string names the same instant on every machine?",
+          "options": [
+            { "id": "with-z", "text": "`\"2026-03-10T15:00:00Z\"`" },
+            { "id": "no-offset", "text": "`\"2026-03-10T15:00:00\"`" },
+            { "id": "us-style", "text": "`\"03/10/2026 3:00 PM\"`" },
+            { "id": "space", "text": "`\"2026-03-10 15:00:00\"`" }
+          ],
+          "answer": "with-z",
+          "explanation": "Only the string with `Z` (or an explicit `+hh:mm` offset) pins the instant. A date-time without an offset is read as **local** time, so it means a different instant in every zone. The US-style and space-separated strings aren't in the standard format at all: how they parse is up to each engine."
+        },
+        {
+          "id": "uk-csv",
+          "prompt": "A CSV from a UK client contains `10/03/2026`, meaning 10 March. How should you read it?",
+          "options": [
+            { "id": "split-it", "text": "Match `DD/MM/YYYY` with a regex and build `\"2026-03-10\"` from the captured numbers" },
+            { "id": "new-date", "text": "`new Date(\"10/03/2026\")`" },
+            { "id": "format-gb", "text": "`new Date(\"10/03/2026\").toLocaleDateString(\"en-GB\")`" },
+            { "id": "date-parse", "text": "`Date.parse(\"10/03/2026\")`, which handles regional formats" }
+          ],
+          "answer": "split-it",
+          "explanation": "Non-ISO strings are implementation-defined, and V8 reads `10/03/2026` as October 3. `Date.parse` is the same parser. Formatting with `en-GB` afterwards only prints the wrong date in British order: once the parse guessed wrong, no formatter can recover the right one. You know the format, so parse it explicitly (and then check that the date exists)."
+        },
+        {
+          "id": "date-input-value",
+          "prompt": "A German user picks 10 March 2026 in an `<input type=\"date\">`, which displays `10.03.2026`. What is `input.value`?",
+          "options": [
+            { "id": "iso-date", "text": "`\"2026-03-10\"`" },
+            { "id": "displayed", "text": "`\"10.03.2026\"`" },
+            { "id": "local-midnight", "text": "A `Date` at local midnight on March 10" },
+            { "id": "iso-instant", "text": "`\"2026-03-10T00:00:00.000Z\"`" }
+          ],
+          "answer": "iso-date",
+          "explanation": "The displayed format follows the browser's locale, but `value` is always normalized to `yyyy-mm-dd`: a date-only string, which is the right type for a date with no time. `value` is a string, never a `Date`. `valueAsDate` is the `Date`, set to midnight **UTC**, which is why `valueAsDate.getDate()` shows March 9 for users west of UTC."
+        },
+        {
+          "id": "users-calendar-date",
+          "prompt": "From an instant, you need a Tokyo user's calendar date as `YYYY-MM-DD`. Which code is right on any server?",
+          "options": [
+            { "id": "parts", "text": "`formatToParts` with `timeZone: \"Asia/Tokyo\"`, then join the `year`, `month` and `day` parts" },
+            { "id": "iso-slice", "text": "`instant.toISOString().slice(0, 10)`" },
+            { "id": "locale-split", "text": "`instant.toLocaleDateString(\"en-US\", { timeZone: \"Asia/Tokyo\" }).split(\"/\")`, then reorder" },
+            { "id": "local-getters", "text": "`getFullYear()`, `getMonth() + 1` and `getDate()`, padded" }
+          ],
+          "answer": "parts",
+          "explanation": "`formatToParts` gives you the date on Tokyo's wall clock as typed pieces, so the result doesn't depend on the server's zone or on locale punctuation. `toISOString()` is the **UTC** date, a day behind Tokyo for 9 hours of every day. Splitting localized output relies on a format MDN says may vary between implementations. The local getters read the server's zone, not Tokyo's."
+        },
+        {
+          "id": "style-plus-part",
+          "prompt": "What does `new Intl.DateTimeFormat(\"en-US\", { dateStyle: \"medium\", hour: \"numeric\" })` do?",
+          "options": [
+            { "id": "type-error", "text": "Throws a `TypeError`" },
+            { "id": "both", "text": "Formats a medium date followed by the hour" },
+            { "id": "ignores-hour", "text": "Ignores `hour` and formats a medium date" },
+            { "id": "ignores-style", "text": "Ignores `dateStyle` and formats only the hour" }
+          ],
+          "answer": "type-error",
+          "explanation": "The style presets (`dateStyle`, `timeStyle`) and the individual parts (`hour`, `month`, …) are two different ways to describe the output, and ECMA-402 throws a `TypeError` if you mix them. Use `dateStyle` + `timeStyle` together, or list every part you want."
+        },
+        {
+          "id": "relative-time-source",
+          "prompt": "`new Intl.RelativeTimeFormat(\"en\", { numeric: \"auto\" }).format(-1, \"day\")` returns what, and where does the `-1` come from?",
+          "options": [
+            { "id": "yesterday-you-compute", "text": "`\"yesterday\"`; your code computed `-1` and chose `\"day\"`, because the formatter doesn't know the time" },
+            { "id": "ago-it-computes", "text": "`\"1 day ago\"`; it compares the value with `Date.now()`" },
+            { "id": "yesterday-it-computes", "text": "`\"yesterday\"`; it treats `-1` as a timestamp and compares it with today" },
+            { "id": "minus-one", "text": "`\"-1 day\"`" }
+          ],
+          "answer": "yesterday-you-compute",
+          "explanation": "`RelativeTimeFormat` only formats a number with a unit; deciding that something was one day ago is your arithmetic. `numeric: \"auto\"` lets it use words like \"yesterday\" and \"tomorrow\"; with the default `numeric: \"always\"` the same call returns \"1 day ago\"."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-parse-format",
+      "prompts": [
+        {
+          "id": "send-instant",
+          "prompt": "Send an instant in the one format every machine parses to the same moment.",
+          "code": "const body = JSON.stringify({ startsAt: startsAt.___() });",
+          "blanks": [{ "id": "s1", "accept": ["toISOString", "toJSON"] }],
+          "explanation": "`toISOString()` prints `YYYY-MM-DDTHH:mm:ss.sssZ`, always UTC with a `Z`, and any receiver parses it back to the same instant. (`JSON.stringify` would call `toJSON()` on the Date itself, which returns the same string, or `null` for an Invalid Date.)"
+        },
+        {
+          "id": "presets-and-zone",
+          "prompt": "Create one reusable formatter: a medium date and short time, on New York's wall clock.",
+          "code": [
+            "const fmt = new Intl.DateTimeFormat(\"en-US\", {",
+            "  ___: \"medium\",",
+            "  timeStyle: \"short\",",
+            "  ___: \"America/New_York\",",
+            "});",
+            "fmt.format(new Date(\"2026-03-10T15:00:00Z\")); // \"Mar 10, 2026, 11:00 AM\""
+          ],
+          "blanks": [
+            { "id": "p1", "accept": ["dateStyle"] },
+            { "id": "p2", "accept": ["timeZone"] }
+          ],
+          "explanation": "`dateStyle` and `timeStyle` are presets the locale fills in; `timeZone` decides whose wall clock. Build the formatter once and reuse `fmt.format` for every row, instead of calling `toLocaleString` per row."
+        },
+        {
+          "id": "read-a-part",
+          "prompt": "Pull the year out of formatted output without depending on the locale's order or punctuation.",
+          "code": [
+            "const parts = fmt.___(instant);",
+            "const year = parts.find((p) => p.___ === \"year\").value;"
+          ],
+          "blanks": [
+            { "id": "r1", "accept": ["formatToParts"] },
+            { "id": "r2", "accept": ["type"] }
+          ],
+          "explanation": "`formatToParts` returns the same text as `format`, split into `{ type, value }` objects. Find parts by `type`; their order and the literals between them change with the locale."
+        },
+        {
+          "id": "say-yesterday",
+          "prompt": "Make the formatter say \"yesterday\" instead of \"1 day ago\".",
+          "code": "new Intl.RelativeTimeFormat(\"en\", { numeric: \"___\" }).format(-1, \"day\"); // \"yesterday\"",
+          "blanks": [{ "id": "y1", "accept": ["auto"] }],
+          "explanation": "`numeric: \"auto\"` allows phrases like \"yesterday\", \"tomorrow\" and \"now\"; the default, `\"always\"`, always uses a number (\"1 day ago\")."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-parse-format",
+      "snippets": [
+        {
+          "id": "three-shapes",
+          "code": [
+            "// The machine is in America/New_York (UTC−4 on March 10, 2026).",
+            "console.log(new Date(\"2026-03-10\").toISOString());",
+            "console.log(new Date(\"2026-03-10T00:00\").toISOString());",
+            "console.log(new Date(\"2026-03-10T00:00Z\").toISOString());"
+          ],
+          "question": "What are the three lines?",
+          "answer": "2026-03-10T00:00:00.000Z, 2026-03-10T04:00:00.000Z, 2026-03-10T00:00:00.000Z",
+          "acceptable": ["midnight UTC, 04:00 UTC, midnight UTC"],
+          "explanation": "Date-only: UTC midnight. Date-time with no offset: **local** midnight, which in New York (daylight time since March 8) is 04:00 UTC. With `Z`: exactly UTC midnight. Two strings that look like \"March 10 at midnight\" are four hours apart, and on a machine in Tokyo the middle one would be `2026-03-09T15:00:00.000Z`."
+        },
+        {
+          "id": "february-30",
+          "code": [
+            "// Node or Chrome (the V8 engine)",
+            "const d = new Date(\"2026-02-30\");",
+            "console.log(d.toISOString());"
+          ],
+          "question": "What's logged?",
+          "answer": "2026-03-02T00:00:00.000Z",
+          "acceptable": ["March 2", "2026-03-02"],
+          "explanation": "The format allows any day from 01 to 31, so the string matches, and V8 builds day 30 of February: 2026 February has 28 days, so it rolls 2 days into March. There's no error and no `NaN`. MDN notes engines behave inconsistently here (some return Invalid Date), so never treat a successful parse as proof that a date exists."
+        },
+        {
+          "id": "iso-slice-is-utc",
+          "code": [
+            "// Any machine, any zone.",
+            "const late = new Date(\"2026-03-10T23:30:00Z\");",
+            "console.log(late.toISOString().slice(0, 10));",
+            "console.log(late.toLocaleDateString(\"en-US\", { timeZone: \"Asia/Tokyo\" }));"
+          ],
+          "question": "What are the two lines?",
+          "answer": "2026-03-10 and 3/11/2026",
+          "acceptable": ["2026-03-10, 3/11/2026"],
+          "explanation": "`toISOString()` is always UTC, so slicing it gives the **UTC** calendar date: still March 10. In Tokyo it's already 08:30 on March 11. \"Today's date\" for a user is a question about their zone, which `formatToParts` with `timeZone` answers in a machine-readable shape."
+        }
+      ]
+    }
+  ]
+}
