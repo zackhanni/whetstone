@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 3,
+  "slug": "test-doubles",
+  "title": "Test doubles: stubs, spies, mocks and fakes in Vitest",
+  "skills": ["testing", "vitest", "test-doubles", "timers"],
+  "difficulty": "core",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Name the job a double does in a test — stub, spy, mock or fake — and pick the one that asserts least about how the code works",
+    "Use `vi.fn`, `vi.spyOn` and `mockResolvedValue`/`mockImplementation`, and undo what you replaced (Vitest 4's `restoreAllMocks` only restores `vi.spyOn` spies)",
+    "Explain why `vi.mock` is hoisted above imports, and fix a factory that reads an outer variable (`vi.hoisted`) or drops exports (`importOriginal`)",
+    "Drive time with fake timers, and use `advanceTimersByTimeAsync` when the code awaits between timers",
+    "Spot over-mocking, and replace the network with MSW instead of stubbing your own client"
+  ],
+  "sources": [
+    { "title": "Vitest 4 docs: Mock Functions", "url": "https://v4.vitest.dev/guide/learn/mock-functions" },
+    { "title": "Vitest 4 docs: vi utility", "url": "https://v4.vitest.dev/api/vi" },
+    { "title": "Vitest 4 docs: Mocking Modules", "url": "https://v4.vitest.dev/guide/mocking/modules" },
+    { "title": "Vitest 4 docs: Mocking Requests", "url": "https://v4.vitest.dev/guide/mocking/requests" },
+    { "title": "Vitest 4 docs: restoreMocks", "url": "https://v4.vitest.dev/config/restoremocks" },
+    { "title": "Vitest 4 docs: Migrating to Vitest 4 (mock changes)", "url": "https://v4.vitest.dev/guide/migration" },
+    { "title": "Vitest docs: Migrating to Vitest 5", "url": "https://vitest.dev/guide/migration/" },
+    { "title": "Mock Service Worker docs: Node.js integration", "url": "https://mswjs.io/docs/integrations/node" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-doubles", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-doubles",
+      "questions": [
+        {
+          "id": "name-the-fake",
+          "prompt": "A test of `checkout` passes an `InMemoryOrders` class whose `save` and `find` really store and return orders in a `Map`, then reads the saved order back. What job is that double doing?",
+          "options": [
+            { "id": "fake", "text": "A fake — a working implementation with a shortcut, checked by the state it ends up in" },
+            { "id": "stub", "text": "A stub — it returns canned answers" },
+            { "id": "spy", "text": "A spy — it records how it was called" },
+            { "id": "mock", "text": "A mock — the expected calls are the assertion" }
+          ],
+          "answer": "fake",
+          "explanation": "It really works — save then find returns what you saved — just without Postgres. That's a fake, and the test asserts on outcomes (the stored order), which survives refactors. A stub returns fixed answers whatever you do to it; a spy or mock is about the calls, not the resulting state."
+        },
+        {
+          "id": "spyon-calls-through",
+          "prompt": "A test does `const spy = vi.spyOn(console, \"error\")` and then triggers an error path. What happens to the output?",
+          "options": [
+            { "id": "still-prints", "text": "It still prints — `spyOn` calls the original by default; add `.mockImplementation(() => {})` to silence it" },
+            { "id": "silenced", "text": "It's silenced — spying replaces the method with a no-op" },
+            { "id": "throws", "text": "`spyOn` throws because `console.error` is a built-in" },
+            { "id": "buffered", "text": "It's buffered and printed only if the test fails" }
+          ],
+          "answer": "still-prints",
+          "explanation": "Vitest's docs: `vi.spyOn` wraps an existing method and the original implementation still works by default. You get the call log; you keep the behaviour. Chain a `mock…` method to replace it, and `mockRestore()` afterwards so the real `console.error` comes back for later tests."
+        },
+        {
+          "id": "hoisting-error",
+          "prompt": "A test file has `const fetchUserMock = vi.fn();` followed by `vi.mock(\"./api\", () => ({ fetchUser: fetchUserMock }));`, and fails to load with `ReferenceError: Cannot access 'fetchUserMock' before initialization`. Why?",
+          "options": [
+            { "id": "hoisted", "text": "`vi.mock` is hoisted above everything, so its factory runs before `fetchUserMock` is declared; create it with `vi.hoisted`" },
+            { "id": "order", "text": "`vi.mock` must come before the `const` line in the source" },
+            { "id": "async", "text": "The factory must be `async`" },
+            { "id": "path", "text": "The path `./api` can't be resolved from the test file" }
+          ],
+          "answer": "hoisted",
+          "explanation": "Vitest moves `vi.mock` to the top of the file (before the imports) so the code under test sees the mocked module. That moves the factory above the `const` too, so it runs while `fetchUserMock` is in its temporal dead zone. Reordering the source changes nothing — the call is hoisted anyway. `vi.hoisted(() => ({ fetchUserMock: vi.fn() }))` creates the value in the hoisted region."
+        },
+        {
+          "id": "factory-drops-export",
+          "prompt": "`vi.mock(\"./api\", () => ({ fetchUser: vi.fn() }))`. The code under test also uses `formatDate` from `./api`, and Vitest 4 throws `No \"formatDate\" export is defined on the \"./api\" mock`. The fix?",
+          "options": [
+            { "id": "import-original", "text": "Spread the real module in: `vi.mock(import(\"./api\"), async (importOriginal) => ({ ...(await importOriginal()), fetchUser: vi.fn() }))`" },
+            { "id": "spyon-formatdate", "text": "`vi.spyOn` on `formatDate` as well" },
+            { "id": "automock", "text": "Nothing; Vitest falls back to the real `formatDate` for missing keys" },
+            { "id": "import-order", "text": "Import `formatDate` before calling `vi.mock`" }
+          ],
+          "answer": "import-original",
+          "explanation": "A factory's return value *is* the module, so anything it doesn't return doesn't exist for the code under test — Vitest doesn't fall back to the real export, it throws. `importOriginal` gives you the real module to spread, and you override only what you need to. Import order is irrelevant because `vi.mock` is hoisted."
+        },
+        {
+          "id": "async-timers",
+          "prompt": "`retry(fn)` awaits `fn()`, and on failure awaits `sleep(1000)` before trying again. `fn` fails twice, then succeeds. With fake timers, the test calls `vi.advanceTimersByTime(2000)` and finds `fn` was called once. Why?",
+          "options": [
+            { "id": "microtask", "text": "The retry's `sleep` timer is only scheduled after a microtask, so when the synchronous advance runs there's no timer to fire; use `await vi.advanceTimersByTimeAsync(2000)`" },
+            { "id": "promise-faked", "text": "Fake timers also freeze promises, so the rejection never arrives" },
+            { "id": "too-short", "text": "2000 ms isn't enough; advance by 3000 ms" },
+            { "id": "real-timers", "text": "`sleep` captured the real `setTimeout` before the fake clock was installed" }
+          ],
+          "answer": "microtask",
+          "explanation": "`advanceTimersByTime` is synchronous: it fires timers that exist *now*. The first rejection is handled in a later microtask, and only then does `sleep` call `setTimeout`. The Async variant lets pending promise callbacks run between timers, so the backoff timers get created and fired — 3 calls. Fake timers never replace native promises (and Vitest 4 leaves `queueMicrotask` and `nextTick` real by default), and a longer advance hits the same empty queue."
+        },
+        {
+          "id": "restore-all-v4",
+          "prompt": "In Vitest 4, `afterEach(() => vi.restoreAllMocks())`. Which of these does it undo?",
+          "options": [
+            { "id": "spyon-only", "text": "Spies made with `vi.spyOn` get their original methods back; `vi.fn()` implementations and call history are left alone" },
+            { "id": "everything", "text": "Every mock's implementation, call history and spied method" },
+            { "id": "history", "text": "Only call history" },
+            { "id": "globals", "text": "Spied methods plus anything replaced with `vi.stubGlobal`" }
+          ],
+          "answer": "spyon-only",
+          "explanation": "Vitest 4 narrowed `restoreAllMocks`: it restores originals for `vi.spyOn` spies and no longer clears history or resets `vi.fn` implementations. Use `vi.clearAllMocks()` for history, `vi.resetAllMocks()` for implementations, and `vi.unstubAllGlobals()` for `stubGlobal`. (Vitest 5 also turns the `clearMocks` config on by default.)"
+        },
+        {
+          "id": "over-mocking",
+          "prompt": "A `checkout` test replaces rates, orders and mailer with `vi.fn()`s and asserts each was called with exact arguments, in order. Someone caches the exchange rate and the test goes red, though every receipt is identical. What's the real problem?",
+          "options": [
+            { "id": "over-mocked", "text": "The test mocks the code's own collaborators and asserts its call sequence, so it can only pass for this implementation; use a fake store and assert outcomes" },
+            { "id": "missing-reset", "text": "The mocks weren't reset between tests" },
+            { "id": "caching-bug", "text": "Caching the rate is a bug; the test caught it" },
+            { "id": "need-spyon", "text": "`vi.spyOn` should have been used instead of `vi.fn`" }
+          ],
+          "answer": "over-mocked",
+          "explanation": "If behaviour is unchanged and the test fails, the test is checking implementation. Replace only what you can't run (network, clock, email), use a fake for your own storage and assert the stored order, and check calls only where the call is the feature (\"one receipt email to this address\"). Switching to `spyOn` would keep the same over-specified assertions."
+        },
+        {
+          "id": "msw-why",
+          "prompt": "Why intercept requests with MSW (`setupServer`) rather than `vi.stubGlobal(\"fetch\", vi.fn())`?",
+          "options": [
+            { "id": "real-client", "text": "Your real client code runs — URL building, headers, the `res.ok` check, JSON parsing — and only the network is replaced" },
+            { "id": "faster", "text": "MSW is faster because it skips JSON parsing" },
+            { "id": "required", "text": "Vitest can't stub `fetch` in Node" },
+            { "id": "real-server", "text": "MSW starts a real HTTP server, so the test is end-to-end" }
+          ],
+          "answer": "real-client",
+          "explanation": "A stubbed `fetch` returns whatever object you hand it, skipping your own request and response handling — exactly where bugs like a wrong path or a missing `res.ok` check live. MSW intercepts at the network layer inside the test process (no real server), and `onUnhandledRequest: \"error\"` fails any request no handler expected. Vitest's docs recommend it for request mocking."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-doubles",
+      "prompts": [
+        {
+          "id": "stub-and-spy",
+          "prompt": "Stub the async exchange rate, then assert the receipt with the matcher that checks arguments.",
+          "code": [
+            "const getRate = vi.fn().___(1.1); // resolves to 1.1",
+            "const send = vi.fn();",
+            "",
+            "await checkout(order, { rates: { get: getRate }, mailer: { send } });",
+            "expect(send).___(\"ada@example.com\", \"Receipt: 1100 cents\");"
+          ],
+          "blanks": [
+            { "id": "resolved", "accept": ["mockResolvedValue"] },
+            { "id": "called-with", "accept": ["toHaveBeenCalledWith", "toHaveBeenLastCalledWith"] }
+          ],
+          "explanation": "`mockResolvedValue(v)` makes every call return `Promise.resolve(v)` — the stub's job. `toHaveBeenCalledWith` passes if any call had exactly those arguments; with one call, `toHaveBeenLastCalledWith` says the same thing."
+        },
+        {
+          "id": "spy-and-restore",
+          "prompt": "Silence and record `console.error` for one test, then put the real one back.",
+          "code": [
+            "const spy = vi.___(console, \"error\").mockImplementation(() => {});",
+            "renderBrokenThing();",
+            "expect(spy).toHaveBeenCalledOnce();",
+            "spy.___();"
+          ],
+          "blanks": [
+            { "id": "spy-on", "accept": ["spyOn"] },
+            { "id": "restore", "accept": ["mockRestore"] }
+          ],
+          "explanation": "`vi.spyOn` wraps the existing method; `mockImplementation` swaps in a no-op so the test output stays clean. `mockRestore()` puts the original back — skip it and every later test in the file has a silent `console.error`."
+        },
+        {
+          "id": "hoisted-variable",
+          "prompt": "Create the mock in the hoisted region so the hoisted factory can use it.",
+          "code": [
+            "const { fetchUserMock } = vi.___(() => ({ fetchUserMock: vi.fn() }));",
+            "vi.mock(\"./api\", () => ({ fetchUser: fetchUserMock }));"
+          ],
+          "blanks": [{ "id": "hoisted", "accept": ["hoisted"] }],
+          "explanation": "`vi.hoisted` is hoisted along with `vi.mock` and returns its callback's result, so the variable exists by the time the factory runs. A plain top-level `const` would still be uninitialised."
+        },
+        {
+          "id": "partial-mock",
+          "prompt": "Replace only `fetchUser` and keep every other export of the real module.",
+          "code": [
+            "vi.mock(import(\"./api\"), async (importOriginal) => ({",
+            "  ...(___ importOriginal()),",
+            "  fetchUser: vi.fn(),",
+            "}));"
+          ],
+          "blanks": [{ "id": "await", "accept": ["await"] }],
+          "explanation": "`importOriginal` is asynchronous — it returns a promise of the real module — so it must be awaited before spreading. Spreading the promise itself would copy no exports at all."
+        },
+        {
+          "id": "async-advance",
+          "prompt": "Install the fake clock and advance it in a way that lets the retry's awaited backoff timers fire.",
+          "code": [
+            "vi.___();",
+            "const result = retry(flakyFn);",
+            "await vi.___(2000);",
+            "expect(flakyFn).toHaveBeenCalledTimes(3);"
+          ],
+          "blanks": [
+            { "id": "use-fake", "accept": ["useFakeTimers"] },
+            { "id": "advance-async", "accept": ["advanceTimersByTimeAsync"] }
+          ],
+          "explanation": "The Async variant flushes pending promise callbacks between timers, so each `await sleep(...)` gets to schedule its timer before the clock moves past it. Pair `useFakeTimers` with `useRealTimers()` in `afterEach`."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-doubles",
+      "snippets": [
+        {
+          "id": "sync-advance-retry",
+          "code": [
+            "const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));",
+            "async function retry(fn: () => Promise<string>) {",
+            "  for (let attempt = 1; ; attempt++) {",
+            "    try { return await fn(); }",
+            "    catch (err) { if (attempt >= 3) throw err; await sleep(1000); }",
+            "  }",
+            "}",
+            "",
+            "vi.useFakeTimers();",
+            "const fn = vi.fn<() => Promise<string>>()",
+            "  .mockRejectedValueOnce(new Error(\"503\"))",
+            "  .mockRejectedValueOnce(new Error(\"503\"))",
+            "  .mockResolvedValue(\"ok\");",
+            "",
+            "retry(fn);",
+            "vi.advanceTimersByTime(2000);",
+            "console.log(fn.mock.calls.length);"
+          ],
+          "question": "What does it print (Vitest 4)?",
+          "answer": "1",
+          "acceptable": ["1", "one"],
+          "explanation": "The first call happens synchronously inside `retry`. Its rejection is handled in a microtask, and only then does `sleep` schedule a timer — after the synchronous `advanceTimersByTime(2000)` has already returned with nothing to fire. With `await vi.advanceTimersByTimeAsync(2000)` it prints 3."
+        },
+        {
+          "id": "restore-all-keeps",
+          "code": [
+            "const api = { now: () => \"real\" };",
+            "",
+            "const spy = vi.spyOn(api, \"now\").mockReturnValue(\"fake\");",
+            "const impl = vi.fn(() => \"impl\").mockReturnValue(\"override\");",
+            "api.now();",
+            "",
+            "vi.restoreAllMocks();",
+            "",
+            "console.log(api.now(), spy.mock.calls.length, impl());"
+          ],
+          "question": "What does it print under Vitest 4?",
+          "answer": "real 1 override",
+          "acceptable": ["real 1 override", "\"real\" 1 \"override\""],
+          "explanation": "`restoreAllMocks` put the original `api.now` back, so it returns `\"real\"` — but in Vitest 4 it no longer clears history (the spy still remembers 1 call) and leaves `vi.fn` mocks alone (`impl` keeps its `mockReturnValue` override). Vitest 3.2 printed `real 0 impl` here: it also cleared every spy's history and reset every mock. In Vitest 4 those jobs belong to `clearAllMocks` and `resetAllMocks`."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-hand-rolled-spy", "challengeSlug": "hand-rolled-spy" }
+  ]
+}

@@ -1,0 +1,48 @@
+---
+id: vi-fn-and-spyon
+title: vi.fn and vi.spyOn in five minutes
+---
+
+**`vi.fn()` makes a new function from nothing.** Program what it returns, then ask what it saw.
+
+```ts
+const getRate = vi.fn().mockResolvedValue(1.1);   // async: resolves to 1.1
+const send = vi.fn();                             // returns undefined, records calls
+
+const flaky = vi.fn()
+  .mockRejectedValueOnce(new Error("503"))        // first call rejects
+  .mockResolvedValue("ok");                       // every later call resolves "ok"
+
+const double = vi.fn((n: number) => n * 2);       // with an implementation
+
+expect(send).toHaveBeenCalledTimes(1);
+expect(send).toHaveBeenCalledWith("ada@example.com", "Receipt #1");
+send.mock.calls;                                  // [["ada@example.com", "Receipt #1"]]
+```
+
+The `…Once` variants queue up answers for successive calls — the easy way to script "fails twice,
+then succeeds".
+
+**`vi.spyOn(obj, "method")` wraps a method that already exists.** By default the original still
+runs; you just get the call log. Chain a `mock…` method to replace it as well.
+
+```ts
+const spy = vi.spyOn(console, "error").mockImplementation(() => {}); // silence it, but record
+
+renderBrokenThing();
+expect(spy).toHaveBeenCalledOnce();
+
+spy.mockRestore(); // put the real console.error back
+```
+
+**Undo what you replaced.** A spy left on `console.error` or a stubbed `fetch` leaks into every later
+test in the file. Restore in `afterEach`, or let config do it:
+
+| Replaced with | Undo with | Or in config |
+| --- | --- | --- |
+| `vi.spyOn` | `spy.mockRestore()` / `vi.restoreAllMocks()` | `restoreMocks: true` |
+| `vi.stubGlobal("fetch", …)` | `vi.unstubAllGlobals()` | `unstubGlobals: true` |
+| `vi.stubEnv("API_URL", …)` | `vi.unstubAllEnvs()` | `unstubEnvs: true` |
+| `vi.useFakeTimers()` | `vi.useRealTimers()` | — |
+
+All three config flags default to `false` in Vitest 4.
