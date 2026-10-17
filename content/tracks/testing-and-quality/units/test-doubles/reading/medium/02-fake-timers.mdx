@@ -1,0 +1,68 @@
+---
+id: fake-timers
+title: Fake timers, and why async code needs the Async variants
+---
+
+Code that waits — a retry with backoff, a debounce, a session timeout — makes tests slow if they
+really wait. `vi.useFakeTimers()` replaces `setTimeout`, `setInterval`, their `clear…` partners,
+`setImmediate`, `Date` and `performance.now` — in Vitest 4, every timer API except `nextTick` and
+`queueMicrotask` — with a clock that only moves when the test says so.
+
+```ts
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers()); // never leave the fake clock installed
+
+it("expires the session after 30 minutes", () => {
+  vi.setSystemTime(new Date("2026-03-10T12:00:00Z")); // Date.now() is now this
+  const session = startSession();
+  vi.advanceTimersByTime(30 * 60_000);                 // fire every timer due in 30 min
+  expect(session.expired).toBe(true);
+});
+```
+
+## The trap: a timer scheduled after an `await`
+
+```ts
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function retry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 1000) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+      await sleep(delayMs);
+    }
+  }
+}
+```
+
+`fn` fails twice, then succeeds. Two seconds of backoff should mean three calls:
+
+```ts
+const result = retry(fn);
+vi.advanceTimersByTime(2000);
+expect(fn).toHaveBeenCalledTimes(3); // ✗ got 1
+```
+
+`advanceTimersByTime` is **synchronous**. When it runs, the first `fn()` has rejected, but the
+`catch` — and the `sleep` timer it schedules — only runs in a later microtask. At that moment there's
+no timer to fire, so the clock moves 2 s past nothing.
+
+```ts
+const result = retry(fn);
+await vi.advanceTimersByTimeAsync(2000); // ✓ 3 calls
+await expect(result).resolves.toBe("ok");
+```
+
+The `…Async` variants (`advanceTimersByTimeAsync`, `runAllTimersAsync`,
+`advanceTimersToNextTimerAsync`) let pending promise callbacks run between timers, so timers created
+after an `await` get scheduled and fire. Rule of thumb: **if the code awaits anything between timers,
+use the Async variant and await it.**
+
+<!--more-->
+
+Vitest 4's `vi.useFakeTimers()` does **not** fake `process.nextTick` or `queueMicrotask` by default —
+promise callbacks still run as normal microtasks, which is exactly why the Async variants work. The
+other half of time in tests — the time zone, which fake timers don't change — is in the dates track's
+[UTC vs local time](/learn/dates-and-time/utc-vs-local) unit.

@@ -1,0 +1,79 @@
+---
+id: a-batching-loader-line-by-line
+title: A batching loader, line by line
+---
+
+The idea behind GraphQL's DataLoader library, small enough to read in one sitting: callers ask
+for one thing at a time; the loader waits until the current tick of the event loop is done, then
+fetches everything that was asked for in **one** query.
+
+```ts
+type Pending<V> = { key: string; resolve: (v: V | null) => void; reject: (e: unknown) => void };
+
+export function createLoader<V extends { id: string }>(
+  fetchMany: (ids: string[]) => Promise<V[]>,   // e.g. SELECT … WHERE id = ANY($1)
+) {
+  let pending: Pending<V>[] = [];
+
+  async function dispatch(): Promise<void> {
+    const batch = pending;
+    pending = [];                                         // loads from now on start a new batch
+    try {
+      const ids = [...new Set(batch.map((p) => p.key))];  // each id once
+      const rows = await fetchMany(ids);                  // ONE query for the whole batch
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      for (const p of batch) p.resolve(byId.get(p.key) ?? null);  // by id; missing → null
+    } catch (err) {
+      for (const p of batch) p.reject(err);               // a failed query fails every caller
+    }
+  }
+
+  return {
+    load(key: string): Promise<V | null> {
+      return new Promise((resolve, reject) => {
+        pending.push({ key, resolve, reject });
+        if (pending.length === 1) queueMicrotask(dispatch);  // first load of the tick schedules it
+      });
+    },
+  };
+}
+```
+
+Line by line:
+
+- **`queueMicrotask(dispatch)`** runs `dispatch` after the code currently running finishes, but
+  before any timer or I/O callback. Every `load` called synchronously in the meantime — say, by
+  `orders.map(…)` — lands in the same `pending` array. DataLoader's README describes the same rule:
+  it batches loads made within a single tick of the event loop.
+- **`pending = []` before the `await`.** Loads that arrive while the query is in flight belong to
+  the *next* batch; they must not be resolved by this one.
+- **The three rules from the simple tier**, in three lines: `new Set` dedupes, the `Map` matches by
+  id rather than position, `?? null` answers missing ids. DataLoader states the same contract for
+  your batch function: return one value per key, in the keys' order, with `null` or an `Error` for a
+  key that has no row.
+- **`catch` rejects every caller.** Without it, a dropped connection leaves every `load` promise
+  pending forever — the request just hangs.
+
+## The trap: awaiting each load in a loop
+
+Run against three customers and four orders (customer `42` deleted):
+
+```ts
+// 4 queries: [1], [9], [1], [42] — every await ends the tick, so every batch has one id
+for (const o of orders) names.push((await loader.load(o.customerId))?.name);
+
+// 1 query: [1, 9, 42] — all four loads are issued before anything is awaited
+const customers = await Promise.all(orders.map((o) => loader.load(o.customerId)));
+```
+
+The loader can only batch what it's asked for *before* it dispatches. `await` inside the loop hands
+control back after every single load, the microtask fires, and you're back to N+1 with extra steps.
+Start all the loads, then await them together.
+
+<!--more-->
+
+**One loader per request.** DataLoader also caches each key's result for the loader's lifetime, in
+a `Map` that only grows. Its README says to create loaders when a request begins and drop them when
+it ends: shared across users, one user's cached rows can appear in another user's request, and a
+long-lived loader keeps growing. The hand-rolled version above doesn't cache, but the same advice
+applies to where you create it.

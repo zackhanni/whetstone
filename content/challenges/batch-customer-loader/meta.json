@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "batch-customer-loader",
+  "title": "Kill the N+1 in an order report",
+  "skills": ["databases", "n-plus-one", "pagination"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "runner": "in-browser",
+  "entry": "order-report.ts",
+  "acceptanceCriteria": [
+    "A page of 50 orders costs exactly one customer query",
+    "Concurrent `load` calls each get the customer they asked for, whatever order the database returns rows in",
+    "A load for a deleted customer resolves to `null`, and the report shows `(deleted customer)` without shifting the other rows",
+    "Each customer id is sent at most once per batch",
+    "The report includes every order, even though one `listOrders` call returns at most 1,000 rows"
+  ]
+}

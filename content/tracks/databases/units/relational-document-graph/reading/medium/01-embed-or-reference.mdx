@@ -1,0 +1,63 @@
+---
+id: embed-or-reference
+title: In a document store — embed or reference?
+---
+
+A document database doesn't remove modelling; it moves the central decision. Instead of "which
+table?", it's **"inside this document, or in its own document with a reference?"** The MongoDB 9.0
+data-modelling docs give the criteria; here they are applied to a shop.
+
+## Embed when the data lives and dies with its parent
+
+```json
+{
+  "_id": 1001,
+  "customerId": 7,
+  "shipTo": { "street": "1 Analytical Way", "city": "London" },
+  "items": [
+    { "sku": "PEN", "name": "Gel pen", "qty": 2, "unitPrice": 1.5 },
+    { "sku": "PAD", "name": "A5 pad",  "qty": 1, "unitPrice": 4 }
+  ]
+}
+```
+
+- **"Contains" and one-to-many-in-context relationships.** Line items only make sense inside their
+  order, and the shipping address is the address *for this order*.
+- **Read together.** Showing an order is one read.
+- **Changed together, atomically.** Adding a line item and changing the total is one
+  single-document write, and MongoDB guarantees a single-document operation is atomic.
+
+`name` and `unitPrice` are copied from the product at purchase time — snapshots, not stale copies
+(the normalization unit's distinction). That's the embedding sweet spot.
+
+## Reference when the data has a life of its own
+
+```text
+{ "_id": 7, "name": "Ada", "email": "ada@x.io" }            // customers
+{ "_id": "r-88", "productSku": "PEN", "stars": 5, … }       // reviews
+```
+
+The MongoDB docs list the cases for references:
+
+- **The embedded copy would change often** — the customer's current email copied into every order
+  would need updating in every order. Store it once and keep `customerId`.
+- **Many-to-many relationships or large hierarchies.**
+- **The related data is queried on its own** — reviews listed by author, or the latest across the
+  whole site. (The modelling overview has a related example: a product page shows the five most
+  recent reviews, while all reviews live in a separate collection because older ones are rarely
+  accessed.)
+
+Resolving a reference costs a second query or a `$lookup` aggregation stage — a join, by another name.
+
+## The hard limits
+
+- **Size.** Documents must be smaller than 16 MiB. An array that grows without bound — every
+  comment ever posted, every event for a device — eventually hits it. Unbounded children belong in
+  their own collection.
+- **Transactions.** MongoDB supports multi-document transactions (replica sets since 4.0, sharded
+  clusters since 4.2), but its docs say they cost more than single-document writes and shouldn't
+  replace good schema design. If you need transactions across documents for every write, the
+  aggregate boundaries are probably wrong — or the data is relational.
+
+The rule of thumb: **embed what you read and write as a unit; reference what's shared, unbounded,
+or changes on its own schedule.**

@@ -1,0 +1,76 @@
+---
+id: the-enum-rule
+title: The real rule behind "you can't use enums in tests"
+---
+
+The claim is half true, which is why it survives. Vitest has no problem with enums: under Vitest 4.1
+(Vite 8), a test importing `enum Status { Active = "active" }` from another file passes, and so
+does one importing a `const enum` declared in a `.ts` file. The claim comes from four other places.
+Each was checked by running it.
+
+**1. Node's own test runner on `.ts` files.** Node strips TypeScript types by default since 22.18
+and 23.6 (stable since 24.12 and 25.2), and `node --test` picks up `*.test.ts`. Stripping only
+*erases* types. An enum isn't a type — it compiles to a JavaScript object — so there's nothing to
+erase, and Node 24 refuses the file:
+
+```text
+SyntaxError [ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX]: TypeScript enum is not supported in strip-only mode
+```
+
+The old escape hatch, `--experimental-transform-types` (added in Node 22.7), was removed in Node 26.
+
+**2. `erasableSyntaxOnly` (TypeScript 5.8+).** Projects that run through type stripping turn this on
+so the type checker reports what Node would reject. It errors on `enum` and `const enum` alike —
+everywhere, tests included:
+
+```text
+status.ts(1,13): error TS1294: This syntax is not allowed when 'erasableSyntaxOnly' is enabled.
+```
+
+**3. An ambient `const enum` under a per-file transpiler.** A `declare const enum` — usually met in
+a library's `.d.ts` — has no JavaScript object at all; `tsc` replaces each use with the literal value.
+Vite, esbuild and Babel compile one file at a time and never read the `.d.ts`, so `Color.Red` stays a
+property read on an import that doesn't exist:
+
+```text
+TypeError: Cannot read properties of undefined (reading 'Red')        (Vitest 4.1)
+error TS2748: Cannot access ambient const enums when 'isolatedModules' is enabled.   (tsc)
+```
+
+`isolatedModules: true` (Next.js projects have it on) is the setting that makes `tsc` warn you.
+
+**4. A module mock deletes it.** An enum is a value export. A `vi.mock` factory that doesn't return
+it removes it like any other value:
+
+```text
+Error: [vitest] No "Role" export is defined on the "./api" mock.
+```
+
+The same happens to an `as const` object. A union *type* can't be lost this way — it was erased
+before the test ran.
+
+## The rule
+
+> An enum is runtime code, not a type. Tools that only erase types (Node's type stripping,
+> `erasableSyntaxOnly`) reject it; per-file transpilers can't inline an ambient `const enum`; and a
+> module mock removes it like any other export.
+
+In a codebase that wants to run under type stripping — or just never think about this again — use a
+union for the type, plus an `as const` object when you need the values at runtime:
+
+```ts
+export const Role = { Admin: "admin", Member: "member" } as const;
+export type Role = (typeof Role)[keyof typeof Role]; // "admin" | "member"
+```
+
+That file runs under `node --test` with plain type stripping. The language side — what an enum
+compiles to, `as const`, `satisfies`, exhaustive checks on a union — is in
+[Narrowing and unions](/learn/javascript-typescript-fundamentals/narrowing-and-unions).
+
+<!--more-->
+
+Why a `const enum` from a `.ts` file still works under Vitest: with `isolatedModules`, TypeScript's
+`preserveConstEnums` defaults to `true`, and the per-file transpilers emit the enum's object just like
+a regular enum's (checked: Vite 8 under Vitest 4.1, and esbuild 0.28, which also inlines uses within
+the same file). So an import from another file resolves at runtime. You lose the cross-file inlining
+that made it "const", but nothing breaks. Only the *ambient* form, with no object anywhere, fails.

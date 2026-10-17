@@ -1,0 +1,52 @@
+---
+id: a-join-matches-rows
+title: A join matches rows; a LEFT join keeps the unmatched
+---
+
+Same two tables, with three customers and three orders. Linus hasn't ordered anything yet.
+
+| customers.id | name  |     | orders.id | customer_id | total |
+| ------------ | ----- | --- | --------- | ----------- | ----- |
+| 1            | Ada   |     | 1         | 1           | 30.00 |
+| 2            | Grace |     | 2         | 1           | 12.50 |
+| 3            | Linus |     | 3         | 2           | 99.00 |
+
+A **join** walks the two tables and pairs up rows that satisfy the `ON` condition.
+
+```sql
+SELECT c.name, o.id AS order_id, o.total
+FROM customers c
+JOIN orders o ON o.customer_id = c.id;    -- JOIN means INNER JOIN
+```
+
+| name  | order_id | total |
+| ----- | -------- | ----- |
+| Ada   | 1        | 30.00 |
+| Ada   | 2        | 12.50 |
+| Grace | 3        | 99.00 |
+
+Two things to notice. Ada appears **twice** — once per matching order; a join produces one row
+per *pair*, not one per customer. And Linus is **gone** — an inner join keeps only rows that
+found a partner.
+
+Change one word to keep him:
+
+```sql
+SELECT c.name, o.id AS order_id, o.total
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id;
+```
+
+| name  | order_id | total |
+| ----- | -------- | ----- |
+| Ada   | 1        | 30.00 |
+| Ada   | 2        | 12.50 |
+| Grace | 3        | 99.00 |
+| Linus | NULL     | NULL  |
+
+A `LEFT JOIN` first does the inner join, then adds every left-hand row that matched nothing,
+with the right-hand columns filled with `NULL`. So every customer appears at least once.
+
+The rule of thumb: **inner join = "only the ones that have one"; left join = "all of these, plus
+theirs if any".** "Customers who have ordered" is inner. "Every customer with their order count,
+including zero" is left.

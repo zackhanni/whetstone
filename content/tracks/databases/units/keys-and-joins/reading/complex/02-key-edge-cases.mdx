@@ -1,0 +1,69 @@
+---
+id: key-edge-cases
+title: Gaps, NULLs and natural keys — where keys stop guaranteeing what you assumed
+---
+
+## Identity values have gaps
+
+```sql
+BEGIN;
+INSERT INTO customers (name) VALUES ('Rolled back');   -- takes id 4
+ROLLBACK;
+INSERT INTO customers (name) VALUES ('Margaret') RETURNING id;   -- 5, not 4
+```
+
+An identity column draws from a sequence, and a sequence never hands a number back — not on
+rollback, not on a failed insert. Ids are unique (when a primary key or unique constraint says
+so), not consecutive. Never use `max(id)` as a row count, and never use an identity for
+something that legally must be gap-free, such as invoice numbers. Note also that the identity
+column alone guarantees nothing: the manual points out that an identity column is not unique
+unless you add `PRIMARY KEY` or `UNIQUE`.
+
+## `NULL` slips past both foreign keys and unique constraints
+
+- **Foreign keys.** A referencing row with `NULL` in a foreign-key column isn't checked. For a
+  single-column key that's what makes optional relationships work (`assignee_id` can be `NULL`).
+  For a **composite** key it's a trap: by default, if *any* column is `NULL` the whole check is
+  skipped, so `(999, NULL)` is accepted even though no parent has `a = 999`. `MATCH FULL` makes a
+  partly-null reference an error; `NOT NULL` on the columns is simpler when they're required.
+- **Unique constraints.** Two `NULL`s are not equal, so `email text UNIQUE` happily stores any
+  number of `NULL` emails. Usually that's what you want (many users without an email). When it
+  isn't, PostgreSQL 15+ accepts `UNIQUE NULLS NOT DISTINCT`, which allows only one.
+
+## Natural keys and `ON UPDATE`
+
+A natural key (an email, an ISBN, a country code) is fine as a primary key **if it never
+changes**. If it can, every foreign key holds a copy, and by default the update is refused:
+
+```sql
+UPDATE accounts SET email = 'ada@new.io';
+-- ERROR: update or delete on table "accounts" violates foreign key constraint
+--        "sessions_email_fkey" on table "sessions"
+```
+
+`ON UPDATE CASCADE` makes it work by rewriting every referencing row in every referencing table,
+inside your one `UPDATE`. A surrogate key plus a `UNIQUE` natural column gives you the lookup and
+the guarantee without the rewrite.
+
+## `bigint` identity or UUID?
+
+- **`bigint` identity** — 8 bytes, readable, and new values are always the largest so far.
+  It reveals volume (order 10452 tells a competitor roughly how many orders you have) and
+  must come from the database.
+- **UUID** — 16 bytes, and can be generated anywhere (in the client, offline, in another
+  service) without a round trip. `gen_random_uuid()` makes random **version 4** UUIDs: they
+  reveal nothing, and new keys land anywhere in the primary-key index. PostgreSQL 18 adds
+  `uuidv7()`, whose values are **time-ordered** (the release notes: "temporally sortable"), so
+  new keys land near the end of the index, as an identity's do. The price: a v7 key embeds its
+  creation time, and `uuid_extract_timestamp()` reads it back.
+
+Either is a defensible default. What isn't defensible is changing your mind later: the type of a
+primary key is copied into every foreign key that points at it.
+
+<!--more-->
+
+**`NO ACTION` vs `RESTRICT`, precisely.** Both refuse to delete a parent that still has children,
+with different error codes (`23503` for `NO ACTION`, `23001` for `RESTRICT`). The real difference
+appears with `DEFERRABLE INITIALLY DEFERRED`: a `NO ACTION` check waits until `COMMIT`, so a
+transaction may delete a parent and re-point or delete the children before the check runs.
+`RESTRICT` checks immediately, always.

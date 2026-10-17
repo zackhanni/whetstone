@@ -1,0 +1,62 @@
+---
+id: config-webserver-and-traces
+title: The config — and the server you didn't mean to test
+---
+
+```ts
+// playwright.config.ts
+import { defineConfig, devices } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./e2e",
+  retries: process.env.CI ? 2 : 0,         // retry on CI only
+  use: {
+    baseURL: "http://localhost:3002",      // page.goto("/todos") is relative to this
+    trace: "on-first-retry",               // record a trace when a failed test is retried
+  },
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  webServer: {
+    command: "pnpm dev",                   // how to start the app
+    url: "http://localhost:3002",          // ready when this answers 2xx, 3xx or 400–403
+    reuseExistingServer: !process.env.CI,  // locally, use a server that's already running
+  },
+});
+```
+
+`webServer` starts the app before the tests and stops it after. `reuseExistingServer: true` means
+*"re-use an existing server on the `port` or `url` when available"* — so locally you can keep your
+dev server running between test runs. The docs recommend `!process.env.CI`.
+
+## The trap: "available" means "something answered"
+
+Playwright doesn't check *which* app is on that port — only that the URL answered with an accepted
+status. Run another project's dev server on the same port, and your suite runs against it. Checked
+with Playwright 1.64 and a different app already on the port:
+
+```text
+Error: expect(locator).toHaveText(expected) failed
+Locator:  getByRole('heading', { level: 1 })
+Expected: "My Todos"
+Received: "Some Other Project"
+```
+
+Here the heading made it obvious. A suite that only checks a status code or a "page loads" assertion
+can pass against the wrong app. With `reuseExistingServer: false`, the same situation fails loudly
+before any test runs: `http://localhost:4610 is already used, make sure that nothing is running on
+the port/url or set reuseExistingServer:true in config.webServer.`
+
+Defences, cheapest first:
+
+- **A port per project.** This app runs on `:3002` because another app owns `:3000`.
+- **A readiness URL only your app serves**, like `/api/health`. Another app answers it with a 404,
+  so Playwright won't reuse it; it starts your command instead, which can't bind the busy port, and
+  the run stops with `Process from config.webServer was not able to start` (checked).
+- **Never reuse in CI**, which `!process.env.CI` already gives you.
+
+## Traces instead of guesses
+
+A trace records each action with DOM snapshots before and after, the console, and the network.
+`trace: "on-first-retry"` records one only when a failed test is retried, so passing runs stay
+cheap. Open it from the HTML report (`npx playwright show-report`) or with
+`npx playwright show-trace trace.zip`, and step through what the browser actually saw. Playwright's
+best-practice guide recommends traces over videos and screenshots for CI failures.

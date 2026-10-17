@@ -1,0 +1,79 @@
+---
+id: deliberate-copies
+title: Deliberate copies — snapshots, caches, and keeping a cache honest
+---
+
+Not every repeated value is duplication. The test is whether the two values describe **the same
+fact**.
+
+## A snapshot is a different fact
+
+```sql
+CREATE TABLE order_items (
+  order_id   bigint NOT NULL REFERENCES orders (id),
+  sku        text   NOT NULL REFERENCES products (sku),
+  quantity   int    NOT NULL,
+  unit_price numeric(10,2) NOT NULL,   -- what this customer was charged
+  PRIMARY KEY (order_id, sku)
+);
+```
+
+`order_items.unit_price` starts out equal to `products.price`, but they answer different questions:
+"what does a pen cost today?" vs "what did order 1001 charge for a pen?". When the catalogue price
+changes, last month's invoices must not. "Normalizing" `unit_price` away by joining to `products`
+would rewrite history. The same goes for a shipping address copied onto an order (the customer may
+move), and a tax rate applied at checkout.
+
+Ask: **if the source changes later, should this value change too?** No → it's a snapshot; store it.
+Yes → it's a copy; derive it.
+
+## A cache is the same fact, stored again on purpose
+
+`posts.comment_count` *is* the same fact as `SELECT count(*) FROM comments WHERE post_id = …`. You
+might store it anyway because a feed shows 50 posts with their counts on every page view. That's
+a legitimate trade, but you now own the job normalization was doing for you: keeping two copies
+in agreement. Three rules keep a cache honest:
+
+1. **Update it in the same transaction as the source.** If the comment insert commits and the
+   counter update doesn't, they disagree forever. A trigger does this for every writer —
+   including the ones that don't go through your API:
+
+   ```sql
+   CREATE FUNCTION bump_comment_count() RETURNS trigger LANGUAGE plpgsql AS $$
+   BEGIN
+     IF TG_OP = 'INSERT' THEN
+       UPDATE posts SET comment_count = comment_count + 1 WHERE id = NEW.post_id;
+     ELSE
+       UPDATE posts SET comment_count = comment_count - 1 WHERE id = OLD.post_id;
+     END IF;
+     RETURN NULL;
+   END $$;
+
+   CREATE TRIGGER comments_count AFTER INSERT OR DELETE ON comments
+     FOR EACH ROW EXECUTE FUNCTION bump_comment_count();
+   ```
+
+   (A comment that can move between posts also needs an `UPDATE` branch.)
+2. **Change it relative to itself** — `comment_count = comment_count + 1`, never "read the count
+   in the app, add one, write it back". Two concurrent comments would both read 5 and both write 6.
+   The transactions unit covers why.
+3. **Keep a rebuild.** The source is the truth; the cache must be reproducible from it:
+
+   ```sql
+   UPDATE posts p
+   SET comment_count = (SELECT count(*) FROM comments c WHERE c.post_id = p.id);
+   ```
+
+## When to denormalise at all
+
+Only with a measured read problem that an index or a better query can't fix — and with all three
+rules above in place. The cost isn't the extra column; it's every future write path that has to
+know about it. A counter that one `UPDATE` keeps in step is cheap. A customer's email copied into
+five tables is five update anomalies waiting for the next feature.
+
+<!--more-->
+
+**The hidden cost of the trigger above.** Every comment on a post updates that post's row, and an
+`UPDATE` locks the row until the transaction ends. Comments on the same viral post therefore
+queue behind each other. For most apps that's fine; for a very hot row, counting on read (or
+batching the counter updates) can be the better trade.

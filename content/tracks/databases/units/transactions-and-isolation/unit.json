@@ -1,0 +1,450 @@
+{
+  "schemaVersion": 3,
+  "slug": "transactions-and-isolation",
+  "title": "Transactions & isolation: concurrent writers without lost updates",
+  "skills": [
+    "databases",
+    "postgres",
+    "transactions",
+    "locking"
+  ],
+  "difficulty": "advanced",
+  "estimatedMinutes": 45,
+  "objectives": [
+    "Explain the all-or-nothing guarantee in practice: why an error inside a transaction turns `COMMIT` into a rollback, and when a savepoint helps",
+    "Predict what READ COMMITTED — PostgreSQL's default — lets a transaction see: a fresh snapshot per statement, and a write that waits for a locked row then re-checks its `WHERE`",
+    "Spot a lost update in read-modify-write code and fix it with an atomic `UPDATE`, `SELECT … FOR UPDATE`, or a version column with a bounded retry",
+    "Protect a rule that spans rows with a constraint or SERIALIZABLE, and retry the whole transaction on `40001`",
+    "Prevent deadlocks by locking rows in a consistent order, and bound lock waits with `lock_timeout`"
+  ],
+  "sources": [
+    {
+      "title": "PostgreSQL 18 docs: Transactions (tutorial)",
+      "url": "https://www.postgresql.org/docs/18/tutorial-transactions.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Transaction Isolation",
+      "url": "https://www.postgresql.org/docs/18/transaction-iso.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Explicit Locking",
+      "url": "https://www.postgresql.org/docs/18/explicit-locking.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Serialization Failure Handling",
+      "url": "https://www.postgresql.org/docs/18/mvcc-serialization-failure-handling.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: SELECT (the locking clause)",
+      "url": "https://www.postgresql.org/docs/18/sql-select.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Client Connection Defaults (lock_timeout)",
+      "url": "https://www.postgresql.org/docs/18/runtime-config-client.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Lock Management (deadlock_timeout)",
+      "url": "https://www.postgresql.org/docs/18/runtime-config-locks.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Asynchronous Commit (durability)",
+      "url": "https://www.postgresql.org/docs/18/wal-async-commit.html"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-transactions",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-transactions",
+      "questions": [
+        {
+          "id": "swallowed-error-commit",
+          "prompt": "Inside `BEGIN … COMMIT`, an `INSERT` throws a unique violation. The code catches it, logs it, runs two more updates and calls `COMMIT`, which doesn't throw. What was saved?",
+          "options": [
+            {
+              "id": "nothing",
+              "text": "Nothing — after the error the transaction was aborted, the later statements were refused, and `COMMIT` rolled everything back"
+            },
+            {
+              "id": "all-but-insert",
+              "text": "Everything except the failed `INSERT`"
+            },
+            {
+              "id": "before-error",
+              "text": "Only the statements that ran before the error"
+            },
+            {
+              "id": "everything",
+              "text": "Everything, because `COMMIT` succeeded"
+            }
+          ],
+          "answer": "nothing",
+          "explanation": "Any error puts a PostgreSQL transaction in the aborted state: later statements fail with `25P02 current transaction is aborted`, and `COMMIT` answers `ROLLBACK`. With node-postgres that `COMMIT` resolves normally — its command is `ROLLBACK` — so code that swallowed the first error reports success for work that was discarded. If one step is allowed to fail, wrap it in a `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`; otherwise roll back and retry or report."
+        },
+        {
+          "id": "lost-update-fix",
+          "prompt": "This runs once per new comment: `SELECT comment_count …` → compute `count + 1` in Node → `UPDATE posts SET comment_count = $1`. Under load the count drifts low. Which fix is simplest and correct?",
+          "options": [
+            {
+              "id": "atomic",
+              "text": "`UPDATE posts SET comment_count = comment_count + 1 WHERE id = $1` — one statement, no read in the application"
+            },
+            {
+              "id": "wrap",
+              "text": "Wrap the `SELECT` and `UPDATE` in `BEGIN … COMMIT`"
+            },
+            {
+              "id": "await",
+              "text": "`await` the `SELECT` before computing — it's a race in the Node code"
+            },
+            {
+              "id": "index",
+              "text": "Add an index on `comment_count` so the update is faster than the next request"
+            }
+          ],
+          "answer": "atomic",
+          "explanation": "Two requests both read 5 and both write 6: a lost update. A transaction alone doesn't stop it — under READ COMMITTED each `SELECT` reads the latest committed value, which is 5 for both. Doing the arithmetic in the `UPDATE` means each write reads the current value as it writes; a concurrent one waits for the row lock and then adds to the committed result. Faster code only makes the window smaller."
+        },
+        {
+          "id": "version-zero-rows",
+          "prompt": "`UPDATE products SET stock = $2, version = version + 1 WHERE id = $1 AND version = $3` reports 0 rows. What does that mean, and what should the code do?",
+          "options": [
+            {
+              "id": "reread",
+              "text": "Another transaction committed a change since our read — re-read the row, redo the decision, and try again, up to a limit"
+            },
+            {
+              "id": "retry-same",
+              "text": "A transient failure — run the same `UPDATE` again until it reports 1"
+            },
+            {
+              "id": "success",
+              "text": "Nothing was different, so nothing needed changing — treat it as success"
+            },
+            {
+              "id": "missing",
+              "text": "The product was deleted — return 404"
+            }
+          ],
+          "answer": "reread",
+          "explanation": "The version no longer matches, so our decision was based on stale data. Repeating the same `UPDATE` with the old version can never match again. The whole attempt — read, check, write — starts over with fresh data, and a limit stops a hot row from looping forever. (A deleted row also gives 0 rows; the re-read tells the two apart.)"
+        },
+        {
+          "id": "long-edit-optimistic",
+          "prompt": "An admin opens a product form at 10:00 and saves at 10:20. You must not silently overwrite someone else's 10:05 edit. Which approach fits?",
+          "options": [
+            {
+              "id": "version",
+              "text": "Send the row's `version` with the form, and save with `… WHERE id = $1 AND version = $2`; 0 rows → tell the admin it changed"
+            },
+            {
+              "id": "for-update",
+              "text": "`SELECT … FOR UPDATE` when the form opens, `COMMIT` when it's saved"
+            },
+            {
+              "id": "serializable",
+              "text": "Load and save in two separate SERIALIZABLE transactions"
+            },
+            {
+              "id": "last-write",
+              "text": "Nothing — the last save should win"
+            }
+          ],
+          "answer": "version",
+          "explanation": "Optimistic concurrency is built for a read and a write far apart: no lock is held, and a conflict is detected at save time. `FOR UPDATE` would hold a transaction — and a row lock — open for 20 minutes of someone thinking, blocking every other writer of that row and pinning a connection. Two separate SERIALIZABLE transactions don't protect anything *between* them. Last-write-wins is exactly the overwrite the requirement forbids."
+        },
+        {
+          "id": "write-skew-level",
+          "prompt": "Rule: at least one doctor stays on call. Each \"go off duty\" request counts doctors on duty, and if the count is above 1 updates its own row. Two run at once under REPEATABLE READ and both commit, leaving none. What prevents it?",
+          "options": [
+            {
+              "id": "serializable",
+              "text": "Run it under SERIALIZABLE and retry on `40001` — it detects that each transaction's read was invalidated by the other's write"
+            },
+            {
+              "id": "repeatable",
+              "text": "Nothing more is needed: REPEATABLE READ already fails one with `40001`"
+            },
+            {
+              "id": "row-lock",
+              "text": "`SELECT … FOR UPDATE` on your own row before updating it"
+            },
+            {
+              "id": "atomic",
+              "text": "Make each update a single atomic `UPDATE` statement"
+            }
+          ],
+          "answer": "serializable",
+          "explanation": "This is write skew: each transaction's check was true in its own snapshot, and they wrote *different* rows, so no row-level conflict ever happened — REPEATABLE READ allows it (verified: both commit). Locking only your own row doesn't stop the other transaction changing *its* row. SERIALIZABLE tracks the read/write dependencies and fails one with `40001`. (Under READ COMMITTED, `SELECT doctor FROM on_call WHERE on_duty FOR UPDATE` and counting the rows in the app also works: the second request waits, then sees only Bob. `count(*) … FOR UPDATE` is rejected — aggregates can't take row locks.)"
+        },
+        {
+          "id": "retry-scope",
+          "prompt": "A SERIALIZABLE transaction reads a balance, decides the transfer is allowed, writes, and gets `40001` at `COMMIT`. What exactly should the retry re-run?",
+          "options": [
+            {
+              "id": "whole",
+              "text": "The whole transaction from `BEGIN` — the reads and the code that decided what to write — with a limit on attempts"
+            },
+            {
+              "id": "commit",
+              "text": "Just the `COMMIT`"
+            },
+            {
+              "id": "last-statement",
+              "text": "Just the write that conflicted, inside the same transaction"
+            },
+            {
+              "id": "none",
+              "text": "Nothing — `40001` means the data is invalid; report it to the user"
+            }
+          ],
+          "answer": "whole",
+          "explanation": "The manual: retry the complete transaction, including all logic that decides which SQL to issue and which values to use — which is why PostgreSQL has no automatic retry. The failed transaction is already rolled back, so there's nothing to re-commit, and replaying only the write replays a decision made from data that turned out to be stale. `40001` is transient by design; that's why it's always safe to retry."
+        },
+        {
+          "id": "deadlock-order",
+          "prompt": "Transfers A→B and B→A sometimes fail with `40P01 deadlock detected`. Each transfer updates the source account, then the destination. What stops the deadlocks?",
+          "options": [
+            {
+              "id": "order",
+              "text": "Lock the two accounts in a fixed order — e.g. lower id first — whatever the transfer's direction"
+            },
+            {
+              "id": "timeout",
+              "text": "Raise `deadlock_timeout` so PostgreSQL waits longer before giving up"
+            },
+            {
+              "id": "serializable",
+              "text": "Run transfers under SERIALIZABLE"
+            },
+            {
+              "id": "retry-only",
+              "text": "Nothing can; deadlocks are random, so just retry them"
+            }
+          ],
+          "answer": "order",
+          "explanation": "A deadlock is a cycle: one transfer holds A and waits for B while the other holds B and waits for A. If every transaction takes its locks in the same order, no cycle can form — the manual calls this the best defence. `deadlock_timeout` only sets how long to wait before *checking* for a deadlock; a real deadlock is still detected and one transaction is still aborted. Retrying `40P01` is sensible as a safety net, but fixing the order stops them happening."
+        },
+        {
+          "id": "bound-lock-wait",
+          "prompt": "A request handler sometimes waits minutes for a row that a batch job has locked. Which setting makes the handler's statements give up after 2 seconds of waiting for a lock?",
+          "options": [
+            {
+              "id": "lock-timeout",
+              "text": "`SET lock_timeout = '2s'`"
+            },
+            {
+              "id": "deadlock-timeout",
+              "text": "`SET deadlock_timeout = '2s'`"
+            },
+            {
+              "id": "idle",
+              "text": "`SET idle_in_transaction_session_timeout = '2s'`"
+            },
+            {
+              "id": "serializable",
+              "text": "`SET default_transaction_isolation = 'serializable'`"
+            }
+          ],
+          "answer": "lock-timeout",
+          "explanation": "`lock_timeout` aborts a statement that waits longer than the limit for any single lock (`55P03`); the default 0 means wait forever. `deadlock_timeout` is how long to wait before running the deadlock check — a plain wait on a slow job isn't a deadlock, so it changes nothing here. `idle_in_transaction_session_timeout` terminates sessions sitting idle inside a transaction, and set in the handler it applies to the handler's own session, not the batch job's. The isolation level doesn't change how long row-lock waits last."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-transactions",
+      "prompts": [
+        {
+          "id": "lock-then-decide",
+          "prompt": "The reservation needs application logic between the read and the write. Lock the row as you read it, so a concurrent request waits instead of reading the same stock.",
+          "code": [
+            "BEGIN;",
+            "SELECT stock FROM products WHERE id = $1 FOR ___;",
+            "-- …decide in the application…",
+            "UPDATE products SET stock = $2 WHERE id = $1;",
+            "COMMIT;"
+          ],
+          "blanks": [
+            {
+              "id": "a1",
+              "accept": [
+                "UPDATE",
+                "NO KEY UPDATE"
+              ]
+            }
+          ],
+          "explanation": "`FOR UPDATE` locks the selected rows until the transaction ends. A second transaction's `SELECT … FOR UPDATE` on the same row waits, then reads the committed value — so its decision is based on the first reservation's result. (`FOR NO KEY UPDATE` also blocks it and is the weaker lock a plain `UPDATE` takes.) Keep the transaction short: everyone else queues behind the lock."
+        },
+        {
+          "id": "version-check",
+          "prompt": "An optimistic write: succeed only if nobody changed the row since you read version `$3`, and move the version on.",
+          "code": [
+            "UPDATE products",
+            "SET stock = $2, version = ___ + 1",
+            "WHERE id = $1 AND ___ = $3;"
+          ],
+          "blanks": [
+            {
+              "id": "b1",
+              "accept": [
+                "version"
+              ]
+            },
+            {
+              "id": "b2",
+              "accept": [
+                "version"
+              ]
+            }
+          ],
+          "explanation": "The `WHERE version = $3` is the conflict check, and bumping `version` is what makes the *next* writer's check fail. Then read the row count: 1 means saved, 0 means re-read and retry."
+        },
+        {
+          "id": "savepoint",
+          "prompt": "Let one optional insert fail without losing the rest of the transaction.",
+          "code": [
+            "BEGIN;",
+            "UPDATE accounts SET balance = balance - 10 WHERE id = 1;",
+            "___ before_insert;",
+            "INSERT INTO audit_tags VALUES (1, 'promo');   -- may hit a unique violation",
+            "ROLLBACK ___ SAVEPOINT before_insert;",
+            "COMMIT;"
+          ],
+          "blanks": [
+            {
+              "id": "c1",
+              "accept": [
+                "SAVEPOINT"
+              ]
+            },
+            {
+              "id": "c2",
+              "accept": [
+                "TO"
+              ]
+            }
+          ],
+          "explanation": "`ROLLBACK TO SAVEPOINT` discards only what happened after the savepoint and takes the transaction out of the aborted state, so the earlier `UPDATE` still commits. Run it only when the insert failed — it's the error path, not a step to run every time."
+        },
+        {
+          "id": "unique-constraint",
+          "prompt": "Two signups for the same email run \"does it exist? no → insert\" at the same moment. Make a duplicate impossible for every writer, at any isolation level.",
+          "code": "ALTER TABLE signups ADD CONSTRAINT signups_email_key ___ (email);",
+          "blanks": [
+            {
+              "id": "d1",
+              "accept": [
+                "UNIQUE"
+              ]
+            }
+          ],
+          "explanation": "A check-then-insert race can't be closed by the check itself — both checks see no row. A unique constraint makes the database the referee: the second insert waits for the first, then fails (`23505`, or `40001` under SERIALIZABLE after a read of that key), and no duplicate ever commits. Reach for SERIALIZABLE only when the rule can't be written as a constraint."
+        },
+        {
+          "id": "lock-in-order",
+          "prompt": "Lock both accounts of a transfer up front, in an order every transaction agrees on.",
+          "code": "SELECT id FROM accounts WHERE id IN ($1, $2) ___ FOR UPDATE;",
+          "blanks": [
+            {
+              "id": "e1",
+              "accept": [
+                "ORDER BY id",
+                "ORDER BY id ASC"
+              ]
+            }
+          ],
+          "explanation": "Rows are locked as they're returned, so sorting decides the lock order. Every transfer takes the lower id first, whichever direction the money moves, and two transfers can never each hold what the other needs."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-transactions",
+      "snippets": [
+        {
+          "id": "read-committed-reread",
+          "code": [
+            "-- default isolation (READ COMMITTED); balance starts at 100",
+            "A: BEGIN;",
+            "A: SELECT balance FROM accounts WHERE id = 1;",
+            "B: UPDATE accounts SET balance = 50 WHERE id = 1;   -- autocommits",
+            "A: SELECT balance FROM accounts WHERE id = 1;       -- same transaction"
+          ],
+          "question": "What does A's second `SELECT` return?",
+          "answer": "50",
+          "acceptable": [
+            "50",
+            "fifty"
+          ],
+          "explanation": "Under READ COMMITTED every statement takes a new snapshot, so A's second read sees B's committed change — a non-repeatable read. Under REPEATABLE READ, A would keep seeing 100 for the whole transaction."
+        },
+        {
+          "id": "transaction-doesnt-stop-lost-update",
+          "code": [
+            "-- comment_count = 5. Two requests, each in its own transaction:",
+            "A: BEGIN;  B: BEGIN;",
+            "A: SELECT comment_count FROM posts WHERE id = 1;   -- app computes 5 + 1",
+            "B: SELECT comment_count FROM posts WHERE id = 1;   -- app computes 5 + 1",
+            "A: UPDATE posts SET comment_count = 6 WHERE id = 1;",
+            "B: UPDATE posts SET comment_count = 6 WHERE id = 1;  -- waits for A's lock",
+            "A: COMMIT;  B: COMMIT;"
+          ],
+          "question": "What is `comment_count` afterwards?",
+          "answer": "6",
+          "acceptable": [
+            "6",
+            "six",
+            "6 — one comment lost"
+          ],
+          "explanation": "B's `UPDATE` waits for A's row lock, re-checks `WHERE id = 1` (still true), and writes the 6 it was given. The transactions made each request atomic but did nothing about B's stale read. `comment_count = comment_count + 1` would have produced 7."
+        },
+        {
+          "id": "guarded-update-recheck",
+          "code": [
+            "-- stock = 3. Both want 2.",
+            "A: BEGIN;",
+            "A: UPDATE products SET stock = stock - 2 WHERE id = 1 AND stock >= 2;  -- UPDATE 1",
+            "B: UPDATE products SET stock = stock - 2 WHERE id = 1 AND stock >= 2;  -- blocks",
+            "A: COMMIT;"
+          ],
+          "question": "What does B's `UPDATE` report, and what's the final stock?",
+          "answer": "UPDATE 0; stock is 1",
+          "acceptable": [
+            "0 rows, stock 1",
+            "UPDATE 0, 1",
+            "B updates nothing; stock 1"
+          ],
+          "explanation": "B waits for A's lock. When A commits, B takes the new row version (stock 1) and re-evaluates `stock >= 2` — false — so it updates nothing. That re-check is what makes the guarded atomic update safe under READ COMMITTED: no oversell, and the row count tells the app the reservation failed."
+        },
+        {
+          "id": "write-skew-repeatable-read",
+          "code": [
+            "-- on_call: alice (on duty), bob (on duty). Both sessions:",
+            "BEGIN ISOLATION LEVEL REPEATABLE READ;",
+            "SELECT count(*) FROM on_call WHERE on_duty;          -- each sees 2",
+            "UPDATE on_call SET on_duty = false WHERE doctor = …;  -- A: 'alice', B: 'bob'",
+            "COMMIT;                                                -- A, then B"
+          ],
+          "question": "How many doctors are on duty afterwards?",
+          "answer": "0",
+          "acceptable": [
+            "0",
+            "zero",
+            "none"
+          ],
+          "explanation": "Both commits succeed. Each check ran against a snapshot where two doctors were on duty, and the transactions wrote different rows, so REPEATABLE READ's \"concurrent update\" check never fires. Under SERIALIZABLE, B fails with `40001 could not serialize access due to read/write dependencies among transactions` — at its `COMMIT` if both updates ran before A committed, at its `UPDATE` if A had already committed — and Bob stays on call."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-optimistic-stock",
+      "challengeSlug": "optimistic-stock-reservation"
+    }
+  ]
+}

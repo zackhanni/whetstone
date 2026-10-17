@@ -1,0 +1,52 @@
+---
+id: coverage-and-snapshots
+title: Coverage and snapshots — two tools that can lie to you
+---
+
+## Coverage
+
+```bash
+npm i -D @vitest/coverage-v8      # the default provider; @vitest/coverage-istanbul is the other
+npx vitest run --coverage
+```
+
+```ts
+test: {
+  coverage: {
+    include: ["src/**/*.ts"],   // which files the report covers
+    thresholds: { lines: 80 },  // fail the run below 80% of lines
+  },
+}
+```
+
+**Set `coverage.include`.** Without it, Vitest 4 reports *"only files that were imported during
+test run"*. A module no test imports isn't 0% — it's absent, and the total looks better for it.
+Checked: a project with a tested `price.ts` and an untested `untested.ts` reports 100% until
+`include` is set; then `untested.ts` appears at 0% and the total drops.
+
+**Read the number for what it is: which lines ran.** A test that calls `priceLabel(0)` and
+`priceLabel(1999)` without an assertion reports 100% for `priceLabel`. Coverage is good at the
+opposite question — *which code no test touches* — and a threshold is useful as a ratchet that stops
+it falling. It can't tell you a test checks anything ([What a test is for](/learn/testing-and-quality/what-to-test)
+covers that).
+
+## Snapshots
+
+```ts
+expect(buildReceipt(order)).toMatchSnapshot();
+```
+
+The first run writes the value to `__snapshots__/receipt.test.ts.snap` next to the test. Every
+later run compares against it. When the output changes on purpose, `vitest run -u` (or `u` in watch
+mode) rewrites the file. `toMatchInlineSnapshot()` writes the value into the test file itself, which
+keeps the expected value next to the assertion where a reviewer will see it.
+
+Snapshots earn their place when the output is **large, deterministic and reviewed**: a generated
+config, a CLI's help text, the list of error messages a validator returns. They become a rubber
+stamp when the output is **big and changes often** — a whole component's markup, say. Each change
+fails the test, someone presses `u`, and whatever the code now produces becomes "correct".
+
+Vitest's docs: *"The snapshot artifact should be committed alongside code changes, and reviewed as
+part of your code review process."* Treat a `.snap` diff like a code diff. If nobody can say whether
+the new snapshot is right, it should have been a targeted assertion —
+`expect(receipt.total).toBe(1100)` — instead.

@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 3,
+  "slug": "relational-document-graph",
+  "title": "Relational, document or graph? Choosing the shape",
+  "skills": ["databases", "data-modeling", "document-databases", "graph-databases", "jsonb", "postgres"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Explain what the relational, document and graph models each make cheap and expensive, and pick one from an application's read and write patterns",
+    "Choose embedding or referencing for a MongoDB document from what's read together, what changes on its own, and what grows without bound",
+    "Use PostgreSQL `jsonb` correctly — `->` vs `->>`, casts, `@>` with a GIN index, expression indexes — and name what it gives up",
+    "Answer a variable-depth relationship question with a recursive CTE, and say when a graph database earns its place"
+  ],
+  "sources": [
+    { "title": "PostgreSQL 18 docs: JSON Types (jsonb, containment, GIN indexing)", "url": "https://www.postgresql.org/docs/18/datatype-json.html" },
+    { "title": "PostgreSQL 18 docs: JSON Functions and Operators", "url": "https://www.postgresql.org/docs/18/functions-json.html" },
+    { "title": "PostgreSQL 18 docs: WITH Queries (recursive, SEARCH, CYCLE)", "url": "https://www.postgresql.org/docs/18/queries-with.html" },
+    { "title": "PostgreSQL 18 docs: Generated Columns", "url": "https://www.postgresql.org/docs/18/ddl-generated-columns.html" },
+    { "title": "MongoDB docs: Data Modeling", "url": "https://www.mongodb.com/docs/manual/data-modeling/" },
+    { "title": "MongoDB docs: Embedded Data", "url": "https://www.mongodb.com/docs/manual/data-modeling/embedding/" },
+    { "title": "MongoDB docs: Referenced Data", "url": "https://www.mongodb.com/docs/manual/data-modeling/referencing/" },
+    { "title": "MongoDB docs: Transactions", "url": "https://www.mongodb.com/docs/manual/core/transactions/" },
+    { "title": "Neo4j docs: What is a graph database", "url": "https://neo4j.com/docs/getting-started/graph-database/" },
+    { "title": "Neo4j Cypher manual: Variable-length patterns", "url": "https://neo4j.com/docs/cypher-manual/current/patterns/variable-length-patterns/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-data-models", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-data-models",
+      "questions": [
+        {
+          "id": "model-for-reporting",
+          "prompt": "A billing system: customers, subscriptions, invoices, payments. Finance asks new questions weekly (\"revenue by plan by region, excluding refunds\"), and an invoice must never point at a customer that doesn't exist. Which model fits best?",
+          "options": [
+            { "id": "relational", "text": "Relational — integrity rules and ad-hoc queries across entities are exactly what it's built for" },
+            { "id": "document", "text": "Document — embed invoices and payments inside each customer document" },
+            { "id": "graph", "text": "Graph — customers, invoices and payments are all connected" },
+            { "id": "any", "text": "Any of them; the model doesn't affect which queries are easy" }
+          ],
+          "answer": "relational",
+          "explanation": "Cross-cutting questions nobody planned for, plus referential integrity, are the relational model's home ground: each fact lives once, foreign keys enforce the links, and any new report is just a query. Embedding everything in customer documents makes per-customer reads cheap and every cross-customer report a scan of every document. \"It's connected\" describes all data; a graph database pays off for deep traversals, not for sums and filters."
+        },
+        {
+          "id": "model-for-aggregates",
+          "prompt": "A page builder stores each page as a tree of content blocks whose fields vary by block type. Pages are always loaded and saved whole; nobody queries across pages by block field. What fits?",
+          "options": [
+            { "id": "document", "text": "A document per page — in a document store, or a `jsonb` column on a `pages` table" },
+            { "id": "normalized", "text": "A table per block type, joined back together on every page load" },
+            { "id": "graph", "text": "A graph database, since blocks nest inside blocks" },
+            { "id": "eav", "text": "One `attributes(page_id, block_id, key, value)` table for every field" }
+          ],
+          "answer": "document",
+          "explanation": "The page is an aggregate: read together, written together, varying shape, no cross-page queries — the case MongoDB's guide sums up as \"data that's accessed together should be stored together\". A `jsonb` column gives the same shape inside PostgreSQL, next to relational data that needs integrity. A table per block type means many joins to rebuild what's always used whole; nesting isn't a reason for a graph database when you never traverse it."
+        },
+        {
+          "id": "embed-line-items",
+          "prompt": "In MongoDB, should an order's line items be embedded in the order document or stored in their own collection?",
+          "options": [
+            { "id": "embed", "text": "Embed — they're only meaningful inside the order, read with it, and changed with it in one atomic write" },
+            { "id": "reference", "text": "Reference — related data should always live in its own collection" },
+            { "id": "both", "text": "Both, kept in sync by the application" },
+            { "id": "graph", "text": "Neither — line items need a graph store" }
+          ],
+          "answer": "embed",
+          "explanation": "MongoDB's embedding guidance: \"contains\" and one-to-many relationships where the children are viewed in the context of the parent. An order's items are read with it and change with it, and a single-document write is atomic. Storing them twice and syncing them recreates the update anomaly embedding was meant to avoid."
+        },
+        {
+          "id": "reference-changing-data",
+          "prompt": "Orders embed a copy of the customer's current email and loyalty tier \"for fast display\". Customers change both regularly. What's the better design?",
+          "options": [
+            { "id": "reference", "text": "Store `customerId` on the order and keep the email and tier in the customer document — frequently changing data shouldn't be copied" },
+            { "id": "keep", "text": "Keep the copies and update every order whenever the customer changes" },
+            { "id": "transaction", "text": "Keep the copies and wrap each customer update in a multi-document transaction" },
+            { "id": "drop-orders", "text": "Embed the orders inside the customer document instead" }
+          ],
+          "answer": "reference",
+          "explanation": "MongoDB's referencing guidance lists exactly this: embedding that duplicates data that frequently changes, without enough read benefit to justify it. These copies aren't snapshots (\"the email at time of order\") — they're meant to be current, so every change becomes a fan-out update. A transaction makes that fan-out atomic but not cheap. Embedding orders in the customer grows the customer document without bound."
+        },
+        {
+          "id": "unbounded-array",
+          "prompt": "A post document embeds an array of every comment. A post goes viral. What limit is the design heading for?",
+          "options": [
+            { "id": "size", "text": "MongoDB's maximum document size (documents must be smaller than 16 MiB) — unbounded children belong in their own collection" },
+            { "id": "none", "text": "None — arrays in MongoDB grow without limit" },
+            { "id": "index", "text": "The 64-index limit per collection" },
+            { "id": "transactions", "text": "Writes to it will need multi-document transactions" }
+          ],
+          "answer": "size",
+          "explanation": "An embedded array that grows with activity has no natural ceiling, but documents do: smaller than 16 MiB. Comments are also often queried on their own (latest across the site, by author), another reason MongoDB's guide gives for referencing. Adding a comment is still a single-document write, so transactions aren't the issue."
+        },
+        {
+          "id": "gin-not-used",
+          "prompt": "`products.attrs` has `CREATE INDEX … USING GIN (attrs)`, yet `WHERE (attrs->>'qty')::int < 5` is a sequential scan on PostgreSQL 18. Why, and the fix?",
+          "options": [
+            { "id": "expression", "text": "A GIN index on the column serves containment and key-exists operators (`@>`, `?`), not a comparison on an extracted, cast value — add an expression index on `((attrs->>'qty')::int)`" },
+            { "id": "analyze", "text": "Statistics are stale; `ANALYZE` will make it use the GIN index" },
+            { "id": "path-ops", "text": "Rebuild the GIN index with `jsonb_path_ops`" },
+            { "id": "json", "text": "Switch the column to `json`, which indexes every key" }
+          ],
+          "answer": "expression",
+          "explanation": "The GIN index stores the document's keys and values for `@>`, `?`, `?|`, `?&` (and jsonpath matching). `(attrs->>'qty')::int < 5` is a different expression with a different operator, so the index can't answer it — the same \"index the expression you query\" rule as `lower(email)`. `jsonb_path_ops` supports fewer operators, not more, and `json` is slower to query, not better indexed."
+        },
+        {
+          "id": "fk-into-json",
+          "prompt": "`attrs->>'supplier_id'` must always name a real supplier. What does PostgreSQL 18 let you do?",
+          "options": [
+            { "id": "stored-generated", "text": "Promote it: a `STORED` generated column `(attrs->>'supplier_id')::bigint` with `REFERENCES suppliers (id)`, or a plain column" },
+            { "id": "fk-expression", "text": "Declare `FOREIGN KEY ((attrs->>'supplier_id')) REFERENCES suppliers (id)` directly" },
+            { "id": "virtual", "text": "A virtual generated column with `REFERENCES`, since virtual is the default in PostgreSQL 18" },
+            { "id": "gin", "text": "A GIN index on `attrs` enforces it" }
+          ],
+          "answer": "stored-generated",
+          "explanation": "A foreign key needs real columns — `FOREIGN KEY ((expression))` is a syntax error. A stored generated column derives the value from the JSON and can carry the foreign key, so writers still send one document. A virtual generated column can't: PostgreSQL 18 rejects it with \"foreign key constraints on virtual generated columns are not supported\". Indexes speed lookups; they don't enforce references."
+        },
+        {
+          "id": "graph-or-cte",
+          "prompt": "Two features: (a) \"show everyone in my reporting line\" on an org chart of 5,000 people; (b) a product whose core is real-time recommendations from paths 3–4 hops deep across hundreds of millions of follow edges. What fits each?",
+          "options": [
+            { "id": "cte-then-graph", "text": "(a) a recursive CTE in PostgreSQL; (b) a strong case for a graph database" },
+            { "id": "graph-both", "text": "A graph database for both — any hierarchy is a graph" },
+            { "id": "cte-both", "text": "Recursive CTEs for both — SQL can always do it fast enough" },
+            { "id": "join-both", "text": "Plain joins for both, one join per level" }
+          ],
+          "answer": "cte-then-graph",
+          "explanation": "A tree of 5,000 rows is a few rounds of index lookups in a recursive CTE — no second system needed. Deep traversals over a huge, densely connected graph, where traversal *is* the product, are what graph databases are built for: the paths multiply by the fan-out at every hop in any system, but a graph store follows stored relationships instead of paying an index lookup and a join per hop. (a) has no fixed depth, so plain joins can't express it; (b) is bounded at 3–4 hops, but 3–4 self-joins over hundreds of millions of edges, on every request, is exactly the expensive part."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-data-models",
+      "prompts": [
+        {
+          "id": "text-extraction",
+          "prompt": "Compare a JSON field with a text literal.",
+          "code": "SELECT id FROM products WHERE attrs___'color' = 'red';",
+          "blanks": [{ "id": "a1", "accept": ["->>"] }],
+          "explanation": "`->>` extracts the value as `text`, so it compares with `'red'`. `->` returns `jsonb`, and `'red'` isn't valid JSON — that version fails with \"invalid input syntax for type json\"."
+        },
+        {
+          "id": "gin-containment",
+          "prompt": "Index the whole document, then query it with the operator that index serves.",
+          "code": [
+            "CREATE INDEX products_attrs_gin ON products USING ___ (attrs);",
+            "SELECT id FROM products WHERE attrs ___ '{\"color\": \"red\"}';"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["GIN"] },
+            { "id": "b2", "accept": ["@>"] }
+          ],
+          "explanation": "GIN is the inverted index for values with many components; its default `jsonb` operator class serves `@>` (contains) and the key-exists operators. `@>` matches any document that *has* the pair, whatever else it holds."
+        },
+        {
+          "id": "numeric-expression-index",
+          "prompt": "Index and query a numeric key so it compares as a number, not as text.",
+          "code": [
+            "CREATE INDEX products_qty_idx ON products (((attrs->>'qty')::___));",
+            "SELECT id FROM products WHERE (attrs->>'qty')::int < 5;"
+          ],
+          "blanks": [{ "id": "c1", "accept": ["int", "integer", "int4"] }],
+          "explanation": "The index must be on the same expression the query uses, cast included. Without the cast, `attrs->>'qty'` is text, where `'10' < '5'` is true."
+        },
+        {
+          "id": "recursive-cte",
+          "prompt": "Everyone below employee 1 in the org chart, at any depth.",
+          "code": [
+            "WITH ___ reports AS (",
+            "  SELECT id, name FROM employees WHERE manager_id = 1",
+            "  UNION ___",
+            "  SELECT e.id, e.name FROM employees e JOIN reports r ON e.manager_id = r.id",
+            ")",
+            "SELECT name FROM reports;"
+          ],
+          "blanks": [
+            { "id": "d1", "accept": ["RECURSIVE"] },
+            { "id": "d2", "accept": ["ALL"] }
+          ],
+          "explanation": "`WITH RECURSIVE` lets the second term refer to the CTE itself; it re-runs against the previous round's rows until a round adds nothing. In a tree there are no cycles, so `UNION ALL` (no de-duplication) is safe and cheaper. In a graph with cycles, use the `CYCLE` clause (PostgreSQL 14+) or a depth bound."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-data-models",
+      "snippets": [
+        {
+          "id": "jsonb-text-compare",
+          "code": [
+            "-- attrs: {\"qty\": 9}, {\"qty\": 10}, {\"qty\": 100}",
+            "SELECT attrs->>'qty' FROM products WHERE attrs->>'qty' > '9';"
+          ],
+          "question": "Which rows come back?",
+          "answer": "None",
+          "acceptable": ["none", "no rows", "0 rows", "empty"],
+          "explanation": "`->>` returns text, and text compares character by character: `'10'` and `'100'` start with `'1'`, which sorts before `'9'`, and `'9' > '9'` is false. Cast first — `(attrs->>'qty')::int > 9` returns 10 and 100."
+        },
+        {
+          "id": "jsonb-arrow-literal",
+          "code": "SELECT id FROM products WHERE attrs->'color' = 'red';",
+          "question": "What happens?",
+          "answer": "ERROR: invalid input syntax for type json",
+          "acceptable": ["an error", "error — 'red' isn't valid JSON", "invalid input syntax for type json"],
+          "explanation": "`->` returns `jsonb`, so PostgreSQL reads the literal `'red'` as `jsonb` too — and a bare `red` isn't valid JSON (a JSON string needs quotes: `'\"red\"'`). Use `->>` to compare as text, or `@>` with a JSON object."
+        },
+        {
+          "id": "jsonb-duplicate-keys",
+          "code": "SELECT '{\"b\": 1, \"a\": 2, \"a\": 3}'::jsonb::text;",
+          "question": "What text comes back?",
+          "answer": "{\"a\": 3, \"b\": 1}",
+          "acceptable": ["{\"a\":3,\"b\":1}", "a: 3, b: 1"],
+          "explanation": "`jsonb` doesn't keep duplicate keys (the last value wins) or the input's key order. `json` would return the input text exactly, duplicates and all. If key order or duplicates carry meaning, `jsonb` will lose it."
+        },
+        {
+          "id": "recursive-union-all-cycle",
+          "code": [
+            "-- follows: 1→2, 2→3, 3→1, 3→4, 4→5",
+            "WITH RECURSIVE reach AS (",
+            "  SELECT followee AS person FROM follows WHERE follower = 1",
+            "  UNION ALL",
+            "  SELECT f.followee FROM follows f JOIN reach r ON f.follower = r.person",
+            ")",
+            "SELECT count(*) FROM reach;"
+          ],
+          "question": "What does it return — and what if `UNION ALL` becomes `UNION`?",
+          "answer": "It never finishes (1→2→3→1 loops forever); with UNION it returns 5 — persons 1, 2, 3, 4, 5",
+          "acceptable": ["never finishes; UNION gives 5", "infinite loop, then 5", "runs forever; 5 with UNION"],
+          "explanation": "With `UNION ALL` every round re-adds the rows reached through the cycle, so the working table never empties (on a test server it ran until `statement_timeout` cancelled it). `UNION` discards rows that duplicate any earlier result, so once 1, 2, 3, 4 and 5 are found a round adds nothing and it stops. Once you track depth or paths, rows stop being duplicates — then you need a depth bound or the `CYCLE` clause."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+---
+id: one-query-per-row
+title: N+1 — one query for the list, then one more per row
+---
+
+The orders page shows 50 orders with each customer's name. The obvious code:
+
+```ts
+const { rows: orders } = await db.query(
+  "SELECT id, customer_id, total FROM orders ORDER BY id DESC LIMIT 50",
+);
+
+for (const order of orders) {
+  const { rows } = await db.query("SELECT name FROM customers WHERE id = $1", [order.customer_id]);
+  order.customerName = rows[0]?.name;
+}
+```
+
+One query for the list, then one per order: **N+1** queries — 51 here. Each one is fast (an
+index lookup, well under a millisecond inside the database), so nothing looks wrong in the query
+log. The cost is the **round trip**: every `await db.query` sends a message to the database
+server and waits for the answer. At 1 ms per round trip that's 51 ms; with the database in another
+region at 20 ms, it's a full second — and it grows with the page size, not with the data's
+complexity.
+
+The tell: **a query inside a loop over the results of another query.** Fix it by asking for
+everything at once.
+
+A join does it in one round trip:
+
+```sql
+SELECT o.id, o.total, c.name AS customer_name
+FROM orders o
+JOIN customers c ON c.id = o.customer_id
+ORDER BY o.id DESC
+LIMIT 50;
+```
+
+Or two queries — the list, then every customer it mentions in a single batch:
+
+```ts
+const ids = [...new Set(orders.map((o) => o.customer_id))];
+const { rows: customers } = await db.query(
+  "SELECT id, name FROM customers WHERE id = ANY($1)",
+  [ids],
+);
+```
+
+51 round trips became 1 or 2. The next example shows the part of the batch that's easy to get
+wrong: putting the answers back on the right rows.
+
+(If customers can be deleted, the join needs to be a `LEFT JOIN`, or an order whose customer is
+gone disappears from the page — the keys-and-joins unit's "inner join drops the unmatched".)

@@ -1,0 +1,44 @@
+---
+id: pyramid-and-trophy
+title: Pyramid, trophy, and where one check belongs
+---
+
+Every test sits somewhere on a trade-off:
+
+- **Low-level tests** (a function on its own) are fast, cheap to write, and point at the exact line
+  that broke. But they replace the rest of the system, so they can't tell you the pieces work
+  together.
+- **High-level tests** (a real browser driving the deployed app) give the most confidence that
+  users are fine. They're slow, need the whole stack running, and fail for reasons unrelated to
+  your change — a slow network, a shared test account.
+
+web.dev's testing-strategy guide puts it as: *"the higher up you climb the pyramid, the more
+confident you get"*, and confidence *"is in direct competition with the resources you need to
+execute the tests."* The common diagrams are two answers to "so where do most tests go?"
+
+| Shape | Credited to | The bulk of the tests | Top |
+| --- | --- | --- | --- |
+| **Test pyramid** | Mike Cohn, *Succeeding with Agile* | unit tests | few end-to-end |
+| **Testing trophy** | Kent C. Dodds | integration tests, on a base of static analysis (types, lint) | few end-to-end |
+
+They agree on more than they disagree: end-to-end tests are the most expensive, so you keep few;
+lower levels carry most of the load. The trophy moves the bulk up one level, to tests where several
+real modules work together, and counts static analysis as the base layer — TypeScript and a linter
+catch a class of bugs before any test runs. web.dev's own conclusion is *"It depends"* — on your
+app, not on a diagram.
+
+## Placing a single check
+
+Diagrams describe a whole suite. For one behaviour, ask: **what's the lowest level at which this
+can actually break?**
+
+- The discount rounds half-cents correctly → a unit test of the pure function. Nothing else can
+  make rounding wrong.
+- The checkout handler passes the right cart to the pricing module and saves the result → an
+  integration test with both real modules and a test database.
+- The "Pay" button is hidden behind a cookie banner on small screens → only a real browser can
+  see that. That's an end-to-end test.
+
+Testing a rounding rule end-to-end works, but it costs a browser and a running backend per case and
+can't easily reach the half-cent inputs. Testing the button with a unit test is impossible — the
+bug isn't in any one unit.

@@ -1,0 +1,84 @@
+---
+id: false-passes
+title: Async tests that pass without checking anything
+---
+
+These three tests are wrong — each expects `"WRONG"` from a function that returns `"Ada"` — and all
+three are reported **passed** by Vitest 4, run on their own with exit code 0.
+
+```ts
+const fetchUser = async (id: number) => {
+  await new Promise((r) => setTimeout(r, 10));
+  return { id, name: "Ada" };
+};
+
+// 1. The assertion is inside a .then, and nothing returns or awaits the chain
+it("then-chain", () => {
+  fetchUser(1).then((u) => {
+    expect(u.name).toBe("WRONG");
+  });
+});
+
+// 2. async callbacks inside forEach — forEach ignores the promises they return
+it("async forEach", async () => {
+  [1, 2].forEach(async (id) => {
+    const u = await fetchUser(id);
+    expect(u.name).toBe("WRONG");
+  });
+});
+
+// 3. A promise object is truthy, whatever it will resolve to
+it("promise truthiness", async () => {
+  expect(saveDraft()).toBeTruthy(); // saveDraft() resolves to false
+});
+```
+
+In 1 and 2 the test function finishes before the 10 ms timer, so it's reported green; the
+`expect` runs later, when nobody is listening. If other tests keep the worker busy long enough,
+Vitest catches the late failure as an **Unhandled Rejection** and fails the *run* — but the test
+itself still shows ✓, and run alone or last in a file, the failure is never seen at all. Node's
+runner also marks the test passed, but it waits for the file's pending timers, so the late failure
+does surface: a warning that the test *"generated asynchronous activity after the test ended"*, and
+a failed run (checked on Node 24).
+
+The fixes. With the waiting in place, the original `"WRONG"` expectations fail as they should; here
+they're corrected to what the code really returns:
+
+```ts
+// 1: await the value instead of chaining .then
+const u = await fetchUser(1);
+expect(u.name).toBe("Ada");
+
+// 2: for…of awaits each iteration…
+for (const id of [1, 2]) {
+  expect((await fetchUser(id)).name).toBe("Ada");
+}
+// …or start them together and await them all
+const users = await Promise.all([1, 2].map((id) => fetchUser(id)));
+expect(users.map((u) => u.name)).toEqual(["Ada", "Ada"]);
+
+// 3: await the promise, then assert on its value
+expect(await saveDraft()).toBe(true);
+```
+
+## Make "no assertion ran" a failure
+
+`expect.hasAssertions()` at the top of a test fails it if no `expect` ran before it ended;
+`expect.assertions(2)` demands exactly two. Test 1 with `expect.hasAssertions()` added fails with
+*"expected any number of assertion, but got none"* — the false pass becomes a real failure. To get
+that for every test, Vitest 4's config has `expect: { requireAssertions: true }`.
+
+It can't save test 3: that test *did* run an assertion — a wrong one. Only awaiting the value fixes
+it, which is why "await first, then assert" is the habit, and the counters are the safety net.
+
+<!--more-->
+
+Lint rules catch two of the three before anything runs (checked with typescript-eslint 8):
+
+- `@typescript-eslint/no-floating-promises` flags a promise that is neither awaited, returned nor
+  handled — the then-chain in test 1, and an `expect(...).resolves` without `await`.
+- `@typescript-eslint/no-misused-promises` flags the async callback passed to `forEach` in test 2
+  (*"Promise returned in function argument where a void return was expected"*).
+
+Neither flags test 3: passing a promise to `expect` is a legal call. Playwright's best-practice guide
+recommends `no-floating-promises` for the same reason — every Playwright action is async.

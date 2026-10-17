@@ -1,0 +1,63 @@
+---
+id: where-n-plus-one-hides
+title: Where N+1 hides — ORMs, helpers and per-item loaders
+---
+
+A raw `db.query` inside a `for` loop is easy to spot in review. Most N+1s don't look like that.
+
+## 1. An ORM relation loaded inside a loop
+
+The Prisma ORM 7 docs use this example:
+
+```ts
+const users = await prisma.user.findMany({});
+users.forEach(async (usr) => {
+  const posts = await prisma.post.findMany({ where: { authorId: usr.id } });  // one query per user
+});
+```
+
+and its fix — ask for the relation up front, which Prisma runs as two SQL queries (users, then
+all their posts):
+
+```ts
+const usersWithPosts = await prisma.user.findMany({ include: { posts: true } });
+```
+
+ORMs with *lazy* relations are worse, because the query hides behind a property: `order.customer.name`
+in a template looks like a field access and runs a `SELECT` the first time it's touched, once per
+order.
+
+## 2. A helper that hides a query
+
+```ts
+const rows = await Promise.all(orders.map(async (o) => ({
+  ...o,
+  customerName: await getCustomerName(o.customerId),   // looks pure; runs a SELECT
+})));
+```
+
+`Promise.all` makes the 50 queries *concurrent* instead of sequential, which hides the latency on a
+quiet laptop. It's still 50 queries, 50 round trips and 50 connections' worth of work for the pool
+— and the pool caps how many run at once, so under load they queue anyway. Concurrency is not
+batching.
+
+## 3. Per-item loaders: resolvers and components
+
+GraphQL resolvers, and any architecture where each item fetches its own data, resolve fields one
+item at a time: `Order.customer` runs once per order. The code is correct and independent — and it
+issues N queries. The standard fix keeps the per-item call sites and batches underneath them:
+a **loader** collects every `load(id)` made in the same tick and sends one batch query (the next
+example builds one). Prisma does this for you in one case: its docs say it automatically batches
+`findUnique()` calls made in the same tick — calls that differ only in the key they look up.
+
+## Finding them
+
+- **Count queries per request.** Turn on your ORM's query logging, or wrap your database client
+  in a counter, and print the count with each request in development. A list page whose query count
+  grows with the page size has an N+1.
+- **Look for repetition in the log**: the same statement text, over and over, with only the
+  parameter changing.
+- **Test the shape, not the speed.** Locally, with the database on the same machine, 50 extra
+  queries cost a few milliseconds; in production, across a network, they cost a round trip each. An
+  assertion like "this endpoint makes at most 3 queries" catches the regression where a timing test
+  can't.

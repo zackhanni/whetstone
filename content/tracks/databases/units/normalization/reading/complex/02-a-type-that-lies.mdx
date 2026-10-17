@@ -1,0 +1,66 @@
+---
+id: a-type-that-lies
+title: A column type that lies — dates and timestamps stored as text
+---
+
+Normalization asks where a fact lives. The column's **type** decides whether the database knows
+what the fact *is*. Timestamps stored as `text` (common after a JSON import, or from an ORM that
+maps everything to strings) compare as strings — character by character — and strings don't know
+about calendars.
+
+```sql
+-- created_at text: '2026-03-09T22:00:00Z', '2026-03-10T09:15:00Z',
+--                  '2026-03-10T23:59:00Z', '2026-03-11T00:01:00Z'
+SELECT count(*) FROM events WHERE created_at <= '2026-03-10';   -- 1, not 3
+SELECT count(*) FROM events
+WHERE created_at BETWEEN '2026-03-01' AND '2026-03-10';         -- 1: March 10 is missing
+```
+
+`'2026-03-10'` is a **prefix** of every timestamp on March 10, and a prefix sorts *before* every
+longer string that starts with it. So a bare date compares as "earlier than any moment of that
+day", and an inclusive upper bound quietly drops the whole last day. The same happens the other way
+round: a `text` column of date-only values compared with an ISO instant drops the day itself.
+
+```sql
+-- due_on text: '2026-03-09', '2026-03-10', '2026-03-11'
+SELECT due_on FROM tasks WHERE due_on >= '2026-03-10T00:00:00.000Z';
+-- only '2026-03-11' — '2026-03-10' is shorter, so it sorts before the instant
+```
+
+Strings also can't compare across offsets or spellings:
+
+```sql
+SELECT '2026-03-10T23:30:00-05:00' < '2026-03-11T01:00:00Z';                          -- true
+SELECT '2026-03-10T23:30:00-05:00'::timestamptz < '2026-03-11T01:00:00Z'::timestamptz; -- false
+```
+
+The first instant is 04:30 UTC on March 11, *after* the second — but as text it's "March 10". Mix
+`'2026-03-10 09:00'` (space) with `'2026-03-10T08:00'` and the space sorts before `T`, so 9 o'clock
+comes first. And `text` accepts `'2026-02-30'` without complaint; a `date` column rejects it on
+insert (`date/time field value out of range`).
+
+## The fix: let the column know what it holds
+
+- An **instant** (when something happened) → `timestamptz`. PostgreSQL converts any input offset to
+  UTC, stores UTC, and converts back to the session's `TimeZone` for display. Comparisons are of
+  instants, whatever the input looked like.
+- A **calendar date** (a due date, a birthday) → `date`. It has no time and no zone.
+
+Then write ranges **half-open**, because even with the right type a bare date means midnight:
+
+```sql
+-- created_at timestamptz
+WHERE created_at <= '2026-03-10'                                  -- still drops March 10 after 00:00
+WHERE created_at >= '2026-03-01' AND created_at < '2026-03-11'   -- all of March 1–10
+```
+
+`>= start AND < next day` is right for `date` and `timestamptz` at every precision, and it's the
+shape an index range scan wants.
+
+<!--more-->
+
+**Which midnight?** A bare date compared to a `timestamptz` is read as midnight in the session's
+`TimeZone` setting. A server in UTC and a developer laptop in New York can therefore return
+different rows for the same query. Pass full instants (or set the session time zone explicitly) for
+anything a report depends on. The JavaScript side of date-only vs instant lives in the Dates & Time
+track.

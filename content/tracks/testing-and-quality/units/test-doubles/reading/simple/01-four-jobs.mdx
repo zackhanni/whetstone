@@ -1,0 +1,48 @@
+---
+id: four-jobs
+title: Four jobs a test double can do
+---
+
+A **test double** stands in for something the code under test talks to, so the test controls it or
+can see what happened to it. Here's code with three collaborators:
+
+```ts
+async function checkout(order: Order, { rates, orders, mailer }: Deps) {
+  const rate = await rates.get(order.currency);                   // needs an answer
+  const saved = await orders.save({ ...order, total: Math.round(order.subtotal * rate) });
+  await mailer.send(order.email, `Receipt #${saved.id}`);         // a side effect
+  return saved;
+}
+```
+
+Each collaborator gets a double doing a different job:
+
+```ts
+// order = { subtotal: 1000, currency: "EUR", email: "ada@example.com" }
+const rates = { get: async () => 1.1 };          // STUB: feeds a canned answer in
+
+const orders = new InMemoryOrders();             // FAKE: a real, simpler implementation
+                                                 // (a Map instead of Postgres)
+const mailer = { send: vi.fn() };                // SPY: records every call
+
+const saved = await checkout(order, { rates, orders, mailer });
+
+expect(await orders.find(saved.id)).toMatchObject({ total: 1100 });
+expect(mailer.send).toHaveBeenCalledWith("ada@example.com", `Receipt #${saved.id}`);
+```
+
+| Job | What it does | What you assert on |
+| --- | --- | --- |
+| **Stub** | returns a fixed answer | nothing about the stub — it just steers the code |
+| **Spy** | records calls (and may still call the real thing) | how it was called |
+| **Mock** | a double whose expected calls *are* the assertion | that the expected interaction happened |
+| **Fake** | works for real, with a shortcut (in-memory, fake clock) | the state it ends up in |
+
+These words describe the **role** a double plays in one test, not a type in Vitest. Vitest calls
+nearly everything a mock: `vi.fn()` gives you *"a function that does nothing by default (returns
+`undefined`), but tracks every call made to it"*. Give it a return value and it's acting as a stub;
+assert on its calls and it's acting as a spy or a mock. `vi.spyOn(obj, "method")` *"wraps an existing
+method"*, and *"the original implementation still works by default"*.
+
+Prefer the job that asserts least about *how* your code works. A fake you check the state of
+survives refactors; an exact list of expected calls breaks on every reshuffle.

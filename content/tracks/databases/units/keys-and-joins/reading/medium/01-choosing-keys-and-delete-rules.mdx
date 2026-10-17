@@ -1,0 +1,72 @@
+---
+id: choosing-keys-and-delete-rules
+title: Choosing the keys and the delete rules, line by line
+---
+
+Users belong to teams; a user can be in many teams and a team has many users. Teams also have
+invoices and tasks.
+
+```sql
+CREATE TABLE users (
+  id    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email text NOT NULL UNIQUE
+);
+
+CREATE TABLE teams (
+  id   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name text NOT NULL
+);
+
+CREATE TABLE team_members (
+  team_id bigint NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
+  user_id bigint NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  role    text   NOT NULL DEFAULT 'member',
+  PRIMARY KEY (team_id, user_id)
+);
+CREATE INDEX ON team_members (user_id);
+
+CREATE TABLE tasks (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  team_id     bigint NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
+  assignee_id bigint REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE TABLE invoices (
+  id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  team_id bigint NOT NULL REFERENCES teams (id) ON DELETE RESTRICT
+);
+```
+
+**A surrogate `id`, and `email` as `UNIQUE`.** Email is unique, so it *could* be the primary
+key — a natural key. But emails change, and every foreign key stores a copy of the key it
+points at. Changing a referenced email is refused by default; `ON UPDATE CASCADE` would allow it
+by rewriting every referencing row. A meaningless `bigint` never needs to change. The `UNIQUE`
+constraint still guarantees one account per email.
+
+**`GENERATED ALWAYS`, not `BY DEFAULT`.** With `ALWAYS`, an `INSERT` that supplies an `id` is
+rejected unless it says `OVERRIDING SYSTEM VALUE`. That stops a seed script from writing id 100
+by hand, after which the sequence eventually hands out 100 again and the insert fails.
+
+**The many-to-many lives in its own table.** Neither `users` nor `teams` can hold the
+relationship, so `team_members` holds one row per link, with a foreign key to each side. The
+composite `PRIMARY KEY (team_id, user_id)` makes adding Ada to the same team twice an error
+(`23505 duplicate key`) instead of a silent duplicate. The link can carry its own data — `role`.
+
+**The extra index on `user_id`.** The primary key's index is ordered by `team_id` first, so it
+serves "who is in team 7?" but not "which teams is user 1 in?". PostgreSQL does **not** create an
+index for a foreign key's referencing column, and deleting a user makes it look up that user's
+memberships. Index the referencing side yourself.
+
+**One delete rule per relationship, chosen by asking "what should happen to the child?"**
+
+- `CASCADE` — the child means nothing without the parent: a membership of a deleted team.
+- `SET NULL` — the child should survive, unowned: a task whose assignee left stays on the
+  board, unassigned. (The column must be nullable for this.)
+- `RESTRICT` — deleting the parent should be a decision, not a side effect: a team with invoices
+  can't be deleted until someone deals with the billing history.
+- `NO ACTION` — the default when you write nothing. Like `RESTRICT` it refuses the delete; the
+  difference is that its check can be deferred to the end of the transaction when the constraint
+  is declared `DEFERRABLE`, and `RESTRICT`'s can't.
+
+The rules compose. Deleting a team with invoices fails outright, and nothing cascades. Deleting
+a team without invoices removes its memberships and tasks in the same statement.

@@ -1,0 +1,76 @@
+---
+id: over-mocking-and-the-network
+title: Over-mocking, the network boundary, and cleanup in Vitest 4
+---
+
+## A test that restates the implementation
+
+```ts
+it("checks out", async () => {
+  const rates = { get: vi.fn().mockResolvedValue(1.1) };
+  const orders = { save: vi.fn().mockResolvedValue({ id: 1 }) };
+  const mailer = { send: vi.fn() };
+
+  await checkout(order, { rates, orders, mailer });
+
+  expect(rates.get).toHaveBeenCalledWith("EUR");
+  expect(orders.save).toHaveBeenCalledWith({ ...order, total: 1100 });
+  expect(mailer.send).toHaveBeenCalledWith("ada@example.com", "Receipt #1");
+  expect(rates.get.mock.invocationCallOrder[0])
+    .toBeLessThan(orders.save.mock.invocationCallOrder[0]);
+});
+```
+
+Every line mirrors a line of `checkout`. Cache the exchange rate, batch the save, send the email from
+a queue — behaviour unchanged, test red. And because `orders.save` is a stub, nothing checks that the
+saved order can actually be read back. This is **over-mocking**: doubles for your *own* modules,
+verified call by call, so the test can only pass for this exact implementation.
+
+What to do instead:
+
+- **Replace only what you don't own or can't run in a test** — the network, the clock, email, a
+  payment provider. Use your own modules for real.
+- **Prefer a fake to a call log** for your own storage: an in-memory `orders` you read back
+  (`expect(await orders.find(1)).toMatchObject({ total: 1100 })`) checks the outcome, not the steps.
+- **Assert calls only where the call *is* the behaviour** — "the receipt email was sent once, to
+  this address" is the feature; "rates were fetched before saving" is not.
+
+## Replace the network, not your client
+
+Stubbing `fetch` (or mocking your `api.ts`) skips your own client code: the URL you build, the
+headers, the `res.ok` check, the JSON parsing. Vitest's docs recommend **Mock Service Worker** for
+requests: it intercepts at the network layer, so your real client runs.
+
+```ts
+import { setupServer } from "msw/node";
+import { http, HttpResponse } from "msw";
+
+const server = setupServer(
+  http.get("https://api.example.test/users/:id", ({ params }) =>
+    HttpResponse.json({ id: Number(params.id), name: "ada" })),
+);
+
+beforeAll(() => server.listen({ onUnhandledRequest: "error" })); // unknown calls fail loudly
+afterEach(() => server.resetHandlers());                          // drop per-test overrides
+afterAll(() => server.close());
+
+it("surfaces a 500", async () => {
+  server.use(http.get("https://api.example.test/users/:id", () =>
+    new HttpResponse(null, { status: 500 })));
+  await expect(displayName(1)).rejects.toThrow("HTTP 500");
+});
+```
+
+(Checked running under Vitest 4 with MSW 2.15 and with MSW 3.0, which shipped in September 2026 —
+the same code works on both.) `onUnhandledRequest: "error"` turns "the code called an
+endpoint nobody planned for" into a failure instead of a real request.
+
+## Cleanup semantics changed in Vitest 4
+
+`vi.restoreAllMocks()` now only puts back originals for spies made with `vi.spyOn`. It no longer
+resets `vi.fn()` mocks or clears call history — checked on 4.1.12: after it, a `vi.fn` given
+`mockReturnValue("override")` still returns `"override"`, and a spy keeps its recorded calls
+(Vitest 3.2 reset both). Use `vi.clearAllMocks()` (history) or
+`vi.resetAllMocks()` (history and implementations) for those. The config switches `clearMocks`,
+`mockReset` and `restoreMocks` all default to `false` in Vitest 4; **Vitest 5 turns `clearMocks` on
+by default**, so call counts stop carrying over between tests after the upgrade.

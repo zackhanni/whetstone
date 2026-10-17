@@ -1,0 +1,48 @@
+---
+id: two-columns-that-can-disagree
+title: Two columns that can disagree — keep one, derive the other
+---
+
+Duplication doesn't need two rows. One row is enough when two of its columns say the same
+thing:
+
+```sql
+CREATE TABLE invoices (
+  id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  amount  numeric(10,2) NOT NULL,
+  is_paid boolean NOT NULL DEFAULT false,
+  paid_at timestamptz
+);
+```
+
+`is_paid` and `paid_at` both answer "has this been paid?". Every code path that records a payment
+must set both. One day a refund script clears `paid_at` and forgets `is_paid`, and now the row says
+*paid* and *never paid* at once. Which column does the dashboard read? Which does the reminder
+email read? Each reader picks one, and they disagree.
+
+Ask: **can one column be computed from the other?** Here it can — an invoice is paid exactly when
+`paid_at` has a value. So store `paid_at` and *derive* `is_paid` wherever you need it:
+
+```sql
+SELECT id, amount, paid_at IS NOT NULL AS is_paid
+FROM invoices;
+```
+
+A derived value can't drift, because there's nothing stored to drift. There's also no second
+write to forget.
+
+The same test catches the most common case of all — a stored total next to the rows it totals:
+
+```sql
+-- orders.total is stored, and order_items holds the lines
+SELECT o.id, o.total, sum(i.quantity * i.unit_price) AS lines
+FROM orders o JOIN order_items i ON i.order_id = o.id
+GROUP BY o.id, o.total
+HAVING o.total <> sum(i.quantity * i.unit_price);   -- the rows where they already disagree
+```
+
+If a query like that ever returns rows, the stored column was a second copy of the truth. Compute
+it instead, unless you have a measured reason not to (the complex tier covers when, and how to keep
+a deliberate copy honest).
+
+Rule of thumb: **if two columns can disagree, one of them shouldn't exist.**

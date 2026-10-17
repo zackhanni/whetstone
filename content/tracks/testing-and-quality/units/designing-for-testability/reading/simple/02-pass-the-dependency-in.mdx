@@ -1,0 +1,55 @@
+---
+id: pass-the-dependency-in
+title: When the code must do I/O, pass the I/O in
+---
+
+Some code exists *to* do I/O: send the reminder, save the order. It can't be pure, but it can take
+its I/O as arguments. That parameter is a **seam** — a place where a test can slide in a double
+without editing or mocking anything.
+
+```ts
+type ReminderDeps = {
+  now: () => number;
+  sendEmail: (to: string, body: string) => Promise<void>;
+};
+
+export async function remindOverdue(tasks: Task[], { now, sendEmail }: ReminderDeps) {
+  for (const task of tasks) {
+    if (dueLabel(now(), task.dueAt) === "Overdue") {
+      await sendEmail(task.owner, `"${task.title}" is overdue`);
+    }
+  }
+}
+```
+
+Production passes the real things; the test passes a fixed clock and a function that records:
+
+```ts
+// production
+await remindOverdue(tasks, { now: Date.now, sendEmail: mailer.send });
+
+// test — no vi.mock, no fake timers
+const sent: string[] = [];
+await remindOverdue(tasks, {
+  now: () => NOON,
+  sendEmail: async (to) => { sent.push(to); },
+});
+expect(sent).toEqual(["ada@example.com"]);
+```
+
+Why a seam beats reaching for `vi.mock` or fake timers when you're the one writing the code:
+
+- **It's visible.** The signature says "this needs a clock and a mailer". A module mock is invisible
+  until it breaks.
+- **No special rules.** No hoisting, no factory that must return every export, no restoring a
+  global afterwards — the double only exists inside the one call.
+- **It works in any runner.** `node:test`, Vitest, the in-browser sandbox these lessons run in —
+  none of them needs a mocking library for this.
+
+If a dependency is passed through many call sites, give it a default so production code doesn't
+change: `{ now = Date.now, sendEmail = mailer.send }: Partial<ReminderDeps> = {}`. (`Date.now` works
+detached from `Date`. A method that reads `this` — a class-based mailer's `send`, say — doesn't; wrap
+it instead: `sendEmail = (to, body) => mailer.send(to, body)`.)
+
+This is dependency injection without a framework. NestJS's injector does the same thing for whole
+classes — see [Modules, providers & the injector](/learn/backend-nestjs/nest-modules-and-providers).

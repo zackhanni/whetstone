@@ -1,0 +1,61 @@
+---
+id: explain-shows-the-plan
+title: EXPLAIN shows the plan; EXPLAIN ANALYZE runs it
+---
+
+You don't guess whether an index is used — you ask. `EXPLAIN` prints the plan the planner chose,
+without running the query. Here on a 200,000-row `orders` table in PostgreSQL 18, before any index
+on `customer_id`:
+
+```text
+EXPLAIN SELECT * FROM orders WHERE customer_id = 42;
+
+ Seq Scan on orders  (cost=0.00..4167.00 rows=20 width=37)
+   Filter: (customer_id = 42)
+```
+
+`Seq Scan` + `Filter`: read every row, keep the ones that pass. After
+`CREATE INDEX ON orders (customer_id)` and `ANALYZE orders`:
+
+```text
+ Bitmap Heap Scan on orders  (cost=4.45..78.13 rows=20 width=37)
+   Recheck Cond: (customer_id = 42)
+   ->  Bitmap Index Scan on orders_customer_id_idx  (cost=0.00..4.45 rows=20 width=0)
+         Index Cond: (customer_id = 42)
+```
+
+Read it from the most indented line outwards: the index finds the matching row locations, then
+the heap scan fetches those rows. The estimated cost dropped from 4167 to 78 — the units are
+arbitrary, but they're comparable within one database.
+
+The plan nodes you'll see most:
+
+- **Seq Scan** — every row. Right for small tables and for queries that want most of the rows.
+- **Index Scan** — walk the index, fetch each matching row. Typical for a few rows, or when the
+  index also supplies the `ORDER BY`.
+- **Bitmap Index Scan → Bitmap Heap Scan** — collect matching locations first, then read the
+  table pages in physical order. Typical for "more than a few, fewer than most".
+- **Index Only Scan** — every column the query needs is in the index, so the table is barely
+  touched.
+
+`cost=4.45..78.13 rows=20` is the planner's *estimate*: startup cost, total cost, rows expected.
+**`EXPLAIN ANALYZE` actually executes the query** and adds what really happened:
+
+```text
+EXPLAIN ANALYZE SELECT * FROM orders WHERE customer_id = 42;
+
+ Bitmap Heap Scan on orders  (cost=4.45..78.13 rows=20 width=37)
+                             (actual time=0.063..0.086 rows=22.00 loops=1)
+   Buffers: shared hit=25 read=2
+   ...
+ Execution Time: 0.144 ms
+```
+
+Estimated 20 rows, got 22 — a good estimate. (PostgreSQL 18 prints row counts with two decimals,
+because a node that runs several `loops` reports the average per loop.) Since PostgreSQL 18,
+`EXPLAIN ANALYZE` also includes `Buffers` (pages found in shared buffers vs read in) automatically;
+before 18 you asked for it with `EXPLAIN (ANALYZE, BUFFERS)`.
+
+Two habits: run `ANALYZE` on a freshly loaded table before trusting a plan (the planner works from
+statistics), and test with realistic data volumes — on a 100-row table a sequential scan is the
+right answer and no index will be used.
