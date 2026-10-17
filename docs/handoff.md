@@ -5,13 +5,12 @@ in `AGENTS.md` → "Working with this repo".
 
 ## Status (2026-10-17)
 
-- `main` is at PR #14 (schema v3, `cards` block, derived depth, `vercel.json` gate) and serves
-  3 tracks / 14 units / 10 challenges.
-- **The content phase is complete as a PR stack, #15 → #33.** Merged, it gives **16 tracks,
-  83 units (6 of them card units), 47 challenges**, every one verified in real Sandpack
-  (`pnpm test:challenges:browser`: starter fails, solution passes). Each PR targets the one below
-  it; merge bottom-up with merge commits (repo auto-delete retargets the next PR — don't use
-  `gh pr merge --delete-branch`, which can close the child instead).
+- **The content phase is merged.** `main` serves **16 tracks, 83 units (6 of them card units),
+  47 challenges**, every challenge verified in real Sandpack (`pnpm test:challenges:browser`:
+  starter fails, solution passes). It landed as the PR stack #15 → #33, merged bottom-up on
+  2026-10-17 in batches (#15, #16, #18, #21, #24, #27, #30). Each batch got a CodeRabbit full
+  review, through review-only PRs #35–#42 where a batch was over the 150-file limit, and the
+  verified fixes went on top of the batch before it merged (one `PR #… review` changelog line each).
   - #15–#17: accuracy passes on the three shipped tracks; all 47 `docs/content-review.md`
     findings handled, NestJS moved to Nest 12.
   - #18–#24: JS & TS Fundamentals, Dates & Time, Async JavaScript, Data Fetching with TanStack
@@ -31,13 +30,17 @@ in `AGENTS.md` → "Working with this repo".
 
 ## Next up
 
-1. Review and merge the stack bottom-up (#15 first). Trigger CodeRabbit per PR after the one below
-   it merges, so each review covers its own diff.
-2. After merging, a production spot-check: one challenge per new track (_Run tests_ fails, _Show
-   solution_ passes), a card unit, a cross-track `/learn/…` link.
+1. Production spot-check: one challenge per new track (_Run tests_ fails, _Show solution_
+   passes), a card unit, a cross-track `/learn/…` link.
+2. In a real browser, scroll to a challenge, wait for the preview to load, then press _Run
+   tests_. In headless Chrome that order leaves the tests panel empty (reproduced under
+   `pnpm dev`); pressing before Sandpack starts works, which is why the browser check does it
+   that way. If a real browser shows the same, it's a `ChallengeRunner` bug users hit.
 3. App follow-ups the content phase surfaced (UI, not content): render predict-output answers as
    Markdown/preformatted (backticks and multi-line output show literally today), and stop long
    `code` spans in a challenge's acceptance-criteria list wrapping into boxes.
+4. A validator check for a `/learn/` link whose text is a slug in backticks. PLAYBOOK forbids it
+   but nothing catches it: #33's sweep added 50, which the #42 review then rewrote.
 
 ## Open items
 
