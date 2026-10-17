@@ -1,0 +1,20 @@
+---
+id: permissions-policy
+title: Permissions-Policy — switch off browser features you don't use
+---
+
+```http
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+```
+
+Declares which powerful browser features this page, and the frames inside it, may use. `()` is an
+empty allow-list: the feature is off everywhere, iframes included. `self` allows your origin only;
+`(self "https://maps.example.com")` adds one embed. The header sets the ceiling, and an `<iframe>`
+also needs the matching `allow` attribute.
+
+The payoff is containment: an XSS payload or a compromised third-party iframe can't start the
+camera or read the location on a page that turned those off.
+
+Support is uneven: MDN marks the header as experimental and "Limited availability", and its
+compatibility data lists Chromium browsers only (Chrome 85+), not Firefox or Safari. It's a
+cheap layer, but don't rely on it alone.

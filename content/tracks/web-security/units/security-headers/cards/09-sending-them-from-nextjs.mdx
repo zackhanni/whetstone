@@ -1,0 +1,32 @@
+---
+id: sending-them-from-nextjs
+title: Sending the static set from Next.js
+---
+
+```js
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+        ],
+      },
+    ];
+  },
+};
+```
+
+Headers that are the same on every response belong in `headers()` in `next.config.js`. If two
+entries match the same path and set the same key, the docs say "the last header key will override
+the first".
+
+A nonce-based CSP can't live here, because it must change per request: generate it in `proxy.ts`
+(the `content-security-policy` unit). Check what's actually served with `curl -sI`.

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 3,
+  "slug": "security-headers",
+  "title": "Security headers worth sending",
+  "skills": ["security", "security-headers"],
+  "difficulty": "core",
+  "estimatedMinutes": 10,
+  "objectives": [
+    "Recall what each common security header defends against, and its usual value",
+    "Recall why HSTS only works over HTTPS, its first-visit gap, and what preloading requires",
+    "Tell `frame-ancestors` from `X-Frame-Options`, and which one wins when both are sent",
+    "Recall which legacy headers to remove or switch off, and where Next.js sends static headers from"
+  ],
+  "sources": [
+    { "title": "OWASP Cheat Sheet: HTTP Security Response Headers", "url": "https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html" },
+    { "title": "MDN: Strict-Transport-Security", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Strict-Transport-Security" },
+    { "title": "MDN: X-Content-Type-Options", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/X-Content-Type-Options" },
+    { "title": "MDN: Referrer-Policy", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy" },
+    { "title": "MDN: CSP frame-ancestors", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/frame-ancestors" },
+    { "title": "W3C CSP Level 3: frame-ancestors and X-Frame-Options", "url": "https://www.w3.org/TR/CSP3/" },
+    { "title": "MDN: Permissions-Policy", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy" },
+    { "title": "MDN: Cross-Origin-Opener-Policy", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Opener-Policy" },
+    { "title": "MDN: Cross-Origin-Resource-Policy", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Resource-Policy" },
+    { "title": "MDN: Cross-Origin-Embedder-Policy", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Embedder-Policy" },
+    { "title": "Next.js docs: headers in next.config.js", "url": "https://nextjs.org/docs/app/api-reference/config/next-config-js/headers" },
+    { "title": "Next.js docs: poweredByHeader", "url": "https://nextjs.org/docs/app/api-reference/config/next-config-js/poweredByHeader" }
+  ],
+  "blocks": [{ "type": "cards", "id": "cards-security-headers", "dir": "cards" }]
+}

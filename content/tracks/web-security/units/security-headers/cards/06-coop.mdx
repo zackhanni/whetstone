@@ -1,0 +1,22 @@
+---
+id: coop
+title: Cross-Origin-Opener-Policy — cut the link to whoever opened you
+---
+
+```http
+Cross-Origin-Opener-Policy: same-origin
+```
+
+When another site opens your page with `window.open()`, the two windows can normally keep
+references to each other. COOP puts your document in its own browsing context group unless the
+other side is same-origin, so a cross-origin opener can't reach your window, and the browser may
+isolate it in a separate process. MDN: this "prevents a set of cross-origin attacks referred to as
+XS-Leaks".
+
+- `same-origin` is the strict value (OWASP's recommendation).
+- `same-origin-allow-popups` keeps working popups you open yourself, such as OAuth or payment
+  windows that have no COOP of their own.
+- The default, with no header, is `unsafe-none`.
+
+Paired with `Cross-Origin-Embedder-Policy: require-corp` it makes the page cross-origin isolated,
+which unlocks `SharedArrayBuffer`.

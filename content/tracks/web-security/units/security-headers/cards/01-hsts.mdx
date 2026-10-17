@@ -1,0 +1,21 @@
+---
+id: hsts
+title: Strict-Transport-Security — HTTPS only, remembered
+---
+
+```http
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+```
+
+Tells the browser to use only HTTPS for this host for `max-age` seconds (here two years), so a
+typed `http://` link or a downgrade attempt never goes out in plain text.
+
+- **Only counts over HTTPS.** Browsers ignore it on an `http://` response, so an attacker in the
+  middle can't add or shorten it.
+- **First-visit gap.** It takes effect after one secure response. The very first `http://` request
+  is still exposed.
+- **`preload` closes that gap.** Browsers ship a list of HSTS hosts (hstspreload.org). Listing
+  requires `max-age` of at least `31536000` (one year), `includeSubDomains` and `preload`.
+- **`includeSubDomains` covers every subdomain.** OWASP warns that a misconfigured header or a certificate
+  problem can leave users unable to reach the site until `max-age` runs out: check that no
+  subdomain still needs plain HTTP first.

@@ -1,0 +1,26 @@
+---
+id: a10-mishandling-of-exceptional-conditions
+title: A10 Mishandling of Exceptional Conditions
+---
+
+New in 2025: what the code does when something goes wrong. Unhandled exceptions, error messages
+that leak internals, multi-step operations left half-done, and **failing open** ("Not Failing
+Securely", CWE-636).
+
+```ts
+async function canEdit(userId: string, docId: string): Promise<boolean> {
+  try {
+    return await policyService.check(userId, "edit", docId);
+  } catch {
+    return true; // ❌ the policy service timed out, so everyone may edit everything
+  }
+}
+```
+
+The `catch` should return `false` and raise an alert. The same shape hides in config: a missing
+secret defaulted to `""` (the `secrets-and-config` unit).
+
+OWASP's fixes: catch errors where they happen and handle them meaningfully, keep a global handler
+as a backstop, roll a failed transaction back as a whole ("failing closed"), show users errors
+that reveal nothing internal, and put limits on resources: "Nothing in information technology
+should be limitless."

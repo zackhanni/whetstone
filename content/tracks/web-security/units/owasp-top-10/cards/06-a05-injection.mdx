@@ -1,0 +1,22 @@
+---
+id: a05-injection
+title: A05 Injection
+---
+
+Untrusted input sent to an interpreter as part of a command or query: SQL, NoSQL, OS command,
+LDAP. **XSS is in this category too** (the `xss` unit), as input interpreted by the browser.
+
+```ts
+// ❌ db.query(`SELECT * FROM users WHERE email = '${email}'`)
+const { rows } = await db.query("SELECT * FROM users WHERE email = $1", [email]); // node-postgres
+
+// ❌ exec(`convert ${file} out.png`) — a shell parses `file`
+spawn("convert", [file, "out.png"]); // an argument list; no shell involved
+```
+
+OWASP's preferred fix is an API that keeps data out of the interpreter's code entirely:
+parameterised queries, and argument arrays instead of shell strings. An ORM helps until someone
+reaches for its raw-query helper with string interpolation. Identifiers (table or column names)
+can't be parameterised or escaped, so map user choices to an allow-list instead.
+
+LLM prompt injection is related, but OWASP tracks it in a separate list, the LLM Top 10.

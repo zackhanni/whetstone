@@ -1,0 +1,23 @@
+---
+id: corp
+title: Cross-Origin-Resource-Policy — who may embed your files
+---
+
+```http
+Cross-Origin-Resource-Policy: same-site
+```
+
+Set on a **resource** (an image, a script, a JSON file), not on the page that loads it. It tells the
+browser to block other sites from loading it with a `no-cors` request: an `<img>`, a `<script>`,
+or `fetch(url, { mode: "no-cors" })`.
+
+| Value | Who may load it |
+| --- | --- |
+| `same-origin` | only pages on exactly your origin |
+| `same-site` | your origin and sibling subdomains |
+| `cross-origin` | anyone (what a public CDN or embeddable widget needs) |
+
+It closes a gap CORS doesn't: CORS controls *reading* responses through `fetch`, but `no-cors`
+loads such as `<img>` and `<script>` happen without it. Useful for private, per-user files, and
+it's how a cross-origin resource opts in to being loaded by a page that sends
+`Cross-Origin-Embedder-Policy: require-corp`.

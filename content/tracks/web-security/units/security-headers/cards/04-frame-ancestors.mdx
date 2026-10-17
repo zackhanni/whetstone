@@ -1,0 +1,21 @@
+---
+id: frame-ancestors
+title: frame-ancestors vs X-Frame-Options — who may frame you
+---
+
+```http
+Content-Security-Policy: frame-ancestors 'none'
+X-Frame-Options: DENY
+```
+
+Both stop other sites loading your page in an invisible frame and tricking users into clicking it
+(clickjacking).
+
+- **`frame-ancestors`** is the modern control: `'none'`, `'self'`, or a list of hosts allowed to
+  embed you. When a policy with `frame-ancestors` is enforced, the CSP spec says
+  `X-Frame-Options` "will be ignored". Next.js and OWASP describe it as superseding the old header.
+- **`X-Frame-Options`** (`DENY` or `SAMEORIGIN`) is the fallback for browsers too old for CSP's
+  directive. Sending both is harmless.
+
+Two `frame-ancestors` traps: it **doesn't fall back to `default-src`** (even `default-src 'none'`
+allows framing), and it's **ignored in a `<meta>` tag**, so send it as a header.
