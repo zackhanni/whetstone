@@ -1,0 +1,76 @@
+---
+id: from-ci-to-deploy
+title: From checks to a deploy — stages, environments and short-lived credentials
+---
+
+A pipeline is a set of stages, each a gate for the next: **check** (lint, types, tests) →
+**build** once → **deploy to a pre-production environment** → **deploy to production**. Here
+is the production end of one, triggered by a merge to `main` (it passes `actionlint` 1.7.12):
+
+```yaml
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://shop.example.com
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/deploy-production
+          aws-region: eu-west-1
+      - run: npm ci
+      - run: npm run deploy
+```
+
+Line by line:
+
+- **`needs: test`** — `deploy` waits for `test` and is skipped if it fails.
+- **`concurrency` with `cancel-in-progress: false`** — one deploy at a time, and a newer merge
+  waits instead of killing a deploy halfway.
+- **`environment: production`** — the job declares which GitHub *environment* it deploys to.
+  An environment can hold its own secrets and variables, visible only to jobs that reference
+  it, and protection rules that must pass before the job even reaches a runner: required
+  reviewers, a wait timer, or "only `main` may deploy here". Check your plan, though: on a
+  **private** repository, GitHub Free has no environments at all, Pro and Team add environment
+  secrets, variables and branch restrictions, and required reviewers and wait timers need
+  Enterprise.
+- **`permissions` per job** — `test` gets read-only access; only `deploy` gets `id-token: write`.
+- **`id-token: write` + OIDC** — instead of storing a long-lived cloud access key as a secret,
+  the job asks GitHub for a short-lived OpenID Connect token and exchanges it with the cloud
+  provider for temporary credentials. The cloud side trusts only tokens whose claims match
+  what you configured — for example a subject of
+  `repo:acme/shop:environment:production` — so a workflow on another branch or repository
+  can't assume the production role. Without `id-token: write` the job can't request the token
+  at all.
+
+### Previews in the same picture
+
+Platforms like Vercel run their own pipeline per push: every non-production branch or PR gets
+a **preview deployment** with its own URL, built with Preview-scoped variables, and a merge to
+the production branch builds production. GitHub Actions then only has to gate quality — or
+not even that: a platform can run your check command as part of its build, so a failing check
+fails the deployment without spending any Actions minutes.

@@ -1,0 +1,291 @@
+{
+  "schemaVersion": 3,
+  "slug": "environments-and-ci-cd",
+  "title": "Environments & CI/CD: from a commit to production",
+  "skills": ["infrastructure", "ci-cd", "github-actions", "deployments"],
+  "difficulty": "core",
+  "estimatedMinutes": 50,
+  "objectives": [
+    "Explain what differs between local, preview, staging and production — config, secrets and data — and keep preview deployments off the production database",
+    "Read a GitHub Actions workflow — `on`, jobs, steps, `needs`, `permissions`, `environment` — and say what runs, in what order, with which access",
+    "Predict whether a workflow runs from its `branches`, `paths`/`paths-ignore` filters and PR activity, and what `concurrency` does to a newer run",
+    "Estimate a private repository's billed minutes (each job rounds up to a whole minute) and cut CI cost without losing coverage",
+    "Order a release that needs a schema change, and say what a rollback does and doesn't undo"
+  ],
+  "sources": [
+    { "title": "GitHub docs: Workflow syntax for GitHub Actions", "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax" },
+    { "title": "GitHub docs: Events that trigger workflows", "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows" },
+    { "title": "GitHub docs: Deployments and environments", "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments" },
+    { "title": "GitHub docs: OpenID Connect", "url": "https://docs.github.com/en/actions/concepts/security/openid-connect" },
+    { "title": "GitHub docs: OpenID Connect reference", "url": "https://docs.github.com/en/actions/reference/security/oidc" },
+    { "title": "GitHub docs: GitHub Actions billing", "url": "https://docs.github.com/en/billing/concepts/product-billing/github-actions" },
+    { "title": "GitHub docs: Actions runner pricing", "url": "https://docs.github.com/en/billing/reference/actions-runner-pricing" },
+    { "title": "GitHub docs: Troubleshooting required status checks", "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks" },
+    { "title": "Vercel docs: Environments", "url": "https://vercel.com/docs/deployments/environments" },
+    { "title": "Vercel docs: Environment variables", "url": "https://vercel.com/docs/environment-variables" },
+    { "title": "Vercel docs: Instant Rollback", "url": "https://vercel.com/docs/instant-rollback" },
+    { "title": "Playwright docs: Continuous Integration", "url": "https://playwright.dev/docs/ci" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-ci-cd", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-ci-cd",
+      "questions": [
+        {
+          "id": "preview-db",
+          "prompt": "Someone set the Preview scope's `DATABASE_URL` to production's. A PR adds a column, and the app runs migrations when it starts. When does production's schema change?",
+          "options": [
+            { "id": "on-preview", "text": "As soon as the PR's preview deployment starts — before review, and whether or not it's ever merged" },
+            { "id": "on-merge", "text": "When the PR is merged and production redeploys" },
+            { "id": "never", "text": "Never — preview deployments connect read-only" },
+            { "id": "on-promote", "text": "Only if someone promotes that preview to production" }
+          ],
+          "answer": "on-preview",
+          "explanation": "A preview is a full deployment of the PR's code with the Preview scope's variables. If those point at production, the unreviewed code — migration included — runs against production the moment the preview boots. Nothing about \"preview\" is read-only; that's a property of the credentials you give it. Give previews their own database so they're safe to break."
+        },
+        {
+          "id": "env-var-change",
+          "prompt": "You rotate an API key by editing the variable in Vercel's **Production** scope. When does the live site start using the new key?",
+          "options": [
+            { "id": "next-deploy", "text": "From the next production deployment — existing deployments keep the value they were built with" },
+            { "id": "immediately", "text": "Immediately; environment variables are read on every request" },
+            { "id": "cache", "text": "Once the CDN cache expires" },
+            { "id": "preview-first", "text": "After a preview deployment has used it successfully" }
+          ],
+          "answer": "next-deploy",
+          "explanation": "Vercel's docs: changes to environment variables \"are not applied to previous deployments, they only apply to new deployments\". So a rotation is: add the new key, redeploy, confirm, then revoke the old key — revoke first and production keeps calling with a dead key. The same snapshot rule is why an Instant Rollback brings back the *old* deployment's variables."
+        },
+        {
+          "id": "jobs-parallel",
+          "prompt": "A workflow has three jobs — `lint`, `test`, `deploy` — and none uses `needs`. What happens on a push?",
+          "options": [
+            { "id": "parallel", "text": "All three start at once on separate runners; `deploy` doesn't wait for, or care about, the tests" },
+            { "id": "in-order", "text": "They run top to bottom, and a failure stops the later ones" },
+            { "id": "deploy-last", "text": "GitHub runs `deploy` last because it's named like a deploy" },
+            { "id": "one-runner", "text": "They run one after another on the same runner, sharing files" }
+          ],
+          "answer": "parallel",
+          "explanation": "Jobs run in parallel by default, each on a fresh machine with nothing shared. Order and gating come only from `needs`: with `needs: [lint, test]`, `deploy` waits for both and is skipped if either fails. Without it, a broken build deploys while its tests are still running."
+        },
+        {
+          "id": "permissions-none",
+          "prompt": "In a **private** repository, a job declares only `permissions: { id-token: write }`. Its first step is `actions/checkout`. What happens?",
+          "options": [
+            { "id": "checkout-fails", "text": "Checkout fails: naming one permission sets every unnamed one — `contents` included — to `none`" },
+            { "id": "works-implied", "text": "It works; `id-token: write` implies read access to the repository" },
+            { "id": "works-no-token", "text": "It works; checkout doesn't use the `GITHUB_TOKEN`" },
+            { "id": "oidc-fails", "text": "Checkout works, but the OIDC step fails because `contents` wasn't granted" }
+          ],
+          "answer": "checkout-fails",
+          "explanation": "\"If you specify the access for any of these permissions, all of those that are not specified are set to `none`.\" GitHub's own OIDC example therefore lists `contents: read` next to `id-token: write`, with the comment that checkout needs it. Least privilege is the goal — but it means listing everything the job does use."
+        },
+        {
+          "id": "oidc",
+          "prompt": "Why deploy to a cloud account with OIDC (`id-token: write`) rather than an `AWS_SECRET_ACCESS_KEY` repository secret?",
+          "options": [
+            { "id": "short-lived", "text": "The job gets short-lived credentials, and the cloud role only trusts tokens whose claims — repo, branch, environment — match; there's no long-lived key to leak" },
+            { "id": "faster", "text": "OIDC deploys are faster because no secret has to be decrypted" },
+            { "id": "secrets-blocked", "text": "Repository secrets aren't available to deploy jobs" },
+            { "id": "encrypts", "text": "OIDC encrypts the access key so logs can't show it" }
+          ],
+          "answer": "short-lived",
+          "explanation": "OIDC lets a workflow \"exchange short-lived tokens directly from your cloud provider\". The provider checks the token's claims against the role's trust policy — e.g. a subject of `repo:acme/shop:environment:production` — so another repo, or a branch that isn't allowed to deploy, can't assume the role, and nothing long-lived sits in your secrets to be exfiltrated or forgotten. Secrets *are* available to deploy jobs; the problem is that a static key works from anywhere until someone rotates it."
+        },
+        {
+          "id": "required-check-skipped",
+          "prompt": "`ci.yml` has `on.pull_request.paths: ['src/**']`, and its `test` check is **required** by branch protection. A PR changes only `README.md`. What does the PR show?",
+          "options": [
+            { "id": "pending", "text": "`test` stuck at \"Waiting for status to be reported\" — the PR can't merge" },
+            { "id": "skipped-pass", "text": "`test` marked skipped, which counts as passing" },
+            { "id": "runs-anyway", "text": "`test` runs anyway, because required checks ignore path filters" },
+            { "id": "not-required", "text": "Nothing — GitHub drops the requirement for that PR" }
+          ],
+          "answer": "pending",
+          "explanation": "When a filter skips the whole workflow, no status is ever reported, so a required check stays Pending and blocks the merge. GitHub's guidance is to avoid requiring workflows that can be skipped. The skipped-counts-as-passing behaviour belongs to a *job* skipped by an `if:` condition, which reports Success — the way to filter inside a required workflow."
+        },
+        {
+          "id": "cut-minutes",
+          "prompt": "A private repo is running out of Actions minutes. Which change cuts minutes **without** losing test coverage on any commit that reaches `main`?",
+          "options": [
+            { "id": "cancel-superseded", "text": "A per-branch `concurrency` group with `cancel-in-progress: true` on the PR workflow, so superseded pushes stop" },
+            { "id": "paths-on-required", "text": "`paths-ignore: ['**/*.md']` on the workflow that provides the required check" },
+            { "id": "more-jobs", "text": "Split the one 3-minute job into six parallel 30-second jobs" },
+            { "id": "push-only", "text": "Run CI only on `push` to `main`, not on pull requests" }
+          ],
+          "answer": "cancel-superseded",
+          "explanation": "An older commit's result is worthless once a newer push exists, so cancelling it saves minutes and loses nothing. Path-filtering the required check blocks Markdown-only PRs at Pending. Six 30-second jobs bill 6 minutes (each job rounds up) against 3, plus six rounds of setup. Push-only CI means broken code is found after it's on `main`."
+        },
+        {
+          "id": "deploy-order",
+          "prompt": "A change adds a nullable column and code that writes to it. How should it ship?",
+          "options": [
+            { "id": "together", "text": "Migration and code in one PR; the pipeline runs a migrate job and the deploy job `needs` it" },
+            { "id": "code-first", "text": "Deploy the code first; run the migration once the code is live" },
+            { "id": "separate-later", "text": "Code now, migration in a follow-up PR next week" },
+            { "id": "from-preview", "text": "Let the PR's preview deployment run the migration, so it's done before merge" }
+          ],
+          "answer": "together",
+          "explanation": "Code that writes a column must never be live before the column exists, so the migration runs first, gated by `needs`, and — because the change is additive — the old code still running during the migration is unaffected. One PR keeps the pair reviewed and deployed together. Running migrations from a preview is the shared-database trap. (The Databases track's `databases/migrations` unit covers expand/contract for changes that aren't additive.)"
+        },
+        {
+          "id": "rollback-schema",
+          "prompt": "Release 42 dropped a column that release 41 still reads. Release 42 has a bug, so you use Vercel's Instant Rollback to 41. What happens?",
+          "options": [
+            { "id": "breaks", "text": "41 serves traffic again and errors wherever it reads the dropped column — a rollback doesn't touch the database" },
+            { "id": "db-restored", "text": "Vercel restores the database to its state at release 41" },
+            { "id": "refused", "text": "Vercel refuses, because the schema has changed since 41" },
+            { "id": "rebuilt", "text": "41 is rebuilt against the current schema and works" }
+          ],
+          "answer": "breaks",
+          "explanation": "Instant Rollback repoints the production domains at the old build without rebuilding it; nothing outside that build is restored, and Vercel's docs remind you that databases and external APIs have kept changing. So rollback is only safe when the old build works with the current schema — what expand/contract guarantees and a destructive migration breaks. Here, roll forward with a fix. Also remember that after a rollback Vercel stops auto-assigning production domains until you undo it, so your fix won't go live on merge alone."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-ci-cd",
+      "prompts": [
+        {
+          "id": "needs-deploy",
+          "prompt": "Make `deploy` wait for `test`, and be skipped if it fails.",
+          "code": [
+            "jobs:",
+            "  test:",
+            "    runs-on: ubuntu-latest",
+            "    steps:",
+            "      - run: npm test",
+            "  deploy:",
+            "    ___: test",
+            "    runs-on: ubuntu-latest",
+            "    steps:",
+            "      - run: npm run deploy"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["needs"] }],
+          "explanation": "`needs` is the only thing that orders jobs; without it they all start at once. If a needed job fails or is skipped, every job that needs it is skipped too (unless it uses `always()` in its `if:`)."
+        },
+        {
+          "id": "concurrency-pr",
+          "prompt": "One concurrency slot per branch or PR, and a new push cancels the run that's executing.",
+          "code": [
+            "concurrency:",
+            "  group: ci-${{ github.___ }}",
+            "  cancel-in-progress: ___"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["ref"] },
+            { "id": "b2", "accept": ["true"] }
+          ],
+          "explanation": "`github.ref` is `refs/heads/<branch>` for a push and `refs/pull/<n>/merge` for a PR, so each gets its own group and two PRs never cancel each other. By default a newer run only replaces the *waiting* one; `cancel-in-progress: true` also stops the one executing — right for checks, wrong for a production deploy."
+        },
+        {
+          "id": "paths-ignore-key",
+          "prompt": "Skip this workflow for PRs that change nothing outside `docs/`.",
+          "code": [
+            "on:",
+            "  pull_request:",
+            "    ___:",
+            "      - \"docs/**\""
+          ],
+          "blanks": [{ "id": "c1", "accept": ["paths-ignore"] }],
+          "explanation": "`paths-ignore` skips the run only when **every** changed file matches; a PR touching `docs/` and `src/` still runs. `docs/**` (not `docs/*`) is needed to cover subfolders, because `*` stops at `/`. And don't put this on a workflow whose check is required — a skipped workflow leaves that check Pending."
+        },
+        {
+          "id": "pr-types-edited",
+          "prompt": "Also run when a PR is retargeted onto a new base branch.",
+          "code": [
+            "on:",
+            "  pull_request:",
+            "    branches: [main]",
+            "    types: [opened, synchronize, reopened, ___]"
+          ],
+          "blanks": [{ "id": "d1", "accept": ["edited"] }],
+          "explanation": "Without `types`, `pull_request` runs for `opened`, `synchronize` and `reopened`. A changed base branch arrives as `edited` — so does a retitled PR — which is why a stacked PR retargeted onto `main` doesn't run main's CI until something is pushed. Listing `types` replaces the defaults, so keep the three you still want."
+        },
+        {
+          "id": "permissions-oidc",
+          "prompt": "Let this job check out the code and request an OIDC token, and nothing else.",
+          "code": [
+            "permissions:",
+            "  contents: ___",
+            "  id-token: ___"
+          ],
+          "blanks": [
+            { "id": "e1", "accept": ["read"] },
+            { "id": "e2", "accept": ["write"] }
+          ],
+          "explanation": "Any permission you don't list becomes `none`, so `contents: read` must be explicit for `actions/checkout`. `id-token: write` only lets the job fetch an OIDC token — it grants no write access to the repository."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-ci-cd",
+      "snippets": [
+        {
+          "id": "stacked-pr",
+          "code": [
+            "on:",
+            "  pull_request:",
+            "    branches: [main]",
+            "",
+            "# PR #11: feature/login     -> main",
+            "# PR #12: feature/login-ui  -> feature/login   (stacked on #11)",
+            "# A new commit is pushed to PR #12."
+          ],
+          "question": "Does this workflow run for PR #12?",
+          "answer": "No",
+          "acceptable": ["no", "it doesn't run", "no — #12 targets feature/login"],
+          "explanation": "For `pull_request`, `branches` filters on the branch the PR **targets**. #12 targets `feature/login`, so main's CI never runs on it. And when #11 merges and #12 is retargeted onto `main`, that's an `edited` event, not one of the default `opened`/`synchronize`/`reopened` — still nothing, until the next push."
+        },
+        {
+          "id": "paths-ignore-mixed",
+          "code": [
+            "on:",
+            "  pull_request:",
+            "    paths-ignore:",
+            "      - \"docs/**\"",
+            "      - \"**/*.md\"",
+            "",
+            "# The PR changes: docs/setup.md, README.md, src/login.ts"
+          ],
+          "question": "Does the workflow run?",
+          "answer": "Yes",
+          "acceptable": ["yes", "it runs", "yes — src/login.ts isn't ignored"],
+          "explanation": "`paths-ignore` skips a run only when **all** changed files match its patterns. Two of the three do, but `src/login.ts` doesn't, so it runs. (`paths` works the other way: one matching file is enough to run.)"
+        },
+        {
+          "id": "three-pushes",
+          "code": [
+            "concurrency:",
+            "  group: ci-${{ github.ref }}",
+            "  cancel-in-progress: false",
+            "",
+            "# Three pushes to the same branch, seconds apart: A, then B, then C.",
+            "# Each run takes 5 minutes."
+          ],
+          "question": "Which runs execute, and which are cancelled?",
+          "answer": "A runs; B is cancelled when C arrives; C runs after A finishes",
+          "acceptable": ["A and C run, B is cancelled", "B is cancelled", "A runs, B cancelled, C runs"],
+          "explanation": "A group allows one running and one pending run. B waits behind A; when C arrives, the pending B is cancelled and C takes its place. With `cancel-in-progress: true`, B would cancel A and C would cancel B — only C would finish. (Since May 2026, `queue: max` lets up to 100 runs wait instead, so B would run too.)"
+        },
+        {
+          "id": "billed-minutes",
+          "code": [
+            "jobs:",
+            "  lint:      # 40 s",
+            "  typecheck: # 40 s",
+            "  unit:      # 40 s",
+            "  build:     # 40 s",
+            "# Four parallel jobs on ubuntu-latest, in a private repository."
+          ],
+          "question": "How many minutes does one run take from the account's allowance?",
+          "answer": "4",
+          "acceptable": ["4 minutes", "four"],
+          "explanation": "GitHub rounds each **job** up to a whole minute, so four 40-second jobs bill 4 minutes — not the 3 that 160 seconds would round to, and not the 1 minute of wall-clock time they take in parallel. On a 2,000-minute Free allowance, 15 runs a day of this workflow is 1,800 minutes a month."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-ci-dry-run", "challengeSlug": "ci-dry-run" }
+  ]
+}
