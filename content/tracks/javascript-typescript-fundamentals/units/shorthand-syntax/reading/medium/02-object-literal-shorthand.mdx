@@ -1,0 +1,55 @@
+---
+id: object-literal-shorthand
+title: Building objects — shorthand, computed keys, spread
+---
+
+The other direction: writing objects. Four shorthands cover almost every literal you'll read.
+
+```ts
+const name = "Ada";
+const field = "email";
+
+const user = {
+  name,                     // shorthand property: name: name
+  [field]: "ada@example.com", // computed key: the VALUE of field, so the key is "email"
+  greet() {                 // shorthand method: greet: function () { … }
+    return `Hi, ${this.name}`;
+  },
+};
+```
+
+The one you'll see most in React code is a computed key inside a spread — one change handler
+for a whole form:
+
+```tsx
+const onChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+  setForm({ ...form, [e.target.name]: e.target.value });
+```
+
+Without the brackets, `{ e.target.name: … }` isn't a valid key at all — it's a `SyntaxError`.
+With them, an input named `"email"` updates `form.email`.
+
+## Spread: later keys win, positions stay
+
+`{ ...a, ...b }` copies `a`'s own enumerable properties, then `b`'s. When both have a key, the
+**last value wins**, and the key stays where it first appeared:
+
+```js
+const defaults = { theme: "light", fontSize: 14 };
+const saved = { fontSize: 16 };
+
+{ ...defaults, ...saved };   // { theme: "light", fontSize: 16 } — saved wins
+{ ...saved, ...defaults };   // { fontSize: 14, theme: "light" } — defaults win: wrong order
+```
+
+Two details make spread pleasant in literals:
+
+- Spreading `null` or `undefined` into an **object** adds nothing — no error. (Into an
+  **array**, `[...null]` throws: arrays spread only iterables.)
+- So does spreading `false`, which gives you a conditional key:
+  `{ ...base, ...(isAdmin && { role: "admin" }) }`.
+
+The one detail that bites: a key that is **present with the value `undefined`** still counts.
+`{ ...defaults, ...{ theme: undefined } }` gives `theme: undefined` — the default is overwritten.
+That happens when a form or a partial update writes `undefined` into a field; filter those keys
+out, or merge field by field with `??`.

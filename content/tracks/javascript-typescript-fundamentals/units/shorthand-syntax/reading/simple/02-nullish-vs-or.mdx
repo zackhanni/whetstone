@@ -1,0 +1,42 @@
+---
+id: nullish-vs-or
+title: ?? vs || — which values fall back
+---
+
+Both operators give you a fallback. They disagree about *when*:
+
+- `a || b` uses `b` when `a` is **falsy**: `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined`,
+  `NaN`.
+- `a ?? b` uses `b` only when `a` is **`null` or `undefined`** ("nullish").
+
+```js
+const settings = { volume: 0, nickname: "", muted: false };
+
+settings.volume || 50;      // 50 — the user muted, and you turned it back up
+settings.volume ?? 50;      // 0
+
+settings.nickname || "anon"; // "anon"
+settings.nickname ?? "anon"; // ""
+
+settings.muted || true;     // true — "not muted" became "muted"
+settings.muted ?? true;     // false
+```
+
+The question to ask: **is `0`, `""` or `false` a real answer here?** For a volume, a count, a
+price, a page number, a flag — yes, so use `??`. `||` is right when every falsy value really
+means "nothing useful", like turning an empty search box into "show everything".
+
+## The assignment forms
+
+Each operator has a version that assigns only when the fallback would kick in:
+
+```js
+options.retries ??= 3;    // options.retries ?? (options.retries = 3)
+options.title ||= "Untitled";
+user.session &&= refresh(user.session); // only if there is a session
+```
+
+Like the plain operators, they short-circuit: when the fallback isn't needed, the right-hand side
+isn't evaluated, so `refresh` above never runs for a missing session. And `x ??= y` is not quite
+`x = x ?? y`: when `x` already has a value, **no assignment happens at all** — a setter isn't
+called, and MDN notes that even `const x = 1; x ??= 2;` doesn't throw.

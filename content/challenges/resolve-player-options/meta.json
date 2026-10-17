@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "resolve-player-options",
+  "title": "Fill in the player's defaults without losing 0, \"\" or false",
+  "skills": ["javascript", "syntax"],
+  "difficulty": "core",
+  "estimatedMinutes": 15,
+  "runner": "in-browser",
+  "entry": "options.ts",
+  "acceptanceCriteria": [
+    "Missing or `null` `retry` settings fall back to 3 attempts and 500 ms instead of throwing",
+    "`volume: 0` stays `0`",
+    "`label: \"\"` stays empty, and `label: null` becomes `\"Untitled\"`",
+    "A field present as `undefined` gets its default, and `autoplay: false` stays `false`",
+    "`signalReady` calls `onReady` when it's set, and does nothing when it isn't"
+  ]
+}

@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 3,
+  "slug": "shorthand-syntax",
+  "title": "Shorthand syntax and what it expands to",
+  "skills": ["javascript", "syntax"],
+  "difficulty": "intro",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Expand `?.`, `?.[]` and `?.()` into explicit checks, and predict where a chain short-circuits and where it still throws",
+    "Choose `??` or `||` (and `??=`, `||=`, `&&=`) by asking whether `0`, `\"\"` or `false` is a real value",
+    "Predict destructuring results: defaults apply only to `undefined`, renames, rest, nested patterns, and `null` throwing",
+    "Write object literals with computed keys and spread, and predict which value wins when spread keys overlap — including a key present as `undefined`"
+  ],
+  "sources": [
+    { "title": "MDN: Optional chaining (?.)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Optional_chaining" },
+    { "title": "MDN: Nullish coalescing operator (??)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing" },
+    { "title": "MDN: Logical OR assignment (||=)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Logical_OR_assignment" },
+    { "title": "MDN: Destructuring", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring" },
+    { "title": "MDN: Spread syntax (...)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax" },
+    { "title": "MDN: Object initializer", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Object_initializer" },
+    { "title": "TSConfig reference: exactOptionalPropertyTypes", "url": "https://www.typescriptlang.org/tsconfig/#exactOptionalPropertyTypes" }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-shorthand",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-shorthand",
+      "questions": [
+        {
+          "id": "expand-optional-chain",
+          "prompt": "What does `user?.profile?.avatarUrl` evaluate to?",
+          "options": [
+            { "id": "nullish-steps", "text": "`undefined` if `user` or `user.profile` is `null`/`undefined`; otherwise `user.profile.avatarUrl`" },
+            { "id": "and-chain", "text": "Exactly what `user && user.profile && user.profile.avatarUrl` gives" },
+            { "id": "try-catch", "text": "`user.profile.avatarUrl`, or `undefined` if any part of the access throws" },
+            { "id": "null", "text": "`null` if any step is missing, otherwise `user.profile.avatarUrl`" }
+          ],
+          "answer": "nullish-steps",
+          "explanation": "Each `?.` checks the value to its left for `null`/`undefined` and, if so, ends the whole expression as `undefined`. The `&&` chain differs: it stops at *any* falsy value and returns that value — `null`, `\"\"`, `0` — not `undefined`. `?.` catches nothing: a getter that throws still throws. And it never produces `null`."
+        },
+        {
+          "id": "optional-call",
+          "prompt": "A component calls `props.onChange?.(value)`. What does the `?.` guard against?",
+          "options": [
+            { "id": "missing-callback", "text": "`onChange` being `null` or `undefined` — then the call is skipped and the expression is `undefined`" },
+            { "id": "not-function", "text": "`onChange` not being a function, whatever its value" },
+            { "id": "props-missing", "text": "Both `props` and `onChange` being missing" },
+            { "id": "throws-inside", "text": "Errors thrown inside `onChange`" }
+          ],
+          "answer": "missing-callback",
+          "explanation": "`fn?.()` checks only for `null`/`undefined`. If `onChange` is a string, the call still throws \"is not a function\" (MDN). It guards only the value immediately to its left, so a missing `props` needs `props?.onChange?.(value)`. And it has nothing to do with errors thrown by the callback itself."
+        },
+        {
+          "id": "computed-key",
+          "prompt": "In `setForm({ ...form, [e.target.name]: e.target.value })`, what do the square brackets do?",
+          "options": [
+            { "id": "computed", "text": "Use the *value* of `e.target.name` (say `\"email\"`) as the key" },
+            { "id": "same", "text": "Nothing — `{ e.target.name: value }` means the same thing" },
+            { "id": "array", "text": "Wrap the value in a one-element array" },
+            { "id": "optional", "text": "Make the key optional, like `?:` in a type" }
+          ],
+          "answer": "computed",
+          "explanation": "A computed key evaluates the expression in brackets and uses the result as the property name, so one handler updates whichever field fired. Without brackets, `{ e.target.name: value }` isn't a valid key — it's a `SyntaxError`. Because the spread comes first, the new key overrides the old value of that field."
+        },
+        {
+          "id": "volume-or",
+          "prompt": "`const volume = saved.volume || 0.8;` — users who muted the player (`volume: 0`) find it un-muted after a reload. Which line fixes it?",
+          "options": [
+            { "id": "nullish", "text": "`const volume = saved.volume ?? 0.8;`" },
+            { "id": "unary", "text": "`const volume = +saved.volume || 0.8;`" },
+            { "id": "and", "text": "`const volume = saved.volume && 0.8;`" },
+            { "id": "or-zero", "text": "`const volume = saved.volume || 0.8 || 0;`" }
+          ],
+          "answer": "nullish",
+          "explanation": "`||` falls back on every falsy value, and `0` is falsy, so a muted player gets 0.8. `??` falls back only on `null`/`undefined`. Converting to a number first changes nothing (0 is still falsy); `&&` inverts the logic (it returns 0.8 for every non-zero saved volume, and `undefined` when nothing was saved); and an extra `|| 0` can never run, because `0.8` is truthy."
+        },
+        {
+          "id": "nullish-assign-when",
+          "prompt": "`settings.theme ??= detectTheme();` — when does `detectTheme()` run?",
+          "options": [
+            { "id": "only-nullish", "text": "Only when `settings.theme` is `null` or `undefined`; otherwise neither the call nor the assignment happens" },
+            { "id": "always-discarded", "text": "Always — the result is just discarded when `theme` is already set" },
+            { "id": "falsy", "text": "Whenever `settings.theme` is falsy, including `\"\"`" },
+            { "id": "always-assigns", "text": "Only when needed, but `settings.theme` is always reassigned (to itself, when set)" }
+          ],
+          "answer": "only-nullish",
+          "explanation": "Logical assignment short-circuits: `x ??= y` behaves like `x ?? (x = y)`. When `x` is already non-nullish, the right side isn't evaluated and no assignment happens — MDN notes this is why `||=` on a truthy getter/setter property never calls the setter. Falling back on any falsy value is `||=`."
+        },
+        {
+          "id": "paginate-null",
+          "prompt": "Given `function paginate({ page = 1 } = {}) { return page; }`, which call throws?",
+          "options": [
+            { "id": "null", "text": "`paginate(null)`" },
+            { "id": "none", "text": "`paginate()`" },
+            { "id": "undefined", "text": "`paginate(undefined)`" },
+            { "id": "empty", "text": "`paginate({})`" }
+          ],
+          "answer": "null",
+          "explanation": "Parameter defaults, like destructuring defaults, replace only `undefined`. `paginate()` and `paginate(undefined)` get `{}` and then `page = 1`; `paginate({})` gets `page = 1` directly. `paginate(null)` keeps `null` as the argument, and destructuring `null` is a `TypeError`. If `null` can arrive (JSON, a database row), normalise it first: `paginate(options ?? {})`."
+        },
+        {
+          "id": "mixing-nullish-or",
+          "prompt": "After adding `const label = user.nickname || user.name ?? \"Anonymous\";` the whole module fails to load. Why?",
+          "options": [
+            { "id": "syntax", "text": "`??` can't be combined with `||` or `&&` without parentheses — it's a `SyntaxError`" },
+            { "id": "runtime", "text": "It throws a `TypeError` at runtime when `user.nickname` is `null`" },
+            { "id": "precedence", "text": "It loads fine; `??` simply binds tighter than `||`" },
+            { "id": "undefined-user", "text": "`??` throws when its left side is `undefined`" }
+          ],
+          "answer": "syntax",
+          "explanation": "The language refuses to pick a precedence between `??` and `||`/`&&`, so `a || b ?? c` is a parse error and nothing in the file runs. Say which you meant: `(user.nickname || user.name) ?? \"Anonymous\"`. (Usually what you meant is `user.nickname ?? user.name ?? \"Anonymous\"` — chaining `??` with itself is allowed.)"
+        },
+        {
+          "id": "bang-vs-optional",
+          "prompt": "A reviewer suggests replacing `props.onSelect?.(item)` with `props.onSelect!(item)` \"to make it stricter\". What changes when `onSelect` isn't passed?",
+          "options": [
+            { "id": "crash", "text": "It now throws: `!` is erased at compile time, so the emitted code is a plain call" },
+            { "id": "same", "text": "Nothing — `!` and `?.` both skip the call when the value is missing" },
+            { "id": "runtime-error-message", "text": "It throws a clearer \"onSelect is required\" error from TypeScript at runtime" },
+            { "id": "compile", "text": "It fails to compile, because `onSelect` is optional" }
+          ],
+          "answer": "crash",
+          "explanation": "TypeScript's non-null assertion `!` only tells the compiler \"this isn't null\" and disappears from the output — the code becomes `props.onSelect(item)` and throws `TypeError: props.onSelect is not a function`. TypeScript adds no runtime checks of its own, and it accepts the `!` on an optional prop: that's exactly what `!` is for. `?.` is the one that checks at runtime."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-shorthand",
+      "prompts": [
+        {
+          "id": "safe-call",
+          "prompt": "Call the optional `onSelect` callback only if the parent passed one.",
+          "code": "props.onSelect___(item);",
+          "blanks": [{ "id": "c1", "accept": ["?."] }],
+          "explanation": "`fn?.(args)` skips the call (and evaluates to `undefined`) when `fn` is `null`/`undefined`. It doesn't check that `fn` is a function, and it doesn't guard `props`."
+        },
+        {
+          "id": "keep-zero",
+          "prompt": "Default the volume to 0.8, but keep a saved volume of `0` (muted).",
+          "code": "const volume = saved.volume ___ 0.8;",
+          "blanks": [{ "id": "k1", "accept": ["??"] }],
+          "explanation": "`??` falls back only on `null`/`undefined`. `||` would treat `0` as missing and un-mute the player."
+        },
+        {
+          "id": "destructure-rename-rest",
+          "prompt": "Read `id` as `userId`, default `role` to `\"viewer\"`, and collect every other field in `profile`.",
+          "code": "const { id: ___, role = ___, ...___ } = user;",
+          "blanks": [
+            { "id": "r1", "accept": ["userId"] },
+            { "id": "r2", "accept": ["\"viewer\""] },
+            { "id": "r3", "accept": ["profile"] }
+          ],
+          "explanation": "In a pattern, `key: name` renames (it isn't a type annotation), `= value` is a default that applies only when the property is `undefined`, and `...name` gathers the remaining own enumerable properties into a new object. The rest element must come last."
+        },
+        {
+          "id": "computed-update",
+          "prompt": "One change handler for every input in the form: copy `form`, then set the field named by the input.",
+          "code": "setForm({ ...form, ___: e.target.value });",
+          "blanks": [{ "id": "u1", "accept": ["[e.target.name]", "[e.currentTarget.name]"] }],
+          "explanation": "Square brackets make a computed key: the input's `name` attribute (`\"email\"`, `\"phone\"`) becomes the property name. The spread comes first so the new value wins over the copied one."
+        },
+        {
+          "id": "lazy-init",
+          "prompt": "Compute the value for `key` only if the cache has nothing (`null`/`undefined`) stored for it.",
+          "code": "cache[key] ___ compute(key);",
+          "blanks": [{ "id": "l1", "accept": ["??="] }],
+          "explanation": "`a ??= b` assigns only when `a` is nullish, and short-circuits: `compute(key)` doesn't run at all when a value is cached. `||=` would also recompute a cached `0` or `\"\"`. (For a `Map` cache, use `has`/`get`/`set` — the collections unit covers why.)"
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-shorthand",
+      "snippets": [
+        {
+          "id": "chain-side-effect",
+          "code": [
+            "let i = 0;",
+            "const order = null;",
+            "const sku = order?.items[i++].sku;",
+            "console.log(sku, i);"
+          ],
+          "question": "What is logged?",
+          "answer": "undefined 0",
+          "acceptable": ["undefined, 0"],
+          "explanation": "No `?.` follows `items`, yet nothing throws: when `order?.` meets `null`, it short-circuits the *whole* chain to its right — `.items`, `[i++]` and `.sku` never run, so `i` is never incremented. Wrapping part of the chain in parentheses would end that protection: `(order?.items)[i++]` throws."
+        },
+        {
+          "id": "or-vs-nullish",
+          "code": [
+            "const s = { volume: 0, nickname: \"\", muted: false };",
+            "console.log(s.volume || 50, s.volume ?? 50);",
+            "console.log(s.muted || true, s.muted ?? true);"
+          ],
+          "question": "What are the two lines logged?",
+          "answer": "50 0, then true false",
+          "acceptable": ["50 0 / true false", "\"50 0\" and \"true false\""],
+          "explanation": "`||` replaces every falsy value, so the muted volume becomes 50 and `muted: false` becomes `true` — the opposite of what the user saved. `??` replaces only `null`/`undefined`, so it keeps `0` and `false`. (`s.nickname || \"anon\"` would likewise discard a deliberately empty nickname.)"
+        },
+        {
+          "id": "default-skips-null",
+          "code": [
+            "const res = JSON.parse('{\"pageSize\": null}');",
+            "const { pageSize = 20, sort = \"newest\" } = res;",
+            "console.log(pageSize, sort);"
+          ],
+          "question": "What is logged?",
+          "answer": "null newest",
+          "acceptable": ["null, \"newest\"", "null newest"],
+          "explanation": "A destructuring default applies only when the value is `undefined` — missing (`sort`) or explicitly `undefined`. `pageSize` is present with the value `null`, which counts as a value, so the default is skipped. APIs and databases send `null` all the time; use `res.pageSize ?? 20` when `null` should also fall back."
+        },
+        {
+          "id": "spread-undefined-overwrites",
+          "code": [
+            "const defaults = { theme: \"light\", fontSize: 14 };",
+            "const saved = { fontSize: 16, theme: undefined }; // a cleared form field",
+            "console.log({ ...defaults, ...saved });"
+          ],
+          "question": "What is logged?",
+          "answer": "{ theme: undefined, fontSize: 16 }",
+          "acceptable": ["theme is undefined and fontSize is 16"],
+          "explanation": "Spread copies every own enumerable property, including one whose value is `undefined`, so the later `theme: undefined` overwrites `\"light\"`. The key keeps its first position. TypeScript doesn't flag this unless `exactOptionalPropertyTypes` is on. Merge field by field (`saved.theme ?? defaults.theme`) or drop `undefined` keys before spreading."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-shorthand",
+      "challengeSlug": "resolve-player-options"
+    }
+  ]
+}
