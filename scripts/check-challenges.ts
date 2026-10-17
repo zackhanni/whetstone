@@ -19,7 +19,7 @@ const ROOT = process.cwd();
 const CHALLENGES = path.join(ROOT, "content", "challenges");
 
 type Variant = "starter" | "solution";
-type Assertion = { status: string; fullName: string };
+type Assertion = { status: string; fullName: string; failureMessages?: string[] };
 type FileReport = { name: string; message?: string; assertionResults: Assertion[] };
 
 /** Run every grader against one variant; return the per-file results. */
@@ -38,7 +38,14 @@ async function runVariant(variant: Variant): Promise<FileReport[]> {
         "--reporter=json",
         `--outputFile=${outputFile}`,
       ],
-      { cwd: ROOT, env: { ...process.env, CHALLENGE_VARIANT: variant }, encoding: "utf8" },
+      {
+        cwd: ROOT,
+        // NODE_ENV must be "test". Vitest only sets it when it's unset, and Vercel builds run with
+        // NODE_ENV=production — which loads React's production build, where act() doesn't exist,
+        // so every Testing Library render throws "React.act is not a function".
+        env: { ...process.env, NODE_ENV: "test", CHALLENGE_VARIANT: variant },
+        encoding: "utf8",
+      },
     );
     // Vitest exits non-zero whenever a test fails, which the starter run expects, so the exit
     // code means nothing here. A missing report means Vitest itself broke, or never started
@@ -56,6 +63,9 @@ async function runVariant(variant: Variant): Promise<FileReport[]> {
     await fs.rm(tmp, { recursive: true, force: true });
   }
 }
+
+/** The first line of a test's error, so a build log alone shows why it failed. */
+const firstLine = (messages: string[] = []) => (messages[0] ?? "no error message").split("\n")[0];
 
 /** The challenge folder a test file belongs to. */
 const slugOf = (file: string) => path.relative(CHALLENGES, file).split(path.sep)[0];
@@ -114,7 +124,7 @@ async function main() {
     if (all("starter").length > 0 && failed("starter").length === 0)
       fail(`${slug}: the starter passes every test — the planted bug is gone or untested`);
     for (const a of failed("solution"))
-      fail(`${slug}: solution.tsx fails "${a.fullName}"`);
+      fail(`${slug}: solution.tsx fails "${a.fullName}" — ${firstLine(a.failureMessages)}`);
 
     if (problems === before)
       console.log(

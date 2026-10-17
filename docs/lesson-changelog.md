@@ -15,6 +15,8 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — authoring system — the first gated Vercel build failed every React challenge: Vercel builds with `NODE_ENV=production`, which loads React's production build (no `act()`); the headless grader now forces `NODE_ENV=test` and prints each failure's first error line. Also: a unit whose questions were all removed now completes (PR #14 review).
+
 - 2026-10-17 — authoring system — new `cards` block for reference units (no schema bump: an added block type), derived Card/Lesson/Full depth, question-less units complete on visit; Vercel builds now run `pnpm check`.
 
 - 2026-10-17 — schema v3 — units gain `objectives` + `sources`; challenge `prompt` removed and README title/checklist/Running moved into meta.json; multi-line `code` as arrays; `content/catalog.json`; all content swept (README text kept, 2 duplicate blank answers pruned).

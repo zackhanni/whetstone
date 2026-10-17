@@ -12,6 +12,11 @@ describe("nextEntry", () => {
     expect(entry).toMatchObject({ visited: true, completed: true, total: 0 });
   });
 
+  it("completes a half-done unit whose questions were all removed (it became cards-only)", () => {
+    const halfDone = nextEntry(undefined, 2, 3, 0);
+    expect(nextEntry(halfDone, 0, 0, 1)).toMatchObject({ answered: 0, total: 0, completed: true });
+  });
+
   it("reverts to in progress when questions are added after completion", () => {
     const done = nextEntry(undefined, 3, 3, 0);
     expect(nextEntry(done, 0, 5, 1)).toMatchObject({ answered: 3, total: 5, completed: false });

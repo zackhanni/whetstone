@@ -278,7 +278,8 @@ way, prefer _teaching the validator_ over adding a paragraph here.
 1. **Every quiz question / fill-blank / predict-output item has an `explanation`.** Wrong answers teach.
 2. **Every reading tier — Simple, Medium, Complex — has at least one example.** This is what
    makes "read up on the go" work, and forces you to nail the simple version first.
-3. **Difficulty escalates down a unit's `blocks` array.** Reading first; the challenge last.
+3. **Difficulty escalates down a unit's `blocks` array.** Teaching blocks (readings, cards)
+   first; the challenge last.
 4. **Every challenge ships with passing tests + a reference solution.** A challenge whose
    solution doesn't pass its own tests is a bug, not a lesson.
 

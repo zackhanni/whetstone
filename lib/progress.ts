@@ -111,7 +111,10 @@ export function nextEntry(
   total: number,
   now: number,
 ): UnitProgress {
-  const effTotal = clampCount(total) || prev?.total || 0;
+  // Always the unit's CURRENT question count, even 0: falling back to the stored total would
+  // leave a unit that became cards-only stuck incomplete. (The only caller, UnitView, always
+  // passes the real count.)
+  const effTotal = clampCount(total);
   // High-water mark so refreshing mid-drill doesn't lose progress — but never above the
   // *current* total, so removing questions can't leave a stale >100% / falsely-complete entry.
   const bestAnswered = Math.min(effTotal, Math.max(prev?.answered ?? 0, clampCount(answered)));
