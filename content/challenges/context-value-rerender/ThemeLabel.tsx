@@ -1,4 +1,4 @@
-import { memo, useRef } from "react";
+import { memo, Profiler, useRef } from "react";
 import { useThemeContext } from "./theme-context";
 
 // memo()'d and reads only `theme` from context. With no props, a parent re-render alone
@@ -7,13 +7,24 @@ import { useThemeContext } from "./theme-context";
 // belongs in Settings.tsx (give the context value a stable identity).
 export const ThemeLabel = memo(function ThemeLabel() {
   const { theme } = useThemeContext();
+
+  // How the count works (not part of the fix): React calls a <Profiler>'s `onRender` once per
+  // committed render of the tree inside it, so StrictMode's extra development render isn't
+  // counted twice. `onRender` runs after the DOM update, so it writes the number straight into
+  // the <span>, which React renders empty and never touches.
   const renders = useRef(0);
-  renders.current += 1;
+  const output = useRef<HTMLParagraphElement>(null);
+  function countRender() {
+    renders.current += 1;
+    if (output.current) output.current.textContent = String(renders.current);
+  }
 
   return (
-    <div>
-      <p data-testid="label-renders">{renders.current}</p>
-      <p data-testid="theme">{theme}</p>
-    </div>
+    <Profiler id="ThemeLabel" onRender={countRender}>
+      <div>
+        <p data-testid="label-renders" ref={output} />
+        <p data-testid="theme">{theme}</p>
+      </div>
+    </Profiler>
   );
 });
