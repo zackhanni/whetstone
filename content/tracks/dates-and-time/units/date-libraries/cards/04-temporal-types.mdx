@@ -1,0 +1,23 @@
+---
+id: temporal-types
+title: Temporal: one type per kind of value
+---
+
+`Temporal` is the built-in replacement for `Date`, and its main idea is separate types for the
+separate things this track has been telling apart:
+
+- **`Temporal.Instant`**: an exact moment, no zone (what `Date` really is).
+- **`Temporal.ZonedDateTime`**: an instant plus an IANA zone; day arithmetic keeps the wall
+  clock across DST.
+- **`Temporal.PlainDate`**: a date-only value. No time, no zone, no off-by-one.
+- `PlainDateTime`, `PlainTime`, `Duration`, and `Temporal.Now` for "now" and "today".
+
+```js
+Temporal.PlainDate.from("2026-02-28").add({ days: 1 }).toString(); // "2026-03-01"
+Temporal.PlainDate.from("2026-02-30");                             // throws RangeError
+Temporal.ZonedDateTime.from("2026-03-07T09:00[America/New_York]")
+  .add({ days: 1 }).toString(); // "2026-03-08T09:00:00-04:00[America/New_York]"
+Temporal.Now.plainDateISO("Asia/Tokyo");                           // today, in Tokyo
+```
+
+Objects are immutable, and invalid strings throw instead of rolling over.
