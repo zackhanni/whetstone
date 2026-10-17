@@ -1,0 +1,24 @@
+---
+id: redirects-permanent-or-temporary
+title: 301, 302, 307, 308 — permanent or temporary, method kept or not
+---
+
+All four send the new URL in `Location`. Two questions pick the code:
+
+| | `POST` may become `GET` | method and body kept |
+| --- | --- | --- |
+| **permanent** (update your links) | `301` | `308` |
+| **temporary** (keep using the old URL) | `302` | `307` |
+
+The left column is history: browsers came to re-send a redirected `POST` as a `GET`, and RFC 9110
+now allows it. The Fetch standard, which browsers and Node's `fetch` follow, does exactly that —
+after a 301 or 302, a `POST` becomes a body-less `GET` (other methods are kept). `307` and `308`
+exist to promise the method survives.
+
+```http
+HTTP/1.1 308 Permanent Redirect
+Location: /v2/uploads
+```
+
+For a `GET`, 301 and 308 behave alike, as do 302 and 307. For anything else, choose from the right
+column — or `303` when you *want* a `GET` (next card).

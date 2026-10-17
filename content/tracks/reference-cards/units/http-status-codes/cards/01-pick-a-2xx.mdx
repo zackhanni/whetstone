@@ -1,0 +1,20 @@
+---
+id: pick-a-2xx
+title: 200, 201, 204 — pick a 2xx by what you send back
+---
+
+| Code | Send it when | Body |
+| --- | --- | --- |
+| `200 OK` | the response carries the result: a GET's resource, an action's outcome | yes |
+| `201 Created` | the request made a new resource; point at it with `Location` | usually the new resource |
+| `204 No Content` | it worked and there's nothing to add: a save, a `DELETE` | **none, by definition** |
+
+RFC 9110 says a 204 "cannot contain content". Node's `http` server drops a body you write with
+one, and a client that always parses JSON throws on it:
+
+```js
+const res = await fetch("/api/cart/items/9", { method: "DELETE" }); // 204
+await res.json(); // SyntaxError: Unexpected end of JSON input
+```
+
+Check `res.status === 204` before parsing.

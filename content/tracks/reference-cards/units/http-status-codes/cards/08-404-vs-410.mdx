@@ -1,0 +1,17 @@
+---
+id: not-found-vs-gone
+title: 404 vs 410 — and 404 as a quiet 403
+---
+
+- **`404 Not Found`** — nothing here now. It says nothing about whether that's temporary or
+  permanent.
+- **`410 Gone`** — it was here, it was removed on purpose, and it isn't coming back. It asks
+  crawlers and link-checkers to drop their links. Use it only when you know the removal is
+  permanent; otherwise 404.
+
+RFC 9110 also lets a server answer **404 instead of 403** to hide that a resource exists.
+Answering 404 for another tenant's `/invoices/981`, exactly as for an id that doesn't exist, stops
+a caller from probing which ids are real.
+
+Both codes are heuristically cacheable: without `Cache-Control`, a 404 for something created a
+minute later may still be served from a cache.

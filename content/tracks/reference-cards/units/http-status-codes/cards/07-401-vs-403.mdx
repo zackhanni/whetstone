@@ -1,0 +1,20 @@
+---
+id: unauthorized-vs-forbidden
+title: 401 vs 403 — "who are you?" vs "no"
+---
+
+- **`401 Unauthorized`** — the request lacks **valid credentials**: no token, an expired one, a
+  bad signature. Despite the name it means *unauthenticated*. The server **must** send
+  `WWW-Authenticate` naming a scheme the client can use, and retrying with new credentials can
+  succeed.
+- **`403 Forbidden`** — the server understood the request and **refuses**. If credentials were
+  sent, they're valid but not enough: a signed-in non-admin calling an admin route. Re-sending
+  the same credentials won't help, so a client shouldn't retry automatically.
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer
+```
+
+Client rule of thumb: on 401, refresh the token or send the user to sign in; on 403, show "you
+don't have access" and keep the session.

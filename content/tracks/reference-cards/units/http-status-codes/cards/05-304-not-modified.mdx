@@ -1,0 +1,21 @@
+---
+id: not-modified
+title: 304 Not Modified — "use the copy you already have"
+---
+
+A 304 answers a **conditional** `GET` or `HEAD`: the client holds a cached copy and asks for the
+resource only if it changed. If it hasn't, the server sends headers and no body, and the client
+reuses its copy.
+
+```http
+GET /app.js HTTP/1.1
+If-None-Match: "v42"
+
+HTTP/1.1 304 Not Modified
+ETag: "v42"
+```
+
+The validator came from an earlier `200`: its `ETag` goes back in `If-None-Match`, its
+`Last-Modified` in `If-Modified-Since`. A 304 is not an error, and the 304s in the DevTools
+network panel are the cache working. When the browser's own cache made the request conditional,
+`fetch` hands your code the stored `200`, not the 304.

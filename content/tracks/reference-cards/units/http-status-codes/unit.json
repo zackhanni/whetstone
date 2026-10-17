@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 3,
+  "slug": "http-status-codes",
+  "title": "HTTP status codes: which one, and why",
+  "skills": ["http", "status-codes"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "objectives": [
+    "Choose `200`, `201` or `204` for a success, and `301`, `302`, `303`, `307` or `308` for a redirect by asking: is it permanent, and may the method change?",
+    "Tell `401` from `403`, `400` from `422` and `415`, and `404` from `410` by the symptom",
+    "Pick `409` for a state conflict and `429` for rate limiting, and tell `502`, `503` and `504` apart by which hop failed",
+    "Recall the header each code relies on: `Location`, `WWW-Authenticate`, `Allow`, `Retry-After`, and the `If-None-Match` behind a `304`"
+  ],
+  "sources": [
+    { "title": "RFC 9110 (HTTP Semantics): §15 Status Codes", "url": "https://www.rfc-editor.org/rfc/rfc9110.html#name-status-codes" },
+    { "title": "RFC 6585: §4 429 Too Many Requests", "url": "https://www.rfc-editor.org/rfc/rfc6585.html#section-4" },
+    { "title": "MDN: HTTP response status codes", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status" },
+    { "title": "MDN: Redirections in HTTP", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Redirections" },
+    { "title": "WHATWG Fetch Standard: HTTP-redirect fetch", "url": "https://fetch.spec.whatwg.org/#http-redirect-fetch" },
+    { "title": "NestJS docs: Validation", "url": "https://docs.nestjs.com/techniques/validation" },
+    { "title": "curl man page: --json", "url": "https://curl.se/docs/manpage.html#--json" }
+  ],
+  "blocks": [
+    { "type": "cards", "id": "cards-status-codes", "dir": "cards" },
+    {
+      "type": "quiz",
+      "id": "quiz-which-code",
+      "questions": [
+        {
+          "id": "unauthenticated",
+          "prompt": "`GET /me` arrives with an expired access token. Which response?",
+          "options": [
+            { "id": "401", "text": "`401 Unauthorized`, with a `WWW-Authenticate` header" },
+            { "id": "403", "text": "`403 Forbidden` — the user isn't allowed in" },
+            { "id": "400", "text": "`400 Bad Request` — the token is bad input" },
+            { "id": "200-null", "text": "`200 OK` with `{ \"user\": null }`" }
+          ],
+          "answer": "401",
+          "explanation": "No valid credentials means 401, whatever the name suggests: \"Unauthorized\" here means *unauthenticated*. RFC 9110 requires a `WWW-Authenticate` header on it, and it tells the client that new credentials — a refreshed token — can succeed. A 403 says the credentials were fine but not enough, so the client has no reason to refresh. A `200` with a null user hides the failure from every client and monitor that keys off the status code."
+        },
+        {
+          "id": "authenticated-but-not-allowed",
+          "prompt": "A signed-in user with a valid token calls `DELETE /admin/users/7`, but only admins may delete users. Which response?",
+          "options": [
+            { "id": "403", "text": "`403 Forbidden`" },
+            { "id": "401", "text": "`401 Unauthorized` — they aren't authorized for this" },
+            { "id": "405", "text": "`405 Method Not Allowed` — `DELETE` isn't allowed for them" },
+            { "id": "400", "text": "`400 Bad Request`" }
+          ],
+          "answer": "403",
+          "explanation": "The server knows who they are, and the answer is still no: 403. The name \"Unauthorized\" is the trap — 401 means the credentials are missing or invalid, so the client would refresh its token and try again for nothing. 405 is about the resource (it doesn't support `DELETE` for anyone), not about who's asking. If the record's very existence should stay secret, RFC 9110 lets you answer 404 instead."
+        },
+        {
+          "id": "delete-nothing-to-return",
+          "prompt": "`DELETE /cart/items/9` succeeds. The client has already removed the row from its own state and needs nothing back. Which response fits best?",
+          "options": [
+            { "id": "204", "text": "`204 No Content`" },
+            { "id": "200-empty", "text": "`200 OK` with an empty body" },
+            { "id": "410", "text": "`410 Gone` — the item is gone now" },
+            { "id": "202", "text": "`202 Accepted`" }
+          ],
+          "answer": "204",
+          "explanation": "204 is defined for exactly this: it worked, there's nothing to add, and there's no body by definition, so a client can check for it and skip parsing. A 200 with an empty body works, but RFC 9110 expects a 200 to carry content; 204 is the code that says there is none. 410 describes a *later* `GET` of the deleted URL, not the delete that just succeeded. 202 means \"accepted, not done yet\", and this delete is done."
+        },
+        {
+          "id": "permanently-removed",
+          "prompt": "A summer promotion page has been taken down for good. There's no replacement, and you want search engines to drop their links to it. What should `GET /promo/summer-2025` return?",
+          "options": [
+            { "id": "410", "text": "`410 Gone`" },
+            { "id": "404", "text": "`404 Not Found`" },
+            { "id": "301-home", "text": "`301 Moved Permanently` to the home page" },
+            { "id": "403", "text": "`403 Forbidden`" }
+          ],
+          "answer": "410",
+          "explanation": "410 means removed on purpose, for good. RFC 9110 names this exact case (\"limited-time, promotional services\") and says 410 asks for remote links to be removed. A 404 isn't wrong when you don't know the removal is permanent, but it doesn't say so. Redirecting to the home page tells clients the promotion *moved* there, which it didn't. 403 claims the page exists and this client may not see it."
+        },
+        {
+          "id": "malformed-json",
+          "prompt": "A request body arrives as `{\"name\": \"Ada\",` — the JSON is cut off. Which response?",
+          "options": [
+            { "id": "400", "text": "`400 Bad Request`" },
+            { "id": "422", "text": "`422 Unprocessable Content`" },
+            { "id": "415", "text": "`415 Unsupported Media Type`" },
+            { "id": "500", "text": "`500 Internal Server Error` — the parser threw" }
+          ],
+          "answer": "400",
+          "explanation": "Syntax the server can't parse is the textbook 400. 422 explicitly requires the syntax to be *correct*: it's for well-formed content that can't be acted on. 415 is about the declared format (`Content-Type`), which is fine here. A 500 is what you get when `JSON.parse` throws and nothing catches it — a server bug that reports the client's mistake as your outage."
+        },
+        {
+          "id": "wrong-content-type",
+          "prompt": "A JSON-only endpoint that checks `Content-Type` first receives `curl -d '{\"name\":\"Ada\"}' https://api.example.com/users` (no `-H`). Which response?",
+          "options": [
+            { "id": "415", "text": "`415 Unsupported Media Type`" },
+            { "id": "406", "text": "`406 Not Acceptable`" },
+            { "id": "422", "text": "`422 Unprocessable Content`" },
+            { "id": "400-malformed", "text": "`400 Bad Request` — the JSON is malformed" }
+          ],
+          "answer": "415",
+          "explanation": "`curl -d` labels its data `application/x-www-form-urlencoded`, so the endpoint sees a format it doesn't accept: 415. 406 is the mirror image — the client's `Accept` asks for a response format the server can't produce. 422 presumes the server understood the content type. And the JSON itself is fine; only the label is wrong, which `--json` (curl 7.82+) or `-H 'Content-Type: application/json'` fixes."
+        },
+        {
+          "id": "semantically-invalid",
+          "prompt": "`POST /bookings` sends `Content-Type: application/json` and the well-formed body `{\"start\":\"2026-05-10\",\"end\":\"2026-05-01\"}`. Which code describes the problem most precisely?",
+          "options": [
+            { "id": "422", "text": "`422 Unprocessable Content`" },
+            { "id": "400-only", "text": "`400 Bad Request` — the only code for invalid input" },
+            { "id": "409", "text": "`409 Conflict`" },
+            { "id": "415", "text": "`415 Unsupported Media Type`" }
+          ],
+          "answer": "422",
+          "explanation": "The type is understood and the syntax is correct; the content just can't be carried out. That is RFC 9110's definition of 422. A 400 isn't wrong (it's the broad fallback, and NestJS's `ValidationPipe` uses it by default), but it's not the only code for invalid input, and 422 says more. 409 would mean the booking clashes with the *current state*, such as a slot that's already taken; this body is invalid against any state. 415 is for a format the server doesn't accept."
+        },
+        {
+          "id": "lost-update",
+          "prompt": "Two editors open document 12 at `version: 7`. The first saves, so it's now at version 8. The second sends `PUT /docs/12` with `\"version\": 7` in the body. Which response?",
+          "options": [
+            { "id": "409", "text": "`409 Conflict`" },
+            { "id": "412", "text": "`412 Precondition Failed`" },
+            { "id": "422", "text": "`422 Unprocessable Content`" },
+            { "id": "200", "text": "`200 OK` — last write wins" }
+          ],
+          "answer": "409",
+          "explanation": "The body is valid; it clashes with the resource's current state, and the client can fix that by reloading, merging and resubmitting. That's 409, ideally with both versions in the response. 412 is the right code when the condition travels in a header (`If-Match: \"v7\"`), but here it's in the body. 422 would mean the body is wrong in itself. Silently accepting the write overwrites the first editor's work — the lost update that the version check exists to prevent."
+        },
+        {
+          "id": "rate-limited",
+          "prompt": "Your API allows 100 requests per minute per API key. One key sends its 101st request inside the minute. Which response?",
+          "options": [
+            { "id": "429", "text": "`429 Too Many Requests`, with `Retry-After`" },
+            { "id": "503", "text": "`503 Service Unavailable`" },
+            { "id": "403", "text": "`403 Forbidden`" }
+          ],
+          "answer": "429",
+          "explanation": "429 (RFC 6585) is rate limiting: this client sent too many requests and should come back later, and `Retry-After` says when. 503 means the server can't serve *anyone* right now, which sends the wrong signal to every client and dashboard. 403 says the request is refused however slowly it's sent, so the client can't tell that waiting would fix it."
+        },
+        {
+          "id": "post-redirect-get",
+          "prompt": "A checkout form `POST`s to `/checkout`. On success the browser should land on `/orders/42`, and refreshing that page must not place the order again. Which redirect?",
+          "options": [
+            { "id": "303", "text": "`303 See Other`" },
+            { "id": "307", "text": "`307 Temporary Redirect`" },
+            { "id": "308", "text": "`308 Permanent Redirect`" },
+            { "id": "301", "text": "`301 Moved Permanently`" }
+          ],
+          "answer": "303",
+          "explanation": "303 tells the client to fetch the result with a `GET`, so `/orders/42` is a page that reloads safely: the Post/Redirect/Get pattern. 307 and 308 promise to keep the method and body, so the browser would re-`POST` the order to `/orders/42`. 301 claims `/checkout` itself has moved for good, which is false, even though a browser would follow it with a `GET`. A 302 also works in browsers, which turn a `POST` into a `GET` after a 302, but 303 is the code that means \"go `GET` this\" for every method and every client."
+        },
+        {
+          "id": "permanent-move-keeps-post",
+          "prompt": "`POST /v1/uploads` is moving permanently to `/v2/uploads`. Old clients that follow the redirect must still upload their file there. Which code?",
+          "options": [
+            { "id": "308", "text": "`308 Permanent Redirect`" },
+            { "id": "301", "text": "`301 Moved Permanently`" },
+            { "id": "307", "text": "`307 Temporary Redirect`" },
+            { "id": "303", "text": "`303 See Other`" }
+          ],
+          "answer": "308",
+          "explanation": "Permanent *and* method-preserving is 308. After a 301, the Fetch standard (browsers and Node's `fetch`) re-sends a `POST` as a `GET` with no body, so the upload is lost. 307 keeps the method but says the move is temporary, so clients keep calling `/v1`. 303 switches to `GET` on purpose."
+        },
+        {
+          "id": "which-hop-timed-out",
+          "prompt": "A reverse proxy with a 60-second upstream timeout sits in front of your Node API. A report query hangs, and after 60 seconds the client gets an error from the proxy. Which code?",
+          "options": [
+            { "id": "504", "text": "`504 Gateway Timeout`" },
+            { "id": "502", "text": "`502 Bad Gateway`" },
+            { "id": "503", "text": "`503 Service Unavailable`" },
+            { "id": "408", "text": "`408 Request Timeout`" }
+          ],
+          "answer": "504",
+          "explanation": "The proxy waited for the upstream and gave up: 504. A 502 means the proxy *got* something back and it was invalid — the app crashed or dropped the connection. 503 means a server is temporarily unable to serve (overload, maintenance), not that a request was slow. 408 is the other direction: a server that stopped waiting for the *client* to finish sending its request."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-status-headers",
+      "prompts": [
+        {
+          "id": "created-location",
+          "prompt": "`POST /orders` created order 42. Which header tells the client where the new order lives?",
+          "code": ["HTTP/1.1 201 Created", "___: /orders/42"],
+          "blanks": [
+            { "id": "header", "accept": ["Location"] }
+          ],
+          "explanation": "RFC 9110: the resource a 201 created is identified by its `Location` header (or, with no `Location`, by the request's own URI). The same header carries the target of every redirect."
+        },
+        {
+          "id": "unauthorized-challenge",
+          "prompt": "A 401 must name the authentication scheme the client should use.",
+          "code": ["HTTP/1.1 401 Unauthorized", "___: Bearer"],
+          "blanks": [
+            { "id": "header", "accept": ["WWW-Authenticate"] }
+          ],
+          "explanation": "RFC 9110 makes it a MUST: a 401 carries `WWW-Authenticate` with at least one challenge, so the client knows how to authenticate. Its request-side partner is `Authorization`."
+        },
+        {
+          "id": "method-not-allowed-allow",
+          "prompt": "A 405 must list the methods the resource does support.",
+          "code": ["HTTP/1.1 405 Method Not Allowed", "___: GET, PUT, DELETE"],
+          "blanks": [
+            { "id": "header", "accept": ["Allow"] }
+          ],
+          "explanation": "RFC 9110: an origin server MUST send `Allow` with a 405. Without it, the client knows what failed but not what would work."
+        },
+        {
+          "id": "rate-limit-retry-after",
+          "prompt": "Tell a rate-limited client to wait two minutes before trying again.",
+          "code": ["HTTP/1.1 429 Too Many Requests", "___: ___"],
+          "blanks": [
+            { "id": "header", "accept": ["Retry-After"] },
+            { "id": "value", "accept": ["120"] }
+          ],
+          "explanation": "`Retry-After` takes either a number of seconds or an HTTP date; two minutes is `120`. The same header works on a 503 to say how long the outage should last."
+        },
+        {
+          "id": "conditional-get-304",
+          "prompt": "The browser has `/app.js` cached with `ETag: \"v42\"` and revalidates it. Fill in the request header that carries the ETag, and the status code the server answers with when the file hasn't changed.",
+          "code": ["GET /app.js HTTP/1.1", "___: \"v42\"", "", "HTTP/1.1 ___"],
+          "blanks": [
+            { "id": "header", "accept": ["If-None-Match"] },
+            { "id": "status", "accept": ["304", "304 Not Modified"] }
+          ],
+          "explanation": "The `ETag` from an earlier `200` goes back in `If-None-Match`; if it still matches, the server answers `304 Not Modified` with no body, and the client reuses its copy. (`Last-Modified` pairs with `If-Modified-Since` the same way.)"
+        }
+      ]
+    }
+  ]
+}

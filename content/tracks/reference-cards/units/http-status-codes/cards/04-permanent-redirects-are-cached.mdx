@@ -1,0 +1,21 @@
+---
+id: permanent-redirects-are-cached
+title: 301 and 308 stick — permanent redirects are cacheable by default
+---
+
+RFC 9110 makes `301` and `308` **heuristically cacheable**: with no `Cache-Control` or `Expires`, a
+browser or CDN may store the redirect and follow it again without asking your server. Ship a
+wrong permanent redirect and clients that cached it keep going to the wrong place — the old URL
+is never requested, so your fix can't reach them until their copy expires or is cleared.
+
+- Trying out a new redirect? Start with `302` or `307`; switch to permanent once it's right.
+- Want a permanent redirect you can still change? Give it an explicit lifetime:
+
+```http
+HTTP/1.1 301 Moved Permanently
+Location: https://example.com/docs/
+Cache-Control: max-age=3600
+```
+
+`302` and `307` are not heuristically cacheable: a client stores them only when you add caching
+headers.
