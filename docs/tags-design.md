@@ -177,7 +177,7 @@ list below is where new roots should go, so that each authoring session doesn't 
 
 | Root (slug) | For tracks like | Re-parent when it lands |
 | --- | --- | --- |
-| `languages` → `javascript`, `typescript` — **landed** with `javascript-typescript-fundamentals` | JS & TS fundamentals, Async JS & Timing, Dates & Time | `async` (today under `frontend` only) gains `javascript` as a parent |
+| `languages` → `javascript`, `typescript` — **landed** with `javascript-typescript-fundamentals` | JS & TS fundamentals, Async JS & Timing, Dates & Time | `async` gains `javascript` as a parent — **done** with `async-javascript` (and `AbortController` gains `async`) |
 | `web` | HTTP & APIs, Next.js & the Network, CORS/caching | `http` (today under `backend` only) gains `web` |
 | `security` | Web Security (XSS, CSP, CSRF, OWASP) | `auth` gains `security` |
 | `testing` | Testing & Quality (Vitest, Playwright) | — |

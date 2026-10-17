@@ -92,7 +92,7 @@ export const TAXONOMY: TagNode[] = [
 
   // frontend → areas
   { slug: "react", label: "React", parents: ["frontend"] },
-  { slug: "async", label: "Async & Timing", parents: ["frontend"] },
+  { slug: "async", label: "Async & Timing", parents: ["frontend", "javascript"] },
   {
     slug: "state-management",
     label: "State Management",
@@ -176,7 +176,7 @@ export const TAXONOMY: TagNode[] = [
   {
     slug: "AbortController",
     label: "AbortController",
-    parents: ["data-fetching"],
+    parents: ["data-fetching", "async"],
   },
 
   // state-management
@@ -255,6 +255,10 @@ export const TAXONOMY: TagNode[] = [
   { slug: "date-libraries", label: "Date Libraries", parents: ["dates"] },
   // Intl formats numbers, lists and plural rules too, so it sits under the language, not under dates.
   { slug: "intl", label: "Intl", parents: ["javascript"] },
+
+  // ── async-javascript ──
+  { slug: "event-loop", label: "Event Loop", parents: ["async"] },
+  { slug: "promises", label: "Promises & async/await", parents: ["async"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

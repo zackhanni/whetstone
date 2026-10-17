@@ -82,12 +82,34 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ⬜ Optimistic updates + rollback (`onMutate` + context)
   - ⬜ Loading/error/empty states, `isPending` vs `isFetching`
   - ⬜ TanStack Router — typed routes, loaders, search-param state
-- ⬜ **Async JavaScript & Timing**
-  - ⬜ **Synchronous vs asynchronous** (blocking vs non-blocking), the event loop, macro vs micro tasks
-  - ⬜ **`setTimeout` / `setInterval`** — the handle, `clearTimeout`, why timers leak in components
-  - ⬜ Debounce vs throttle — build both, know which one autosave wants
-  - ⬜ Promises, `async/await`, `Promise.all` vs `allSettled`, error propagation
-  - ⬜ Cancellation — `AbortController`, stale-response ordering ("last write wins" bugs)
+- 🔨 **Async JavaScript & Timing** (`async-javascript`) — the framework-free language mechanics
+  under the React units. `debounced-input-and-autosave` keeps the timer handle in a ref, unmount
+  cleanup and the debounce-vs-throttle _choice_; `use-effect` keeps the `ignore` flag and abort in
+  effect cleanup. These units link back to them and don't re-teach them.
+  - ✅ **The event loop** (`event-loop`) — run-to-completion, one turn = one task → drain every
+    microtask → maybe render; predicting the order of sync code, `setTimeout(0)`, `.then`,
+    `queueMicrotask` and the code after `await`; why a long task or a self-requeuing microtask
+    freezes input and paint, and chunking work; which orderings are host-specific (`setImmediate`,
+    `process.nextTick`, `requestAnimationFrame`). Predict-heavy, no challenge.
+  - ✅ **Timers in depth** (`timers`) — the delay is a minimum, not an appointment; nested-timeout
+    clamping, background-tab throttling, the 2³¹−1 ms overflow; `setInterval` drift and overlap vs
+    a recursive `setTimeout`; the handle in the DOM vs Node (`Timeout`, `unref`,
+    `ReturnType<typeof setTimeout>`); extra arguments and `this`. Challenge:
+    `polling-loop-stops-cleanly` (no overlap, survives a failed poll, stops mid-request).
+  - ✅ **Debounce & throttle from scratch** (`debounce-and-throttle-from-scratch`) — both as plain
+    closures: trailing vs leading edge, `maxWait`, `cancel()`/`flush()`, forwarding `this` and the
+    _latest_ arguments, throttle as a debounce with `maxWait`. Challenge:
+    `debounce-throttle-from-scratch`.
+  - ✅ **Promises & async/await** (`promises-and-async-await`) — settle-once states, `then` returns a
+    new promise, where a `catch` must sit, async functions always return promises, a missing
+    `return`/`await`, sequential vs parallel `await`, `all` vs `allSettled` vs `race` vs `any`,
+    unhandled rejections (Node exits by default). Challenge: `parallel-dashboard-loader`.
+  - ✅ **Cancellation & races** (`cancellation-and-races`) — `AbortController`/`AbortSignal` threaded
+    through plain functions, `fetch` abort and `signal.reason`, `AbortSignal.timeout()` and
+    `AbortSignal.any()` (with support versions), telling `AbortError` from `TimeoutError` from a
+    real failure, last-write-wins bugs, request ids vs aborting. Challenge:
+    `latest-only-search-client`.
+  - ✅ Browser run of the four challenges (2026-10-17, in a background tab where Chrome throttles timers): every starter fails and every solution passes, except that `debounce-throttle-from-scratch`'s burst test hit Sandpack's 5 s test timeout because each throttled sleep took ~1 s. No assertion failed. Re-run it once in a visible tab. The two timing-heavy graders now wait for a condition or count calls, instead of using a fixed wall-clock window.
 - ✅ **JavaScript & TypeScript Fundamentals** (`javascript-typescript-fundamentals`, first in the catalog) — 5 units, 4 challenges. The language layer every other track assumes. Intro/core, with an advanced edge in each complex tier.
   - ✅ **Maps, Sets, objects & arrays** (`maps-sets-objects-arrays`) — choosing the collection: `has`/`get` vs `includes`/`find` cost, object keys become strings while `Map` keys keep their type (SameValueZero), prototype keys like `"constructor"`, insertion order, `size`, a `Map` serialising to `{}`, dedupe with `Set`, `Object.groupBy`/`Map.groupBy` (ES2024), `WeakMap` in one line. Challenge: index/dedupe/count/serialise an order list.
   - ✅ **Shorthand syntax** (`shorthand-syntax`) — what each shorthand expands to: `?.`/`?.[]`/`?.()` short-circuiting the whole chain, `??` vs `||` on `0`/`""`/`false`, `??=`/`||=`/`&&=`, destructuring defaults (only `undefined` triggers them), rename, rest/spread, shorthand properties/methods, computed keys. Challenge: an options resolver that loses `0`, `""` and `null`.
