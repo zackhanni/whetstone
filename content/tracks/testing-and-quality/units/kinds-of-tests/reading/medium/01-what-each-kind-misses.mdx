@@ -6,9 +6,9 @@ title: The bug each kind passes right over
 Five real bugs from the same avatar-upload feature. For each, the cheapest test that would have
 caught it — and why the cheaper ones stayed green.
 
-**1. `isAllowedImage` accepts `.GIF` but rejects `.gif`.** A unit test with both spellings catches
+**1. `isAllowedImage` accepts `.gif` but rejects `.GIF`.** A unit test with both spellings catches
 it in milliseconds. Every higher level *could* catch it too, but only if someone happened to upload
-a lowercase file in that test.
+an uppercase file in that test.
 
 **2. The handler passes the size in kilobytes; the validator expects bytes.** Each function passes
 its own unit tests — `isAllowedImage(…, 6_000_000)` is right, and the handler's unit test, with the

@@ -48,12 +48,15 @@ fails, the report reads like the broken promise.
 Node has the same shape built in, with no dependency: `node:test` plus `node:assert`.
 
 ```ts
+// cart.test.ts — node:test, Node 24
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { Cart } from "./cart.ts";
 
 describe("Cart", () => {
   it("counts the same item twice", () => {
     const cart = new Cart();
+    const tea = { sku: "tea", priceCents: 450 };
     cart.add(tea);
     cart.add(tea);
     assert.equal(cart.count("tea"), 2);
@@ -61,4 +64,6 @@ describe("Cart", () => {
 });
 ```
 
-Run it with `node --test`. Different assertion style, same three steps.
+Run it with `node --test`. Different assertion style, same three steps. Node 24 runs the `.ts` file
+by stripping its types, and unlike Vitest it needs the extension: `"./cart"` fails with
+`ERR_MODULE_NOT_FOUND`.

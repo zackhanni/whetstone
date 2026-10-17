@@ -16,6 +16,7 @@ resendLabel(now: number, lastSentAt: number): string
 
 createCodeSender({ now, send }): (email: string) => Promise<SendResult>
 // SendResult = { ok: true; sentAt: number } | { ok: false; retryInSeconds: number }
+// if `send` throws, the promise rejects with that error: no code went out
 ```
 
 `now` is a function returning epoch milliseconds (production passes `Date.now`); `send` delivers
@@ -29,4 +30,4 @@ shell that reads the real clock and passes it in.
 - `let lastSentAt` inside the factory function, not at the top of the module, gives every sender
   its own cooldown.
 - Record the send *before* awaiting the network, so a double click can't slip a second send
-  through the gap.
+  through the gap. If the network then fails, no code went out: the record shouldn't stand.

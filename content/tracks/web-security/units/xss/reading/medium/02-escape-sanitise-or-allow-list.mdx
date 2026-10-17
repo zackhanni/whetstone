@@ -26,6 +26,12 @@ function PostBody({ html }: { html: string }) {
 }
 ```
 
+As written, this works only when the component renders in a browser, because DOMPurify needs a
+DOM. A server render has none, and that includes the server pass of a `"use client"` component.
+There the `dompurify` import has no `sanitize` at all; with DOMPurify 3.4.16 on Next.js 16.2.9, a
+Server Component and a Client Component page both failed the build with
+`TypeError: … sanitize is not a function`. Sanitising on the server needs jsdom (complex tier).
+
 A home-made regex that strips `<script>` is not a sanitiser: `<img src=x onerror=...>`,
 `<svg onload=...>` and dozens of other forms get through. Use the maintained library and keep it
 patched.

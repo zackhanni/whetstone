@@ -111,6 +111,28 @@ describe("createCodeSender({ now, send })", () => {
     expect(f.sent.length).toBe(1);
   });
 
+  it("lets the user ask again at once when a send fails, and passes the failure on", async () => {
+    const f = fakes();
+    let networkDown = true;
+    const send = async (email: string) => {
+      if (networkDown) throw new Error("network down");
+      await f.send(email);
+    };
+    const requestCode = exported("createCodeSender")({ now: f.now, send });
+    let failure: unknown = null;
+    try {
+      await requestCode("ada@example.com");
+    } catch (error) {
+      failure = error;
+    }
+    // The caller has to hear about it, or the shell can't tell the user nothing was sent.
+    expect(failure instanceof Error && failure.message).toBe("network down");
+    networkDown = false;
+    const retry = await requestCode("ada@example.com"); // same instant: no cooldown to wait out
+    expect(retry.ok).toBe(true);
+    expect(f.sent.length).toBe(1);
+  });
+
   it("keeps a separate cooldown for each sender", async () => {
     const a = fakes();
     const b = fakes();

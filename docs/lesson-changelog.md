@@ -15,6 +15,7 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — PR #39/#40 review — CSP nonce bits, a correct bundle secret scan, startup config check, DOMPurify SSR note, outer ORDER BY, .GIF bug, node:test import; resend: failed send retryable.
 - 2026-10-17 — taxonomy — new `testing` root with `test-strategy`, `assertions`, `test-doubles`, `testability`, `vitest`, `coverage`, `e2e-testing` and `playwright`.
 - 2026-10-17 — testing-and-quality/what-to-test — what a test is for (fails when behaviour breaks, and only then), behaviour vs implementation assertions, pyramid vs trophy, what to prioritise and skip, and tests that can't fail.
 - 2026-10-17 — testing-and-quality/kinds-of-tests — unit, integration, component, contract, e2e and smoke defined by what's real vs replaced; which kind catches which bug; what a simulated DOM can't see; consumer-driven contracts.

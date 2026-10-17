@@ -23,6 +23,11 @@ export function proxy(request: NextRequest) {
 }
 ```
 
+The guide's nonce is a version 4 UUID: 122 random bits, since 6 of its 128 are fixed version and
+variant bits. Base64-encoding its 36-character text makes the nonce longer, not harder to guess.
+That is still unguessable in practice, but it is under the 128 random bits the spec recommends;
+`Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64")` gives the full 128.
+
 During rendering, Next.js parses the request's `Content-Security-Policy` header, pulls out the
 `'nonce-…'` value and puts it on its own framework scripts, page bundles and inline scripts
 automatically. Your code reads it only for third-party tags, with

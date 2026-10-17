@@ -11,7 +11,7 @@ import { postSendCode } from "./send-code-api";
  *   2. fix the boundary: once a full 60 s have passed, the label is "Resend code"
  *   3. fix the rounding: the label never says "Resend in 0s"
  *   4. extract and export `createCodeSender({ now, send })`, where each sender keeps its own
- *      cooldown, and have the button use one
+ *      cooldown and a failed send doesn't start it, and have the button use one
  */
 
 const COOLDOWN_MS = 60_000;
