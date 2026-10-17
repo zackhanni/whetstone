@@ -18,7 +18,7 @@ p.then((v) => console.log(v)); // first
 
 The function you pass to `new Promise` (the _executor_) runs **immediately**, synchronously.
 Only the `.then` callbacks wait, and they always run later as microtasks, even on an
-already-settled promise (the `event-loop` unit).
+already-settled promise (see [The event loop](/learn/async-javascript/event-loop)).
 
 **`then` returns a new promise**, and what your callback does decides how that new promise
 settles:

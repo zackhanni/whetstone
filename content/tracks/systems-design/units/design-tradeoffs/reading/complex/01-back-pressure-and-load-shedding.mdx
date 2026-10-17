@@ -1,0 +1,44 @@
+---
+id: back-pressure-and-load-shedding
+title: Back-pressure, bounded queues and load shedding
+---
+
+An overloaded service doesn't just get slower; it gets less useful per request. AWS's Builders'
+Library article on load shedding separates **throughput** — requests arriving per second — from
+**goodput**: the requests answered without error *and fast enough for the client to use the
+answer*. Past an inflection point, latency climbs until it passes the clients' timeout, and from
+then on the server does full work for answers nobody is waiting for. Throughput stays high;
+goodput collapses.
+
+**Load shedding** protects goodput by rejecting the excess *early and cheaply*, so the requests it
+accepts finish before their clients give up. A fast `503` — or `429` for a client over its quota —
+with `Retry-After` is a feature: the server telling callers to slow down. That signal travelling
+upstream is **back-pressure**, and it beats silently queueing their work.
+
+Queues are where overload hides. Every server has some — a framework's executor queue, the
+operating system's socket buffers, a load balancer's surge queue — and an unbounded one converts
+overload into latency until everything times out. The article's rules:
+
+- **Bound the queue, and bound the time** a request may wait in it. On dequeue, check its age and
+  drop it if its client has surely given up; working on it spends capacity the next request needs.
+- **Propagate deadlines.** If the client says how long it will wait, each hop can pass the
+  remaining time along and skip work that can't finish in time.
+- **Fail fast rather than queue at the edge.** AWS notes that its Classic Load Balancer queued
+  surges while the Application Load Balancer rejects excess traffic.
+
+Asynchronous systems get a longer-lasting version. AWS's article on queue backlogs describes
+**bimodal** behaviour: with no backlog a queue is fast; once arrivals outrun processing, every
+message waits behind the backlog. And recovery is slower than intuition says:
+
+```
+arrivals 1,000/s; consumers handle 1,200/s; consumers down for 1 hour
+backlog:     1,000/s × 3,600 s                      = 3.6 million messages
+spare rate:  1,200 − 1,000 (arrivals don't stop)    = 200/s
+drain time:  3,600,000 / 200                        = 18,000 s = 5 hours
+```
+
+A one-hour outage became six hours of late processing. The article's rule of thumb agrees:
+recovering from an hour-long outage takes double the normal capacity for another hour. Its
+defences: measure the **age** of messages, not just the count; when users want fresh data, work
+newest-first or move old messages to a separate backlog queue; and throttle each tenant, so one
+noisy producer can't build a backlog that everyone waits behind.

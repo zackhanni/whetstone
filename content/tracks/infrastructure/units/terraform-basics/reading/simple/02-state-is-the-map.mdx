@@ -1,0 +1,60 @@
+---
+id: state-is-the-map
+title: State is how Terraform knows what it owns
+---
+
+After an apply, Terraform writes **state**: a JSON snapshot that binds each address in your
+configuration to the real object it created.
+
+```text
+$ terraform state list
+local_file.motd
+random_pet.server
+
+$ terraform state show random_pet.server
+# random_pet.server:
+resource "random_pet" "server" {
+    id        = "smashing-scorpion"
+    length    = 2
+    separator = "-"
+}
+```
+
+That binding is the whole trick. Your configuration says `random_pet.server`; the provider's
+API only knows `smashing-scorpion` — or `i-0abc…`, or `db-prod-1`. State connects the two, so
+the next plan can ask the provider "does *this* object still look like this?" instead of
+guessing which object is yours.
+
+Lose the state and the binding goes with it. Move `terraform.tfstate` aside and plan again:
+
+```text
+  # local_file.motd will be created
+  # random_pet.server will be created
+Plan: 2 to add, 0 to change, 0 to destroy.
+```
+
+Both objects still exist — Terraform just no longer knows they are its own. Against a real
+cloud, that plan either fails on a name clash or quietly builds a duplicate next to the
+original, which nothing will ever clean up.
+
+Three rules follow:
+
+1. **Keep state in a remote backend** — an S3 bucket, Google Cloud Storage, Azure Storage or
+   HCP Terraform — not in `terraform.tfstate` on one laptop, and not in git. The team and CI
+   must all read and write the same map.
+2. **Let the backend lock it.** Two applies at once would read the same state and write
+   conflicting versions. With locking, the second one stops instead:
+
+   ```text
+   Error: Error acquiring the state lock
+   ...
+     Operation: OperationTypeApply
+   ```
+
+3. **Never hand-edit the file.** Change bindings with `terraform state` subcommands and the
+   `moved`, `import` and `removed` blocks, which keep the one-address-one-object mapping
+   intact.
+
+One more fact that surprises people: state stores every attribute **in plain text**,
+passwords included. `sensitive = true` on an output or variable only redacts it from CLI
+output. Treat the state bucket like a secrets store.

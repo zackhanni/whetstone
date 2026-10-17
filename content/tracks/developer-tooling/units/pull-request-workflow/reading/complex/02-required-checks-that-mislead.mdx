@@ -1,0 +1,46 @@
+---
+id: required-checks-that-mislead
+title: Required checks that pass, or block, for the wrong reason
+---
+
+A required check is a name — `build`, `test` — that must report success on the PR's latest commit.
+GitHub's troubleshooting docs list the cases where the name and the work behind it come apart.
+None of them is about your code, so they're worth recognising on sight.
+
+## Skipped counts as success
+
+"Successful check statuses are success, skipped, and neutral." A CI job that its own condition
+skips reports **Success**, and the GitHub Actions page on job conditions is explicit: it "will not
+prevent a pull request from merging, even if it is a required check." So a required `test` job guarded by a condition that
+happens to be false on this PR is a green light for code that was never tested.
+
+The same trap with job dependencies: if `deploy-preview` needs `build` and `build` fails, the
+dependent job is **skipped** — and "may not block merging". The docs' fix is to make such required
+jobs run unconditionally and check the result themselves (`always()` with `needs`, in GitHub
+Actions terms).
+
+## Not run at all blocks forever
+
+The opposite case: a workflow that doesn't start — filtered out by the paths or branches it
+watches, or by a commit message — never reports anything. A required check that never reports
+stays **pending**, and the PR shows "Waiting for status to be reported." A docs-only PR in a repo
+whose required `build` only runs when `src/**` changes can't merge, even though nothing is wrong.
+The docs' advice: "Avoid requiring workflows that can be skipped."
+
+## Other ways a required check misleads
+
+- **It must be on the latest commit.** "Checks from earlier commits don't satisfy the requirement."
+  Push one more commit and every required check starts over.
+- **Names collide.** "If a check and a commit status have the same name, both must pass when that
+  name is required" — two systems reporting `build` means two things that must be green.
+- **Anyone with write access can set a status.** Commit statuses can be posted by any person or
+  integration with write permission; when you require a check, you can pin the GitHub App expected
+  to report it, so nothing else can turn it green.
+
+## As an author, read the checks, not the colour
+
+`gh pr checks 42 --required` lists only the checks that gate the merge, with their state (`pass`,
+`fail`, `pending`, `skipping`, `cancel`). A `skipping` required check deserves a look at **why** it
+was skipped before you merge on it; a required check stuck at `pending` with no run behind it is a
+configuration problem to raise with whoever owns the workflow, not something more commits will fix.
+(How workflows, jobs and path filters are written is the Infrastructure track's CI/CD unit.)

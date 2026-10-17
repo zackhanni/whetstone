@@ -1,0 +1,49 @@
+---
+id: the-review-loop
+title: The review loop — draft, review, reply, re-request
+---
+
+## Draft first when it isn't ready
+
+A **draft** PR runs CI and shows your direction, but "draft pull requests cannot be merged, and code
+owners are not automatically requested to review them" (GitHub docs). Open one early for the
+"am I on the right track?" conversation; mark it ready when it's ready.
+
+```sh
+gh pr create --draft --fill      # open as a draft
+gh pr ready                      # mark the current branch's PR ready (requests code owners)
+gh pr ready --undo               # back to draft, where your plan supports it
+```
+
+## The three review decisions
+
+| Decision | Means |
+| --- | --- |
+| **Comment** | feedback, without approving or blocking |
+| **Approve** | ready to merge, as far as this reviewer is concerned |
+| **Request changes** | address this before merging |
+
+What *blocks* a merge is the repository's rules, not the button. GitHub's docs: Request changes "is
+purely informational and will not prevent merging unless a ruleset or classic branch protection
+rule" requires reviews. With such a rule, a write-access reviewer's Request changes blocks until
+that same person approves.
+
+## Reviewing well
+
+- Comment on lines in **Files changed** and choose **Start a review**. Those comments stay
+  **pending** — visible only to you — until you submit the review, so a review lands as one
+  notification, not twenty.
+- For a small fix, use a **suggestion**: the author can commit it with one click.
+- Say what kind of comment it is: a blocker, a question, or a take-it-or-leave-it nit.
+- From the terminal: `gh pr checkout 42` to run it, then
+  `gh pr review 42 --approve` / `--request-changes -b "…"` / `--comment -b "…"`.
+
+## Replying as the author
+
+- Push follow-up commits to the same branch; the PR updates itself.
+- Reply to each thread — "done in 3f2a1c9", or why you disagree — and resolve the threads that
+  are settled.
+- Ask for another look: `gh pr edit 42 --add-reviewer ada` adds or **re-requests** a reviewer.
+
+If the repo dismisses stale approvals, every push that changes the diff withdraws the existing
+approvals, and the PR needs approving again — so batch your fixes into one push instead of five.

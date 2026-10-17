@@ -35,7 +35,7 @@ use Context or Zustand, the gate is the same: render the server's default on the
 
 Zustand's `persist` doesn't hand you that gate: with `localStorage` it hydrates when the
 store is created, so `persist.hasHydrated()` is already `true` on the first client render
-(the `zustand-basics` unit has the details). This app gates on a mounted flag instead —
+(the [Zustand basics](/learn/state-and-data-flow/zustand-basics) unit has the details). This app gates on a mounted flag instead —
 `lib/use-mounted.ts`, `false` during hydration and `true` after — and
 `components/track-catalog.tsx` shows the unfiltered list until it flips.
 

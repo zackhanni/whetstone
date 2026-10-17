@@ -1,0 +1,73 @@
+---
+id: stash-without-surprises
+title: Stash without surprises
+---
+
+`git stash` takes your uncommitted changes, saves them as an entry on a **stack**, and resets
+the working tree to `HEAD`. `pop` reapplies the **top** entry and drops it.
+
+```sh
+git stash push -m "wip: retry logic"   # save tracked changes (staged and unstaged)
+git stash list                         # stash@{0}: On main: wip: retry logic
+git stash show -p stash@{0}            # what's in it
+git stash pop                          # apply the newest entry and drop it
+git stash apply stash@{1}              # apply a specific one and keep it
+```
+
+Two defaults to know:
+
+- **Untracked files aren't stashed.** A new file you never added stays in the working tree.
+  `git stash push -u` includes them.
+- **`pop` drops, `apply` keeps.** When the apply hits a conflict, `pop` keeps the entry too — but
+  get in the habit of `apply`, check, then `git stash drop`.
+
+## The stash that saves nothing
+
+A path-limited stash saves only changes **to those paths**. If they have none, nothing is saved —
+and the next `pop` takes whatever was already on top. A real run (Git 2.50): an old experiment is
+stashed, then you edit only `config.json` and try to stash `app.ts`:
+
+```sh
+% git stash list
+stash@{0}: On main: old experiment       # from last week: an edit to app.ts
+% git status --short
+ M config.json
+% git stash push -- app.ts               # app.ts has no changes
+No local changes to save
+% echo $?
+0
+% git stash pop
+...
+	modified:   app.ts                     # last week's experiment is back
+	modified:   config.json
+Dropped refs/stash@{0} (f58ebec…)
+```
+
+`No local changes to save` with exit code **0**, then `pop` applies a **different, older** stash
+and deletes it from the list. In an interactive session you might notice the message; in a
+script you won't:
+
+```sh
+git stash && git pull && git stash pop     # on a clean tree, pops someone else's work
+```
+
+On a clean tree, `git stash` saves nothing (exit 0), and `pop` either applies an old entry or
+fails with `No stash entries found.` By hand: read `git stash list` before you pop. In a script,
+compare the top of the stack before and after, and pop only if it changed:
+
+```sh
+before=$(git rev-parse -q --verify refs/stash || true)   # empty stack: prints nothing, exits 1
+git stash push -- app.ts
+after=$(git rev-parse -q --verify refs/stash || true)
+if [ "$before" != "$after" ]; then git stash pop; fi
+```
+
+The `|| true` matters under `set -e`: with no stash entries, `rev-parse` exits 1, and that
+failed assignment would stop the script before it stashed anything.
+
+<!--more-->
+
+**When to reach for something else.** Stash is a stack of anonymous patches that's easy to lose
+track of. For anything you'll come back to after lunch, a WIP commit on a branch is clearer:
+`git switch -c wip/retry && git commit -am "wip"`, and later `git reset --soft HEAD~1` to turn it
+back into uncommitted changes.

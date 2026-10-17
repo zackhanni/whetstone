@@ -1,0 +1,62 @@
+---
+id: no-terminal-no-passphrase
+title: No terminal, no passphrase — what prompts do without a TTY
+---
+
+Logins and key generation are **interactive**: they print a question and wait for a human at a
+terminal. Run them from somewhere that has no terminal — a cron job, a CI step, an AI agent's
+shell tool — and the question has nobody to answer it. What happens
+next depends on the program, and the dangerous case is the one that **succeeds**.
+
+## ssh-keygen takes standard input instead
+
+OpenSSH's passphrase prompt reads from the terminal. When there's no terminal, it falls back to
+**standard input** — and a script's standard input is often empty. Reproduced with OpenSSH 10.2
+on macOS, from a shell with no TTY:
+
+```sh
+% true | ssh-keygen -q -t ed25519 -f ./ci_key -C ci
+Enter passphrase for "./ci_key" (empty for no passphrase): Enter same passphrase again:
+% echo $?
+0
+% ssh-keygen -y -P "" -f ./ci_key > /dev/null && echo "opens with an empty passphrase"
+opens with an empty passphrase
+```
+
+Exit code `0`, the prompts were printed, and the key has **no passphrase**: both reads hit the
+end of input, which counts as an empty answer. Nothing in a log would tell you. Two honest
+options:
+
+- A key you'll use yourself: generate it in **your own terminal**, and type the passphrase.
+- A key for automation (a deploy key, a CI key) that genuinely can't have a passphrase: say so
+  explicitly with `-N ""`, so the next reader knows it was a decision, and protect it the way you
+  protect any secret — limited to one repo, stored in the CI secret store, never committed.
+
+## gh auth login: run it once, yourself
+
+`gh auth login`'s default flow is a browser page plus a one-time code, and its menus need
+answers. An agent or a script can't complete that for you. Do it once in your terminal; the
+token then lives in the Keychain and every later `gh` command — including ones an agent runs as
+you — uses it. For CI, skip login entirely and set `GH_TOKEN`.
+
+## git over SSH: the agent has to be unlocked already
+
+A `git push` run by a script or a tool's shell can't ask for your key's passphrase either
+(unless the tool supplies its own password dialog). It works when the key is already unlocked
+in the agent, or its passphrase is in the Keychain via `UseKeychain`. So unlock once in your
+terminal (`ssh-add --apple-use-keychain ~/.ssh/id_ed25519`), and the non-interactive callers in
+the same login session use the agent too.
+
+<!--more-->
+
+**The same fallback, on purpose.** Because ssh-keygen reads standard input when there's no
+terminal, `printf 'pw\npw\n' | ssh-keygen …` sets a real passphrase from a script that has no
+terminal. That's exactly why it's dangerous by accident: an empty pipe is a valid answer too.
+
+**Redirecting input isn't the same as having no terminal.** The prompt opens the controlling
+terminal (`/dev/tty`) first and uses standard input only when that fails, so
+`true | ssh-keygen …` typed into your own terminal still asks you there. To find out whether a
+shell can prompt at all, test whether `/dev/tty` opens:
+`( : </dev/tty ) 2>/dev/null && echo tty || echo "no tty"`. `[ -t 0 ]` answers a different
+question — whether standard input is a terminal — and says "no" whenever input comes from a pipe
+or a file.

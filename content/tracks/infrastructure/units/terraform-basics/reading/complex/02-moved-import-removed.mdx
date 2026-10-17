@@ -1,0 +1,104 @@
+---
+id: moved-import-removed
+title: Rename, adopt and let go — without destroying anything
+---
+
+State is keyed by address, so three everyday refactors look like destruction to Terraform
+unless you say what you meant. Each has a block that says it in code, goes through review,
+and shows up in the plan before anything happens.
+
+### Rename: `moved` (Terraform 1.1+)
+
+Rename `random_pet.worker` to `random_pet.api` and the plan reads *"will be destroyed"* plus
+*"will be created"* — `Plan: 1 to add, 0 to change, 1 to destroy.` For a database that's
+data loss. Declare the move instead:
+
+```hcl
+moved {
+  from = random_pet.worker
+  to   = random_pet.api
+}
+```
+
+```text
+  # random_pet.worker has moved to random_pet.api
+    resource "random_pet" "api" {
+        id = "light-bedbug"
+    }
+Plan: 0 to add, 0 to change, 0 to destroy.
+```
+
+The same block covers moving a resource into a module (`to = module.api.aws_db_instance.this`)
+and switching to `count` or `for_each` keys. Keep old `moved` blocks: Terraform's refactoring
+guide calls removing one a breaking change for any configuration that hasn't applied it yet.
+
+### Adopt: `import` (Terraform 1.5+)
+
+A bucket was created by hand and should now be managed. Declare where it goes and which real
+object it is, next to a matching `resource` block:
+
+```hcl
+import {
+  to = aws_s3_bucket.assets
+  id = "acme-assets-prod"
+}
+
+resource "aws_s3_bucket" "assets" {
+  bucket = "acme-assets-prod"
+}
+```
+
+`plan` shows *"will be imported"* and counts it separately — a real run with the `random`
+provider printed `Plan: 1 to import, 0 to add, 0 to change, 0 to destroy.` — and the object is
+written into state at `apply`. Import is idempotent: once the address is in state, the block
+does nothing, so you can delete it or keep it as a record of where the resource came from.
+`terraform plan -generate-config-out=generated.tf` drafts the `resource` block for you to
+review (still labelled experimental in 1.16). `for_each` on `import` arrived in 1.7, and
+`import` blocks inside child modules in 1.16; the older `terraform import` CLI command still
+works but writes to state immediately, with no plan to review.
+
+If the configuration doesn't match the real object, the import comes *with* an update or a
+replacement. Importing a `random_integer` created with `max = 8999` into a block that says
+`max = 9999` planned:
+
+```text
+  # random_integer.port must be replaced
+  # (imported from "8443,8000,8999")
+  # Warning: this will destroy the imported resource
+      ~ max = 8999 -> 9999 # forces replacement
+Plan: 1 to import, 1 to add, 0 to change, 1 to destroy.
+```
+
+You set out to adopt an object and the plan destroys it. Match the configuration to reality
+first, import with an empty diff, then change things in a separate plan.
+
+### Let go: `removed` (Terraform 1.7+)
+
+Deleting a `resource` block means "destroy it" — even if the block had
+`prevent_destroy = true` in its `lifecycle`, which only guards against plans that destroy a
+resource *still in the configuration*. To stop managing an object without destroying it:
+
+```hcl
+removed {
+  from = terraform_data.config
+  lifecycle {
+    destroy = false
+  }
+}
+```
+
+```text
+ # terraform_data.config will no longer be managed by Terraform, but will not be destroyed
+ # (destroy = false is set in the configuration)
+Plan: 0 to add, 0 to change, 0 to destroy.
+```
+
+<!--more-->
+
+**What these look like to a script.** In `terraform show -json` output, a move is a `["no-op"]`
+change with a `previous_address`, an import is a change carrying an `importing` object (its
+`actions` can be `["no-op"]`, an update or a replace), and the `removed` case above came out of
+Terraform 1.16 as `["forget"]` — a value the JSON format reference doesn't list. A gate that
+looks for `"delete"` anywhere in `actions`, as that reference suggests, stays correct as new
+values appear; one that compares whole arrays against a fixed list breaks on the first value
+it hasn't seen.

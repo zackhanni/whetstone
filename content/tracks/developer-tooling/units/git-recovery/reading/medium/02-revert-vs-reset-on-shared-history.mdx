@@ -1,0 +1,64 @@
+---
+id: revert-vs-reset-on-shared-history
+title: Pushed? Revert, don't reset
+---
+
+`Double the price` is on `main` and already pushed. It's wrong. Two ways to undo it, with real
+output (Git 2.50).
+
+## Reset: rewrites history, so the push is refused
+
+```sh
+% git reset --hard HEAD~1
+% git push
+ ! [rejected]        main -> main (non-fast-forward)
+error: failed to push some refs to '…/remote.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. …
+```
+
+Locally the commit is gone; on the remote, `main` still points at it. Your `main` is no longer a
+descendant of the remote's, so git refuses — a push may only move a branch **forward** unless you
+force it. Forcing makes the remote match you — and a teammate who already pulled
+`Double the price` still has it. Tried in a throwaway repo: their next `git pull` reports
+`(forced update)` and then `Already up to date.` (their `main` is *ahead* of the rewound remote),
+and their next ordinary `git push` puts the commit straight back on `main`. On a shared branch,
+that's the wrong tool.
+
+## Revert: adds history, so the push is ordinary
+
+```sh
+% git revert --no-edit HEAD
+[main b18c7ef] Revert "Double the price"
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+% git log --oneline
+b18c7ef Revert "Double the price"
+3f956d2 Double the price
+94d3a29 Add price
+% git push                  # a normal fast-forward push
+```
+
+`git revert` computes the inverse of the commit's change and records it as a **new** commit.
+Nothing that anyone has is rewritten; teammates just pull one more commit, and the history says
+plainly what happened and when.
+
+## The same rule for amend
+
+`git commit --amend` replaces the last commit with a new one (new id). Before you push, that's
+tidy. After you push, it's a rewrite like reset: the push is rejected until you force it, with the
+same consequences. Once a commit is shared, fix it forward with a new commit or a revert.
+
+<!--more-->
+
+**Reverting a merge commit.** A merge has two parents, so "undo this commit" is ambiguous:
+
+```sh
+% git revert --no-edit HEAD
+error: commit 670a561… is a merge but no -m option was given.
+fatal: revert failed
+% git revert --no-edit -m 1 HEAD     # undo relative to parent 1, the branch you merged into
+```
+
+`-m 1` keeps the mainline and removes what the merged branch brought in. Git's docs warn about the
+follow-up: the reverted merge's commits are still in history, so merging that branch again later
+won't bring them back — you'd have to revert the revert first.

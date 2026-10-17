@@ -1,0 +1,55 @@
+---
+id: what-rebase-replays
+title: Exactly what a rebase replays — and editing the list
+---
+
+The Git 2.50 `git-rebase` manual (later manuals reword this section; the behaviour is the same)
+defines it: the commits replayed are "the same set of commits
+that would be shown by `git log <upstream>..HEAD`", then three adjustments:
+
+1. **Reachability, not "since I branched".** `upstream..HEAD` means reachable from `HEAD` and not
+   reachable from `upstream` — through **every** parent. A commit `main` got through a merge
+   commit's second parent counts as "in `main`"; a commit whose changes `main` got through a
+   squash doesn't.
+2. **Merge commits are dropped.** "By default, a rebase will simply drop merge commits from the
+   todo list, and put the rebased commits into a single, linear branch." (`--rebase-merges` keeps
+   the shape.) If your branch merged `main` in once, the rebased branch has no trace of that merge.
+3. **Already-applied patches are skipped.** "Any commits in HEAD which introduce the same textual
+   changes as a commit in `HEAD..<upstream>` are omitted" — a cherry-pick, or a one-commit branch
+   that was squash-merged. Git prints `warning: skipped previously applied commit …`. Note the
+   range: only commits upstream *gained* count. A commit that re-applies a change from the history
+   both sides share (say, one that was reverted) is still replayed.
+
+What's left is replayed **oldest first**, each commit on top of the one before. `git log` lists
+newest first; the rebase todo list is the reverse.
+
+One more caveat: those rules are for `git rebase <upstream>`. A bare `git rebase` with no argument
+uses the branch's configured upstream **and** `--fork-point`, which consults the upstream's reflog
+to guess where you branched and can leave out commits that `upstream..HEAD` would include. Naming
+the upstream explicitly keeps the set predictable.
+
+## Editing the list: `rebase -i`
+
+`git rebase -i main` opens that todo list in your editor before replaying anything. Each line is a
+command and a commit; you reorder lines, or change `pick` to `reword` (edit the message), `squash`
+/`fixup` (fold into the previous commit), `edit` (stop there), or `drop`.
+
+The low-friction way to fold a fix into an earlier commit:
+
+```text
+% git commit -a --fixup=HEAD~1             # "fixup! Add cart total"
+% git rebase -i --autosquash main          # the todo list is pre-arranged:
+pick 3e2a133 # Add cart total
+fixup 55cbcf8 # fixup! Add cart total
+pick 3e2c6df # Add checkout API
+```
+
+Save and close, and the fix lands inside `Add cart total` — two clean commits, ready for review.
+Like any rebase, it rewrites those commits: do it before others build on them, and push with
+`--force-with-lease`.
+
+<!--more-->
+
+**The same rules power `git cherry` and `--cherry-mark`.** `git log --oneline --cherry-mark
+main...feature` marks each commit on either side with `=` when the other side has an equivalent
+patch and `+` when it doesn't — a quick preview of which commits a rebase would skip.

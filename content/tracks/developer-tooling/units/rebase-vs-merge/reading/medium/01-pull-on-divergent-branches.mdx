@@ -1,0 +1,59 @@
+---
+id: pull-on-divergent-branches
+title: git pull when both sides moved — and the golden rule
+---
+
+`git pull` is `git fetch` followed by integrating the upstream into your branch. When only the
+remote moved, integration is a fast-forward and nobody has to decide anything. When **both**
+moved — you committed, a teammate pushed — something has to give. Real output (Git 2.50, no
+`pull.*` config):
+
+```text
+% git pull
+hint: You have divergent branches and need to specify how to reconcile them.
+hint: You can do so by running one of the following commands sometime before
+hint: your next pull:
+hint:
+hint:   git config pull.rebase false  # merge
+hint:   git config pull.rebase true   # rebase
+hint:   git config pull.ff only       # fast-forward only
+...
+fatal: Need to specify how to reconcile divergent branches.
+```
+
+The fetch still happened (`origin/main` moved); only the integration was refused. Git 2.27 started
+warning about this choice, and since Git 2.33.1 it refuses until you make it. Your options, per pull or as
+config:
+
+| | Result on your branch |
+| --- | --- |
+| `git pull --rebase` / `pull.rebase true` | your local commits replayed on top of `origin/main`: linear |
+| `git pull --no-rebase` / `pull.rebase false` | a merge commit "Merge branch 'main' of …" |
+| `git pull --ff-only` / `pull.ff only` | refuses unless it's a fast-forward — you decide each time |
+
+```text
+% git pull --rebase
+Successfully rebased and updated refs/heads/main.
+% git log --oneline
+46685db Alice's change        # replayed: new id
+96891bc Bob's change          # from the remote, untouched
+dd891e4 Base
+```
+
+For a branch you share with others but haven't pushed your new commits on, `--rebase` is usually
+what you want: your unpublished commits get new ids, and nobody else has them yet. Divergence also
+blocks the other direction: `git push` is rejected as `non-fast-forward` until you've integrated.
+
+## The golden rule
+
+Pro Git puts it in one line: "Do not rebase commits that exist outside your repository and that
+people may have based work on."
+
+Rebasing **your** unpublished commits is free. Rebase commits that others have pulled, and the
+remote now has copies with new ids while their clones still hold the originals. A merge-style
+pull ties the two together, and the history shows the same changes twice — Pro Git walks through
+exactly this mess. In practice:
+
+- Your own feature branch, even pushed, while nobody else builds on it: rebase freely, then
+  force-push carefully (next example).
+- `main`, or any branch others commit to: never rebase it; integrate with merge, or revert.

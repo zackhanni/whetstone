@@ -1,0 +1,33 @@
+---
+id: where-a-cache-can-live
+title: Four places a cache can live
+---
+
+A cached copy can sit anywhere between the user and the database. The further out it sits, the
+more work it saves — and the less control you have over it.
+
+| Layer | Shared by | Good for | Can you invalidate it? |
+| --- | --- | --- | --- |
+| Browser | one user | that user's assets and their own responses | no — wait for it to expire, or change the URL |
+| CDN / shared HTTP cache | every user near an edge | public responses: assets, public pages | yes, through the CDN's purge API |
+| App cache (in-process or Redis) | your servers | rows, computed results, per-user data keyed by user | yes — you own the keys |
+| Database's own memory | the database | hot table and index pages | the database manages it |
+
+Two rules fall out of that table:
+
+- **Public vs private decides the outer layers.** A response that differs per user must never
+  be stored by a shared cache under a URL every user requests. Which headers say that
+  (`Cache-Control: private` vs `public`, `s-maxage`) is the Next.js track's
+  [Response headers: HTTP caching & compression](/learn/nextjs-and-the-network/response-headers-caching-compression) unit; the design decision is *which responses are
+  public at all*.
+- **The further out, the longer a mistake lives.** A wrong value in Redis is one `DEL` from
+  fixed. A wrong value in a browser stays until it expires. That's why the outer layers get
+  short lifetimes or content-hashed URLs (a new file name per deploy), and why "how will I
+  invalidate this?" gets answered *before* a layer is added.
+
+In-process vs shared is its own trade-off, which AWS's Builders' Library article on caching
+spells out. An in-process cache costs nothing to run, but each server has its own copy (two
+requests can see different values), a new server starts cold, and the load on the database
+grows with the number of servers. A shared cache such as Redis fixes all three — and becomes
+one more fleet that has to stay available. (Cache-aside in Nest, with TTLs and a plan for when
+Redis is down, is the [Caching & rate limits with Redis](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit.)

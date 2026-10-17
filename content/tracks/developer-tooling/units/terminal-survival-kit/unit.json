@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 3,
+  "slug": "terminal-survival-kit",
+  "title": "Terminal survival kit: what the shell does to your line",
+  "skills": ["tooling", "terminal"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Predict what the shell hands a program after quoting and expansion: `'…'` vs `\"…\"`, `~`, `$VAR`, globs, and zsh's `no matches found`",
+    "Spot the zsh-vs-bash traps — an unquoted `$VAR` isn't split, `path` is tied to `PATH` — and write the quoted or array form that works in both",
+    "Route output with `>`, `>>`, `2>&1` and `|`, and explain why `> file 2>&1` and `2>&1 > file` differ",
+    "Chain commands on exit codes with `&&`, `||` and `pipefail`, and predict when `a && b || c` runs `c`",
+    "Explain how `PATH` and `export` decide what a command and its children see, and why a script or a tool's shell can't see your terminal's setup"
+  ],
+  "sources": [
+    { "title": "zsh manual: Expansion", "url": "https://zsh.sourceforge.io/Doc/Release/Expansion.html" },
+    { "title": "zsh manual: Options", "url": "https://zsh.sourceforge.io/Doc/Release/Options.html" },
+    { "title": "zsh manual: Parameters", "url": "https://zsh.sourceforge.io/Doc/Release/Parameters.html" },
+    { "title": "zsh manual: Startup/Shutdown Files", "url": "https://zsh.sourceforge.io/Doc/Release/Files.html" },
+    { "title": "GNU Bash manual: Redirections", "url": "https://www.gnu.org/software/bash/manual/html_node/Redirections.html" },
+    { "title": "GNU Bash manual: Word Splitting", "url": "https://www.gnu.org/software/bash/manual/html_node/Word-Splitting.html" },
+    { "title": "GNU Bash manual: Lists of Commands", "url": "https://www.gnu.org/software/bash/manual/html_node/Lists.html" },
+    { "title": "GNU Bash manual: Pipelines", "url": "https://www.gnu.org/software/bash/manual/html_node/Pipelines.html" },
+    { "title": "Apple Support: Use zsh as the default shell on your Mac", "url": "https://support.apple.com/en-us/102360" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-terminal", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-terminal",
+      "questions": [
+        {
+          "id": "tilde-in-quotes",
+          "prompt": "`cd \"~/Documents\"` fails with `cd: no such file or directory: ~/Documents`, but `cd ~/Documents` works. Why?",
+          "options": [
+            { "id": "quotes-stop-tilde", "text": "The shell expands `~` only when it's unquoted, so `cd` received a literal `~/Documents`" },
+            { "id": "cd-no-tilde", "text": "`cd` doesn't understand `~`; only commands like `ls` do" },
+            { "id": "double-like-single", "text": "Double quotes switch off every expansion, exactly like single quotes" },
+            { "id": "missing-folder", "text": "The folder doesn't exist; the quotes are irrelevant" }
+          ],
+          "answer": "quotes-stop-tilde",
+          "explanation": "`cd` doesn't expand `~` itself — the **shell** does, before the command runs, and only for an unquoted `~` at the start of a word. Double quotes are *not* the same as single quotes: inside `\"…\"`, `$VAR` and `$(…)` still expand, which is why `cd \"$HOME/Documents\"` works and is the right way to quote a path with spaces."
+        },
+        {
+          "id": "url-glob",
+          "prompt": "In zsh, `open https://example.com/search?q=git` prints `zsh: no matches found: https://example.com/search?q=git` and nothing opens. What happened?",
+          "options": [
+            { "id": "glob-char", "text": "`?` is a glob character; no file matched the pattern, and zsh refuses to run a command whose glob matches nothing" },
+            { "id": "open-parse", "text": "`open` can't parse URLs that contain a query string" },
+            { "id": "security", "text": "zsh blocks unquoted URLs as a security measure" },
+            { "id": "network", "text": "The page returned no results, and `open` reported it" }
+          ],
+          "answer": "glob-char",
+          "explanation": "`?` matches any one character in a file name, so the shell tried to expand the URL as a filename pattern — before `open` ever ran. zsh's default (`NOMATCH`) is to stop with an error when nothing matches; bash would have passed the text through unchanged. Quote anything containing `?`, `*` or `[`: `open 'https://example.com/search?q=git'`."
+        },
+        {
+          "id": "zsh-unquoted-var",
+          "prompt": "In zsh: `FILES=\"old.log debug.log\"` then `rm $FILES`. What happens?",
+          "options": [
+            { "id": "one-arg", "text": "`rm` receives one argument, `old.log debug.log`, and fails: no such file" },
+            { "id": "both-removed", "text": "Both files are removed" },
+            { "id": "first-only", "text": "Only `old.log` is removed" },
+            { "id": "no-matches", "text": "zsh stops with `no matches found`" }
+          ],
+          "answer": "one-arg",
+          "explanation": "zsh doesn't split an unquoted parameter on spaces (the `SH_WORD_SPLIT` option is off), so `$FILES` stays one word. Bash *would* split it and remove both — which is why bash snippets misbehave when pasted into zsh. Hold a list in an array: `files=(old.log debug.log); rm \"${files[@]}\"` works in both shells. `no matches found` is a glob error; there's no glob here."
+        },
+        {
+          "id": "path-loop",
+          "prompt": "A zsh script runs `for path in src/*.ts; do wc -l $path; done` and then `pnpm lint`. Every pass of the loop prints `command not found: wc`, and `pnpm lint` fails with `command not found: pnpm`. Why?",
+          "options": [
+            { "id": "tied", "text": "zsh ties the array `path` to `PATH`; each pass replaced the command search path with a file name" },
+            { "id": "subshell", "text": "`for` loops run in a subshell that drops `PATH`" },
+            { "id": "glob-ate", "text": "The glob consumed the arguments meant for `pnpm`" },
+            { "id": "not-installed", "text": "`pnpm` is never available inside scripts" }
+          ],
+          "answer": "tied",
+          "explanation": "In zsh, `path` (lowercase) is an array tied to `PATH`: assign one and the other changes. The loop variable is assigned before the body runs, so even the first `wc` is looked up in a `PATH` that is just the first file name; after the loop, `PATH` is the last file name, and no command can be found. A subshell would have *protected* your `PATH`, not dropped it. In bash, `path` is an ordinary variable and the same loop is harmless. Name loop variables `file`, `f` or `dir`. A `local path=…` inside a zsh function clobbers `PATH` for the rest of that function too."
+        },
+        {
+          "id": "redirect-order",
+          "prompt": "You want everything `pnpm build` prints — normal output **and** errors — in `build.log`. Which line does that?",
+          "options": [
+            { "id": "file-then-dup", "text": "`pnpm build > build.log 2>&1`" },
+            { "id": "dup-then-file", "text": "`pnpm build 2>&1 > build.log`" },
+            { "id": "tee", "text": "`pnpm build | tee build.log`" },
+            { "id": "stderr-only", "text": "`pnpm build 2> build.log`" }
+          ],
+          "answer": "file-then-dup",
+          "explanation": "Redirections apply left to right, and `2>&1` copies where stdout points *at that moment*. In `> build.log 2>&1`, stdout already points at the file, so stderr follows it there. In `2>&1 > build.log`, stderr is pointed at the terminal first and stdout moves afterwards, so errors still hit the screen. A pipe carries only stdout, so `| tee` misses the errors unless you write `2>&1 | tee build.log`. `2>` alone captures only the errors."
+        },
+        {
+          "id": "pipe-exit",
+          "prompt": "A CI step runs `pnpm test | tee test.log`. Three tests fail, yet the step is green. Why, and what fixes it?",
+          "options": [
+            { "id": "pipefail", "text": "A pipeline's exit code is its last command's — `tee` succeeded. `set -o pipefail` makes a failing stage fail the pipeline" },
+            { "id": "stderr", "text": "`tee` hides stderr from CI; redirect errors with `2>&1` to fix it" },
+            { "id": "ci-ignores", "text": "CI ignores the exit code of any piped command by design" },
+            { "id": "tty", "text": "`pnpm test` exits 0 whenever its output isn't a terminal" }
+          ],
+          "answer": "pipefail",
+          "explanation": "Everything downstream judges a step by its exit code, and a pipeline reports the **rightmost** command's status unless `pipefail` is set (bash and zsh both have it; then the last non-zero status wins). `tee` copied the text fine, so the pipeline exited 0. Adding `2>&1` would put the error text in the log, but the exit code would still be `tee`'s."
+        },
+        {
+          "id": "script-is-a-child",
+          "prompt": "`setup.sh` contains `cd app` and `export NODE_ENV=production`. You run `./setup.sh` from `~/shop`. Afterwards, in your terminal:",
+          "options": [
+            { "id": "unchanged", "text": "You're still in `~/shop` and `NODE_ENV` is unchanged — the script ran in a child process with its own copies" },
+            { "id": "both", "text": "You're in `~/shop/app` and `NODE_ENV` is `production`" },
+            { "id": "export-only", "text": "You're still in `~/shop`, but `NODE_ENV` is `production` — `export` sends it back up" },
+            { "id": "cd-only", "text": "You're in `~/shop/app`, but `NODE_ENV` is unset" }
+          ],
+          "answer": "unchanged",
+          "explanation": "Running a script starts a new shell process. It gets a *copy* of your environment and its own working directory; `cd` and `export` change those copies, and they vanish when it exits. `export` only reaches processes started *after* it, from that shell — children, never the parent. To run the commands in your current shell, `source ./setup.sh`."
+        },
+        {
+          "id": "gui-hook-path",
+          "prompt": "`pnpm` works in your terminal. A git pre-commit hook fails with `pnpm: command not found` — but only when you commit from a GUI git app opened from the Dock. Your `export PATH=…` line is in `~/.zshrc`. Why?",
+          "options": [
+            { "id": "never-read", "text": "The hook's shell descends from the app, not your terminal; nothing in that chain was an interactive zsh, so `.zshrc` never ran and its PATH addition is missing" },
+            { "id": "bash-hooks", "text": "Git hooks always run in bash, and bash can't read `PATH`" },
+            { "id": "sandbox", "text": "Hooks run in a sandbox that blocks package managers" },
+            { "id": "pnpm-git", "text": "`pnpm` refuses to run while git holds the index lock" }
+          ],
+          "answer": "never-read",
+          "explanation": "zsh reads `.zshrc` only for **interactive** shells. A commit started from your terminal inherits the terminal's exported `PATH`, so the hook works there. An app launched from the Dock never went through your terminal, so it has only the system's default `PATH`. Git runs the hook with whatever interpreter its first line names — often `#!/bin/sh`, which reads none of your zsh files (a zsh hook would read only `.zshenv`). Bash itself reads `PATH` fine; the value is what's missing. The fix that works for every caller: set `PATH` at the top of the hook, or call tools by absolute path."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-terminal",
+      "prompts": [
+        {
+          "id": "capture-both",
+          "prompt": "Send both stdout and stderr of the build into one file.",
+          "code": "pnpm build > build.log ___",
+          "blanks": [{ "id": "a1", "accept": ["2>&1"] }],
+          "explanation": "`2>&1` makes stream 2 (stderr) point wherever stream 1 (stdout) points now — and because it comes after `> build.log`, that's the file. zsh and bash both also accept `&> build.log` as shorthand for the whole thing."
+        },
+        {
+          "id": "portable-array-loop",
+          "prompt": "Loop over a list of file names — one of them has a space — in a way that works in both zsh and bash.",
+          "code": [
+            "files=(a.txt \"my notes.txt\")",
+            "for f in \"___\"; do",
+            "  wc -l \"$f\"",
+            "done"
+          ],
+          "blanks": [{ "id": "b1", "accept": ["${files[@]}"] }],
+          "explanation": "`\"${files[@]}\"` expands to every element, each as its own word, spaces intact — in both shells. A space-separated string (`FILES=\"a.txt my notes.txt\"`) can't do this: zsh keeps it as one word, and bash splits `my notes.txt` into two."
+        },
+        {
+          "id": "export-to-child",
+          "prompt": "Make `API_URL` visible to the dev server you start next from this shell.",
+          "code": [
+            "___ API_URL=http://localhost:4000",
+            "pnpm dev"
+          ],
+          "blanks": [{ "id": "c1", "accept": ["export"] }],
+          "explanation": "A plain assignment creates a shell variable that only this shell can read. `export` puts it in the environment that every program started afterwards receives a copy of. For a one-off, `API_URL=http://localhost:4000 pnpm dev` sets it for that single command."
+        },
+        {
+          "id": "or-on-failure",
+          "prompt": "Print the message only when `grep` finds no match (it exits 1 then).",
+          "code": "grep -q \"TODO\" notes.txt ___ echo \"no TODOs left\"",
+          "blanks": [{ "id": "d1", "accept": ["||"] }],
+          "explanation": "`||` runs the right side when the left side exits non-zero. `grep` exits 0 on a match, 1 on no match and 2 on an error (such as a missing file) — so this also prints the message when `notes.txt` doesn't exist, which may or may not be what you want."
+        },
+        {
+          "id": "prepend-path",
+          "prompt": "In `~/.zprofile`, put `~/.local/bin` first in the command search path without losing the rest.",
+          "code": "export PATH=\"$HOME/.local/bin:___\"",
+          "blanks": [{ "id": "e1", "accept": ["$PATH", "${PATH}"] }],
+          "explanation": "`PATH` is searched left to right and the first match wins, so prepending makes your directory take priority. Forget `:$PATH` and you replace the whole list — the next `ls` fails with `command not found`."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-terminal",
+      "snippets": [
+        {
+          "id": "zsh-one-iteration",
+          "code": [
+            "# zsh",
+            "FILES=\"a.txt b.txt\"",
+            "for f in $FILES; do echo \"[$f]\"; done"
+          ],
+          "question": "What does zsh print?",
+          "answer": "[a.txt b.txt]",
+          "acceptable": ["one line: [a.txt b.txt]", "a single iteration with the whole string"],
+          "explanation": "One iteration: zsh doesn't split an unquoted parameter, so `$FILES` is one word. The same two lines in bash print `[a.txt]` and `[b.txt]`. If you need the split in zsh, say so with `${=FILES}` — or better, store a list in an array to begin with."
+        },
+        {
+          "id": "dup-before-file",
+          "code": [
+            "# a.txt exists; nope does not",
+            "ls a.txt nope 2>&1 > out.txt",
+            "cat out.txt"
+          ],
+          "question": "What appears in the terminal?",
+          "answer": "Two lines: ls: nope: No such file or directory — then a.txt",
+          "acceptable": ["the error line, then a.txt (from cat)", "the error on screen; only a.txt in the file"],
+          "explanation": "Left to right: `2>&1` points stderr at the terminal (where stdout points *now*), then `> out.txt` moves only stdout. So the error goes to the screen, and the file holds just `a.txt`, which `cat` prints. Swap the order — `> out.txt 2>&1` — and both lines land in the file. (The error text shown is macOS `ls`; GNU `ls` words it slightly differently.)"
+        },
+        {
+          "id": "and-or-chains",
+          "code": [
+            "false && echo A || echo B",
+            "true && false || echo C",
+            "true || echo D && echo E"
+          ],
+          "question": "What do the three lines print?",
+          "answer": "B, C, E (one per line)",
+          "acceptable": ["B C E", "B then C then E"],
+          "explanation": "`&&` and `||` have equal precedence and group left to right. Line 1: `false` skips A, so the list failed and `|| echo B` runs. Line 2: `true && false` failed — at the *second* step — so C runs anyway; that's why `a && b || c` isn't if/else. Line 3: `true || echo D` succeeds without running D, so `&& echo E` runs. Same output in zsh and bash."
+        },
+        {
+          "id": "script-vs-source",
+          "code": [
+            "% pwd",
+            "/Users/ada/shop",
+            "% cat goto-app.sh",
+            "cd app",
+            "export STAGE=dev",
+            "% zsh goto-app.sh; pwd; echo \"[$STAGE]\"",
+            "% source goto-app.sh; pwd; echo \"[$STAGE]\""
+          ],
+          "question": "What do the last two command lines print?",
+          "answer": "/Users/ada/shop, [], then /Users/ada/shop/app, [dev]",
+          "acceptable": ["unchanged and empty after zsh; app and dev after source"],
+          "explanation": "`zsh goto-app.sh` runs the file in a **child** shell: it changes directory and exports `STAGE` in its own process, then exits, leaving yours untouched. `source` runs the same lines in **your** shell, so the `cd` and the `export` stick. That's why you `source ~/.zshrc` after editing it rather than executing it."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+---
+id: shape-of-a-trade-off
+title: The four parts of a trade-off argument
+---
+
+"It depends" is where a design answer starts, not where it ends. A trade-off argument a reviewer
+can actually check has four parts:
+
+1. **The options** — at least two real ones, named concretely.
+2. **The deciding fact** — the requirement or number that tips it. Not "scale"; *which* number.
+3. **What you give up** — the cost of the option you pick, said out loud before anyone asks.
+4. **What would change your mind** — the measurement or event at which you'd switch.
+
+A small example — how long should a cached product page live?
+
+> **Options:** a 5-minute TTL, or delete-on-write plus a 1-hour TTL as a safety net.
+> **Deciding fact:** prices change a few times a day, and the requirement says a shopper may see
+> a price up to a minute old — but never pay a different price than the one shown, which checkout
+> re-reads from the database anyway.
+> **Give up:** delete-on-write means every price update has to know about the cache — one more
+> thing a new write path can forget.
+> **Change my mind:** if a second service starts writing prices without going through our code,
+> deletes become unreliable and I'd drop to a short TTL alone.
+
+Notice what isn't in it: "Redis is fast", "best practice", "it scales". Each line is about *this*
+system's numbers and requirements, which is what makes it possible to disagree with one line
+instead of the whole answer.
+
+Part 4 is the one most often skipped, and it's the most useful. It turns a decision into a
+monitor: "if the hit ratio drops below 90%", "if one account passes 100k followers", "if p99
+exceeds 50 ms". A design that names its own reversal point can be revisited calmly instead of in
+an incident.
+
+<!--more-->
+
+The same four parts work when the honest answer is "not yet". *Options:* add read replicas now,
+or wait. *Deciding fact:* the primary runs at 20% CPU at peak. *Give up:* headroom bought before
+it's needed. *Change my mind:* sustained peak CPU over 60%, or a launch that the estimates say
+triples reads. Deferring with a trigger is a decision; deferring without one is drift.

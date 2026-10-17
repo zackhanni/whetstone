@@ -1,0 +1,88 @@
+---
+id: traces-and-spans
+title: Traces and spans with OpenTelemetry
+---
+
+A **span** is one timed operation: a name, a start and end, attributes, and a status. A
+**trace** is the tree of spans for one request, all sharing a trace ID. This Node script
+(OpenTelemetry JS: `@opentelemetry/api` 1.9, SDK 2.11, console exporter) handles one request
+that queries a database and then fails:
+
+```js
+const tracer = trace.getTracer("orders");
+
+await tracer.startActiveSpan("GET /orders/:id", { kind: SpanKind.SERVER }, async (server) => {
+  server.setAttributes({ "http.request.method": "GET", "http.route": "/orders/:id" });
+
+  await tracer.startActiveSpan("SELECT orders", { kind: SpanKind.CLIENT }, async (db) => {
+    await queryDatabase();
+    db.end();
+  });
+
+  try {
+    await chargeCard();
+  } catch (err) {
+    server.recordException(err);                                        // an event on the span
+    server.setStatus({ code: SpanStatusCode.ERROR, message: err.message }); // the verdict
+    server.setAttribute("http.response.status_code", 504);
+  }
+  server.end();
+});
+```
+
+What the console exporter printed, trimmed, with `#` comments added:
+
+```text
+{
+  traceId: 'c50ed0daa0f6fd6a6087220a3d34fffa',
+  parentSpanContext: { spanId: '78ea985cd0d32eef', ... },  # child of the server span
+  name: 'SELECT orders',
+  kind: 2,                                                 # CLIENT
+  duration: 21369.833,                                     # microseconds
+  status: { code: 0 },                                     # UNSET
+}
+{
+  traceId: 'c50ed0daa0f6fd6a6087220a3d34fffa',             # same trace
+  parentSpanContext: undefined,                            # the root span
+  name: 'GET /orders/:id',
+  id: '78ea985cd0d32eef',
+  kind: 1,                                                 # SERVER
+  status: { code: 2, message: 'payment service timed out' },  # ERROR
+  events: [ { name: 'exception', ... } ],
+}
+```
+
+Reading it:
+
+- **Same `traceId`, parent link.** The query span's parent is the server span. `startActiveSpan`
+  makes the new span *active* for the callback, so spans started inside become its children.
+  (`startSpan` doesn't — a span started after it is not its child.)
+- **Kind** says which side of a call this is: `SERVER` for an incoming request, `CLIENT` for an
+  outgoing call or a database query, `INTERNAL` for work that never leaves the process, and
+  `PRODUCER` / `CONSUMER` for queues.
+- **Attribute names come from the semantic conventions** — `http.request.method`,
+  `http.route`, `http.response.status_code` — so every backend knows what they mean.
+- **Status is a deliberate verdict.** Spans start as `UNSET`, meaning "completed without
+  error". `recordException` only attaches an `exception` event; it does **not** set the
+  status, so a span with only that call still counts as a success. OpenTelemetry's docs
+  recommend recording the exception *and* setting the status. `OK` is reserved for
+  explicitly marking a span successful — it's final and overrides an `ERROR` — so
+  instrumentation libraries generally don't set it.
+- **Every span must be ended.** The spec requires it, and the JS SDK hands a span to the
+  exporter when it ends — a span that never calls `end()` is never exported. The child above
+  ends before its parent, which is why it's printed first.
+
+### Crossing a process boundary
+
+To continue a trace in another service, the caller sends the current context with the
+request. OpenTelemetry's default propagator uses the W3C Trace Context header:
+
+```text
+traceparent: 00-c50ed0daa0f6fd6a6087220a3d34fffa-78ea985cd0d32eef-01
+             ^version  ^trace id (32 hex)        ^parent span id ^flags (01 = sampled)
+```
+
+The receiving service's server span takes that trace ID and uses that span ID as its parent,
+so both services' spans land in one trace. Instrumentation libraries for HTTP clients and
+servers inject and extract this header for you; a hand-rolled `fetch` wrapper or a message
+queue is where it usually gets lost.

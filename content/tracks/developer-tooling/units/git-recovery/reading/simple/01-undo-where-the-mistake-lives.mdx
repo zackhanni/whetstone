@@ -1,0 +1,41 @@
+---
+id: undo-where-the-mistake-lives
+title: Undo at the layer where the mistake lives
+---
+
+Every git undo works on one of the three places a change lives — working tree, index, commits —
+plus one question for commits: **has anyone else got it yet?** Find the row, run that command.
+
+| The mistake | Lives in | Undo |
+| --- | --- | --- |
+| Edited a file, want the committed version back | working tree | `git restore app.ts` |
+| Staged a file you didn't mean to | index | `git restore --staged app.ts` |
+| Last commit's message is wrong / forgot a file | last commit, not pushed | `git commit --amend` |
+| Last commit shouldn't exist yet; keep the changes | commits, not pushed | `git reset --soft HEAD~1` |
+| A commit is already pushed and shared | shared history | `git revert <commit>` |
+| "I reset/rebased and my commit is gone" | the reflog | `git reflog`, then reset to it |
+
+```sh
+git restore app.ts            # working tree ← index: discard unstaged edits (gone for good)
+git restore --staged app.ts   # index ← HEAD: unstage; your edits stay on disk
+git add forgotten.ts
+git commit --amend --no-edit  # replace the last commit with one that includes the file
+git revert a1b2c3d            # a NEW commit that applies the opposite change
+```
+
+`git restore` and `git switch` (added in Git 2.23) split the old do-everything `git checkout`:
+restore for files, switch for branches. Their manual pages labelled them experimental until Git
+2.51 dropped the label, and `git status` suggests them in its own hints.
+
+## The two words to keep straight
+
+- **Amend and reset rewrite history.** `--amend` doesn't edit a commit — commits never change —
+  it makes a new one with a new id and moves the branch to it. Fine while the commit exists only
+  on your machine. Once it's pushed, rewriting means a force-push, and everyone who pulled the old
+  commit now has a history that disagrees with yours.
+- **Revert adds history.** It records a new commit that undoes an old one, so every clone simply
+  pulls it like any other commit. That's why it's the undo for anything already shared.
+
+One command in this table really destroys work: `git restore <file>` (and `reset --hard`) on
+**unstaged** edits. Git never stored them, so there's nothing to recover. Almost everything else —
+even a "deleted" commit — can come back, for a while (the complex tier covers the limits).

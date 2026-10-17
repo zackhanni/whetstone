@@ -5,7 +5,7 @@ title: A timer's delay is a minimum, not an appointment
 
 `setTimeout(fn, 10)` does not mean "run `fn` at 10 ms". It means "**no sooner than** 10 ms from
 now, queue `fn` as a task". The task then waits its turn like any other: the thread has to be
-free, and every pending microtask runs first (see the `event-loop` unit).
+free, and every pending microtask runs first (see [The event loop](/learn/async-javascript/event-loop)).
 
 ```js
 const start = Date.now();
@@ -31,7 +31,7 @@ Two consequences you'll meet constantly:
 
 And the receipt you get back is the handle: `clearTimeout(handle)` cancels a timer that hasn't
 fired yet, and silently does nothing for one that has already fired or never existed. (Keeping
-that handle across React renders is the `debounced-input-and-autosave` unit's topic.)
+that handle across React renders is the [Debounced input & autosave](/learn/react-hooks-and-rendering/debounced-input-and-autosave) unit's topic.)
 
 <!--more-->
 

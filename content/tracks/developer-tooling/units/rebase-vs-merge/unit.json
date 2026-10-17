@@ -1,0 +1,410 @@
+{
+  "schemaVersion": 3,
+  "slug": "rebase-vs-merge",
+  "title": "Rebase vs merge, conflicts and safe force-pushes",
+  "skills": [
+    "git",
+    "rebase",
+    "branches"
+  ],
+  "difficulty": "advanced",
+  "estimatedMinutes": 45,
+  "objectives": [
+    "Predict whether a merge fast-forwards or makes a merge commit, and explain what a rebase replays (`upstream..branch`, as new commits with new ids)",
+    "Resolve a conflict in a merge or a rebase — markers, `zdiff3`, `add` then `--continue` or `--abort` — knowing that `ours` and `theirs` swap during a rebase",
+    "Choose how `git pull` reconciles divergent branches (`--rebase`, `--ff-only`, a merge) and apply the golden rule: don't rebase commits others have",
+    "Force-push a rewritten branch with `--force-with-lease` plus `--force-if-includes`, and explain how a background fetch defeats a bare lease",
+    "Move a branch stacked on a squash-merged base with `rebase --onto`, and keep a stack current with `--update-refs`"
+  ],
+  "sources": [
+    {
+      "title": "Pro Git: Basic Branching and Merging",
+      "url": "https://git-scm.com/book/en/v2/Git-Branching-Basic-Branching-and-Merging"
+    },
+    {
+      "title": "Pro Git: Rebasing",
+      "url": "https://git-scm.com/book/en/v2/Git-Branching-Rebasing"
+    },
+    {
+      "title": "Git docs: git-merge",
+      "url": "https://git-scm.com/docs/git-merge"
+    },
+    {
+      "title": "Git docs: git-rebase",
+      "url": "https://git-scm.com/docs/git-rebase"
+    },
+    {
+      "title": "Git 2.50 docs: git-rebase (the wording quoted in the readings)",
+      "url": "https://git-scm.com/docs/git-rebase/2.50.0"
+    },
+    {
+      "title": "git/git commit 031e2f7: \"pull: abort by default when fast-forwarding is not possible\" (first released in Git 2.33.1)",
+      "url": "https://github.com/git/git/commit/031e2f7ae195069d00d21cde906fce5b0318dbdd"
+    },
+    {
+      "title": "Git docs: git-pull",
+      "url": "https://git-scm.com/docs/git-pull"
+    },
+    {
+      "title": "Git docs: git-push (--force-with-lease, --force-if-includes)",
+      "url": "https://git-scm.com/docs/git-push"
+    },
+    {
+      "title": "GitHub Docs: About comparing branches in pull requests",
+      "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-comparing-branches-in-pull-requests"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-rebase-merge",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-rebase-merge",
+      "questions": [
+        {
+          "id": "fast-forward",
+          "prompt": "Nobody has committed to `main` since you branched `feature` from it. You run `git switch main && git merge feature`. What happens?",
+          "options": [
+            {
+              "id": "ff",
+              "text": "A fast-forward: `main` moves to `feature`'s tip, and no new commit is made"
+            },
+            {
+              "id": "merge-commit",
+              "text": "A merge commit with two parents"
+            },
+            {
+              "id": "rebase",
+              "text": "`feature`'s commits are replayed onto `main` with new ids"
+            },
+            {
+              "id": "conflict",
+              "text": "A conflict, because both branches touch the same files"
+            }
+          ],
+          "answer": "ff",
+          "explanation": "`main` is an ancestor of `feature`, so there's nothing to combine — git just moves the `main` pointer forward (`Fast-forward` in the output). A merge commit appears only when both sides have commits the other lacks, or when you ask for one with `--no-ff`. Conflicts need *divergent* changes to the same lines."
+        },
+        {
+          "id": "rebased-push-rejected",
+          "prompt": "You rebased your already-pushed `feature` onto the latest `main`. Now `git push` is rejected as `non-fast-forward`. Why?",
+          "options": [
+            {
+              "id": "new-ids",
+              "text": "A rebase replays your commits as new commits with new ids, so the remote's `feature` is no longer an ancestor of yours"
+            },
+            {
+              "id": "main-moved",
+              "text": "Someone pushed to `main` while you were rebasing"
+            },
+            {
+              "id": "protected",
+              "text": "Remotes reject any branch that has been rebased"
+            },
+            {
+              "id": "upstream",
+              "text": "The rebase removed the branch's upstream setting"
+            }
+          ],
+          "answer": "new-ids",
+          "explanation": "A commit's id hashes its parent too, so replaying a commit onto a new parent makes a different commit. The remote still has the old ones, and a push may only move a branch forward. Pushing a rewritten branch needs a force — use `--force-with-lease`, so you don't overwrite commits you haven't seen."
+        },
+        {
+          "id": "keep-mine-during-rebase",
+          "prompt": "Mid-`git rebase main`, `config.txt` conflicts. You want **your feature branch's** version of the file. Which command takes it?",
+          "options": [
+            {
+              "id": "theirs",
+              "text": "`git checkout --theirs config.txt`"
+            },
+            {
+              "id": "ours",
+              "text": "`git checkout --ours config.txt`"
+            },
+            {
+              "id": "head",
+              "text": "`git checkout HEAD config.txt`"
+            },
+            {
+              "id": "restore",
+              "text": "`git restore config.txt`"
+            }
+          ],
+          "answer": "theirs",
+          "explanation": "A rebase checks out `main` and replays your commits onto it, so `HEAD` (\"ours\") is `main` plus what's been replayed so far, and \"theirs\" is the commit of yours being applied — the git-rebase docs: \"the sides are swapped\". In a merge it's the reverse. `checkout HEAD` also gives you `main`'s side. Then `git add config.txt` and `git rebase --continue`."
+        },
+        {
+          "id": "divergent-pull",
+          "prompt": "`git pull` prints a list of `git config pull.…` hints and `fatal: Need to specify how to reconcile divergent branches.` What's going on?",
+          "options": [
+            {
+              "id": "diverged",
+              "text": "The fetch worked; you and the remote both have new commits, and git won't pick merge or rebase for you"
+            },
+            {
+              "id": "fetch-failed",
+              "text": "The fetch failed, so nothing was downloaded"
+            },
+            {
+              "id": "force",
+              "text": "The remote was force-pushed; you must reset to it"
+            },
+            {
+              "id": "conflict",
+              "text": "There's a merge conflict to resolve first"
+            }
+          ],
+          "answer": "diverged",
+          "explanation": "`pull` is fetch + integrate. The fetch already updated `origin/main`; only integration stopped, because both sides moved and you haven't set `pull.rebase` or `pull.ff`. Git 2.27 began warning about this choice, and since Git 2.33.1 it refuses. Choose per pull (`--rebase`, `--no-rebase`, `--ff-only`) or once in config. No conflict has happened yet — nothing was merged."
+        },
+        {
+          "id": "golden-rule",
+          "prompt": "Which of these breaks the golden rule of rebasing?",
+          "options": [
+            {
+              "id": "shared-main",
+              "text": "Rebasing `main` onto a cleaned-up history and force-pushing it"
+            },
+            {
+              "id": "local",
+              "text": "`git pull --rebase` with two local commits you haven't pushed"
+            },
+            {
+              "id": "own-branch",
+              "text": "Rebasing your own feature branch, which nobody else has checked out, onto `main`"
+            },
+            {
+              "id": "autosquash",
+              "text": "`git rebase -i --autosquash` before opening your PR"
+            }
+          ],
+          "answer": "shared-main",
+          "explanation": "Pro Git: \"Do not rebase commits that exist outside your repository and that people may have based work on.\" Everyone has `main`; rewriting it leaves their clones holding the old commits, and a merge-style pull brings duplicates in. The other three rewrite only commits that nobody else has built on — which is what rebase is for."
+        },
+        {
+          "id": "lease-defeated",
+          "prompt": "Alice rewrote her pushed `feature`. Bob pushed a fix to it an hour ago. Alice's editor auto-fetched since, and she runs `git push --force-with-lease`. What happens?",
+          "options": [
+            {
+              "id": "overwrites",
+              "text": "It succeeds and Bob's fix disappears from the remote — the fetch moved her `origin/feature` to include it"
+            },
+            {
+              "id": "rejected",
+              "text": "It's rejected with `(stale info)`, protecting Bob's fix"
+            },
+            {
+              "id": "merges",
+              "text": "Git merges Bob's fix into her branch before pushing"
+            },
+            {
+              "id": "prompt",
+              "text": "Git asks her to confirm, showing Bob's commit"
+            }
+          ],
+          "answer": "overwrites",
+          "explanation": "The lease only checks that the remote is where Alice's `origin/feature` says it is. The background fetch updated `origin/feature` to Bob's commit, so the check passes even though Alice never looked at it. Adding `--force-if-includes` (or `push.useForceIfIncludes`) also requires that commit to be in her branch's reflog; here the push is rejected with `(remote ref updated since checkout)`."
+        },
+        {
+          "id": "squash-stack-onto",
+          "prompt": "`feature-b` was stacked on `feature-a` (commits A1, A2). `feature-a` was **squash-merged** into `main`. On `feature-b`, `git rebase main` conflicts while applying A1. What's the right move?",
+          "options": [
+            {
+              "id": "onto",
+              "text": "`git rebase --abort`, then `git rebase --onto main feature-a` — replay only feature-b's own commits"
+            },
+            {
+              "id": "resolve-all",
+              "text": "Resolve each conflict by taking `main`'s side, A1 then A2"
+            },
+            {
+              "id": "merge",
+              "text": "`git merge feature-a` into `feature-b` first"
+            },
+            {
+              "id": "force",
+              "text": "`git push --force-with-lease` to `main`"
+            }
+          ],
+          "answer": "onto",
+          "explanation": "The squash commit on `main` has A1+A2's changes but isn't A1 or A2, so `main..feature-b` still lists them and rebase tries to replay them onto code that already contains them. `--onto main feature-a` replays `feature-a..feature-b` — only B's commits — onto `main`. Resolving A1/A2's conflicts by hand can work, but it's slow and error-prone; merging `feature-a` in changes nothing about what `main` lacks."
+        },
+        {
+          "id": "merge-commit-stack",
+          "prompt": "Same stack, but this time `main` merged `feature-a` with a **merge commit**. On `feature-b`, what does `git rebase main` replay?",
+          "options": [
+            {
+              "id": "only-b",
+              "text": "Only feature-b's own commits — A1 and A2 are reachable from `main` through the merge's second parent"
+            },
+            {
+              "id": "all",
+              "text": "A1, A2 and feature-b's commits, like after a squash"
+            },
+            {
+              "id": "merge-too",
+              "text": "feature-b's commits plus the merge commit"
+            },
+            {
+              "id": "nothing",
+              "text": "Nothing — the merge already brought feature-b in"
+            }
+          ],
+          "answer": "only-b",
+          "explanation": "A merge commit keeps A1 and A2 in `main`'s history, so `main..feature-b` excludes them, and the rebase replays just B's commits. That's the difference from a squash merge, which leaves A1 and A2 out of `main`'s history. The merge commit itself belongs to `main`, so it's not replayed either."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-rebase-merge",
+      "prompts": [
+        {
+          "id": "continue-rebase",
+          "prompt": "You've fixed the conflict in `config.txt`. Mark it resolved and carry on with the rebase.",
+          "code": [
+            "git ___ config.txt",
+            "git rebase ___"
+          ],
+          "blanks": [
+            {
+              "id": "b1",
+              "accept": [
+                "add"
+              ]
+            },
+            {
+              "id": "b2",
+              "accept": [
+                "--continue"
+              ]
+            }
+          ],
+          "explanation": "`git add` marks the file resolved (the `UU` in `git status` goes away). `--continue` finishes applying this commit and moves to the next one; a rebase can stop once per conflicting commit. `--abort` instead returns everything to how it was before the rebase."
+        },
+        {
+          "id": "zdiff3",
+          "prompt": "Show the common ancestor between the two sides in every conflict (Git 2.35+).",
+          "code": "git config --global merge.conflictStyle ___",
+          "blanks": [
+            {
+              "id": "c1",
+              "accept": [
+                "zdiff3"
+              ]
+            }
+          ],
+          "explanation": "`zdiff3` adds a `|||||||` section with the original text, so you can see what each side *changed* — not just two competing results. (`diff3` does the same with less trimming of common lines.)"
+        },
+        {
+          "id": "safe-force",
+          "prompt": "Force-push your rebased branch without overwriting commits you've never had locally.",
+          "code": "git push ___ --force-if-includes",
+          "blanks": [
+            {
+              "id": "d1",
+              "accept": [
+                "--force-with-lease"
+              ]
+            }
+          ],
+          "explanation": "`--force-with-lease` refuses if the remote branch isn't where your remote-tracking branch says; `--force-if-includes` also refuses if that tip never made it into your local branch's reflog — the case a background fetch creates. `push.useForceIfIncludes true` turns the second one on by default."
+        },
+        {
+          "id": "rebase-onto",
+          "prompt": "After `feature-a` was squash-merged, move `feature-b` onto `main`, replaying only the commits after `feature-a`.",
+          "code": "git rebase ___ main feature-a feature-b",
+          "blanks": [
+            {
+              "id": "e1",
+              "accept": [
+                "--onto"
+              ]
+            }
+          ],
+          "explanation": "`git rebase --onto <newbase> <upstream> <branch>` replays `upstream..branch` onto `newbase`. With the old base as `<upstream>`, its commits — already in `main` as the squash — are left out."
+        },
+        {
+          "id": "update-refs",
+          "prompt": "`main` moved under your stack (`feature-a` ← `feature-b`). From the top branch, rebase onto `main` and move `feature-a`'s pointer along with it (Git 2.38+).",
+          "code": [
+            "git switch feature-b",
+            "git rebase ___ main"
+          ],
+          "blanks": [
+            {
+              "id": "f1",
+              "accept": [
+                "--update-refs"
+              ]
+            }
+          ],
+          "explanation": "`--update-refs` moves every local branch whose tip sits inside the replayed range — here `feature-a` — to its rewritten commit, and lists them: `Updated the following refs with --update-refs: refs/heads/feature-a`. Without it, `feature-a` would still point at the old commits. Then force-push each branch with `--force-with-lease`; `rebase.updateRefs true` makes this the default."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-rebase-merge",
+      "snippets": [
+        {
+          "id": "squash-leaves-commits",
+          "code": [
+            "# feature-b = Base → A1 → A2 → B1 (stacked on feature-a = Base → A1 → A2)",
+            "git switch main",
+            "git merge --squash feature-a && git commit -m \"Feature A (#1)\"",
+            "git log --oneline main..feature-b"
+          ],
+          "question": "Which commits does the last command list?",
+          "answer": "B1, A2 and A1 — all three",
+          "acceptable": [
+            "three commits: B1, A2, A1",
+            "A1, A2 and B1"
+          ],
+          "explanation": "`main..feature-b` is \"reachable from feature-b, not from main\". The squash commit carries A1 and A2's *changes*, but it's a new commit with only `Base` as parent, so A1 and A2 aren't in `main`'s history. That's exactly the set `git rebase main` would try to replay — and why it conflicts."
+        },
+        {
+          "id": "ours-is-main",
+          "code": [
+            "# main: timeout = 45.  feature's commit: timeout = 60.",
+            "git switch feature",
+            "git rebase main                 # stops on a conflict in config.txt",
+            "git checkout --ours config.txt",
+            "cat config.txt"
+          ],
+          "question": "What does `cat` print?",
+          "answer": "timeout = 45",
+          "acceptable": [
+            "45",
+            "main's version"
+          ],
+          "explanation": "During a rebase, `HEAD` is the branch being rebased onto (`main`, plus anything already replayed), so `--ours` is `main`'s `timeout = 45`. Your commit — the one being replayed — is `--theirs`. In a `git merge feature` from `main`, `--ours` would also be 45, but for the opposite reason: there, ours really is the branch you're on."
+        },
+        {
+          "id": "one-commit-squash-skipped",
+          "code": [
+            "# feature-a was ONE commit (A1); main squash-merged it as \"Feature A (#1)\"",
+            "# feature-b = A1 → B1",
+            "git switch feature-b",
+            "git rebase main",
+            "git log --oneline"
+          ],
+          "question": "Does the rebase conflict? What's in the log afterwards?",
+          "answer": "No conflict: git warns it skipped A1, and the log is B1, Feature A (#1), Base",
+          "acceptable": [
+            "warning: skipped previously applied commit; B1 on top of the squash commit"
+          ],
+          "explanation": "Git prints `warning: skipped previously applied commit bb52381`: before replaying, rebase compares each commit's patch with the commits `main` gained, and the squash of a single commit is the same patch as that commit. With two or more commits in the base, the squash is one combined patch that matches none of them — and you're back to `--onto`."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-rebase-replay",
+      "challengeSlug": "rebase-replay-set"
+    }
+  ]
+}

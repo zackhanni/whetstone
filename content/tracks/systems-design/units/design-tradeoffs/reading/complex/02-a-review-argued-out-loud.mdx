@@ -1,0 +1,53 @@
+---
+id: a-review-argued-out-loud
+title: A design review, argued out loud
+---
+
+The question: *after checkout, how do we send the confirmation email?* Facts on the table: the
+email provider allows our account 100 sends a second and answers `429` beyond that; the
+Black Friday peak is 300 orders a second for about 20 minutes.
+
+**Option A — send inside the checkout request.** Simple, and the user knows it worked. But
+checkout latency now includes the provider's, and at peak we exceed its limit 3×. Two-thirds of
+sends get `429`, and retrying them inline holds 200 requests a second open — on the revenue path.
+Rejected: it ties the most important path to a dependency with a third of the capacity we need.
+
+**Option B — record it, queue it, send it from workers.** Checkout writes the order and an "email
+needed" message in one transaction (the outbox idea from the NestJS track's
+[Microservices & messaging](/learn/backend-nestjs/nest-microservices-and-messaging)) and returns. Workers drain the queue. Now arithmetic decides
+the details:
+
+```
+peak backlog:  (300 − 100) messages/s × 1,200 s          = 240,000 messages
+after the peak, arrivals ≈ 50/s (assumption) → spare 50/s
+drain:         240,000 / 50                              = 4,800 s ≈ 80 minutes
+```
+
+The last Black Friday confirmation goes out about 80 minutes late. **That is the cost to say out
+loud**, and it goes straight back to requirements: is an hour-late confirmation acceptable? More
+workers can't fix it — the provider caps us at 100/s. Only a higher limit or a second provider
+can.
+
+Three more decisions fall out:
+
+- **The workers limit themselves to 100/s across the fleet** — Azure's Rate Limiting pattern:
+  control your own send rate to stay under a dependency's throttle instead of retrying into it,
+  with every workstream that uses the dependency going through the same limiter. One shared token
+  bucket; four workers at 100/s each would be 400/s and a stream of `429`s.
+- **Every send carries an idempotency key — the order id.** The queue delivers at least once and
+  workers retry, so a crash between "sent" and "acknowledged" would otherwise email twice. If the
+  provider accepts an idempotency key, pass it; if not, record "sent" on the order and accept a
+  small double-send window — and say that you did.
+- **A `429` with `Retry-After` pauses the worker** for that long. It's back-pressure from the
+  provider; retrying immediately only earns more `429`s.
+
+**What would change my mind:** if the requirement becomes "confirmation within 5 minutes, always",
+option B with one provider can't meet it at Black Friday volume. The arithmetic says so before
+anyone writes code, and the conversation moves to provider capacity, not architecture.
+
+<!--more-->
+
+The shape is the four parts from the simple tier: the **options** (inline vs queued), the
+**deciding facts** (100/s limit, 300/s peak for 20 minutes), the **cost** (up to 80 minutes late,
+a small double-send window), and the **reversal point** (a 5-minute requirement). Almost all of the
+work was arithmetic on a whiteboard.

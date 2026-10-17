@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 3,
+  "slug": "caching-and-scaling",
+  "title": "Caching, replicas & shards: scaling the read and write paths",
+  "skills": ["system-design", "caching", "scaling", "replication", "partitioning", "consistency-models"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 50,
+  "objectives": [
+    "Trace a request's read and write paths, put each kind of data in a cache layer that can hold it, size the database for the cache's miss rate, and use a queue to level bursty writes",
+    "Spot the races cache-aside leaves once the write order is right — a stale set, a stampede across the fleet — and fix each in the shared cache (a lease, a lock key), with the TTL as the bound on what's left",
+    "Predict a read-your-writes failure under asynchronous replication and choose a fix: read from the primary after a write, wait for the replica, or accept the lag",
+    "Choose a partition key and routing scheme, and explain why `hash % N` moves most keys on a resize while consistent hashing with virtual nodes moves about 1/N",
+    "Explain CAP and PACELC in plain terms and name the trade-off a concrete setting makes, such as asynchronous vs synchronous replication"
+  ],
+  "sources": [
+    { "title": "AWS Builders' Library: Caching challenges and strategies", "url": "https://aws.amazon.com/builders-library/caching-challenges-and-strategies/" },
+    { "title": "Azure Architecture Center: Cache-Aside pattern", "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/cache-aside" },
+    { "title": "Nishtala et al., Scaling Memcache at Facebook (NSDI '13)", "url": "https://www.usenix.org/system/files/conference/nsdi13/nsdi13-final170_update.pdf" },
+    { "title": "PostgreSQL 18 docs: Log-shipping standby servers (streaming and synchronous replication)", "url": "https://www.postgresql.org/docs/18/warm-standby.html" },
+    { "title": "PostgreSQL 18 docs: Hot Standby", "url": "https://www.postgresql.org/docs/18/hot-standby.html" },
+    { "title": "PostgreSQL 18 docs: Table partitioning", "url": "https://www.postgresql.org/docs/18/ddl-partitioning.html" },
+    { "title": "Azure Architecture Center: Sharding pattern", "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/sharding" },
+    { "title": "Amazon DynamoDB guide: Using write sharding to distribute workloads evenly", "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-sharding.html" },
+    { "title": "DeCandia et al., Dynamo: Amazon's Highly Available Key-value Store (SOSP 2007)", "url": "https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf" },
+    { "title": "Redis docs: Redis cluster specification", "url": "https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/" },
+    { "title": "Redis docs: Scripting with Lua (atomic execution)", "url": "https://redis.io/docs/latest/develop/programmability/eval-intro/" },
+    { "title": "Eric Brewer, CAP Twelve Years Later: How the \"Rules\" Have Changed", "url": "https://www.infoq.com/articles/cap-twelve-years-later-how-the-rules-have-changed/" },
+    { "title": "Daniel Abadi, Consistency Tradeoffs in Modern Distributed Database System Design (PACELC)", "url": "https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf" },
+    { "title": "Azure Architecture Center: Queue-Based Load Leveling pattern", "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/queue-based-load-leveling" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-caching-and-scaling", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-caching-and-scaling",
+      "questions": [
+        {
+          "id": "per-user-cache-layer",
+          "prompt": "`GET /api/dashboard` returns JSON that's different for every signed-in user and is expensive to compute. Where can you cache it?",
+          "options": [
+            { "id": "app-cache", "text": "In the app cache, keyed by user id (and optionally `private` in that user's browser)" },
+            { "id": "cdn", "text": "At the CDN with `Cache-Control: public`, since it's the same URL for everyone" },
+            { "id": "nowhere", "text": "Nowhere — per-user data can't be cached" },
+            { "id": "db-only", "text": "Only in the database's own memory, which caches it automatically" }
+          ],
+          "answer": "app-cache",
+          "explanation": "A shared cache keyed by URL would serve one user's dashboard to everyone who requests the same URL — the classic per-user-data leak. Per-user data is cacheable; it just needs a key that includes the user, which is exactly what an app cache you control provides (and a browser cache, being one user's, can hold it with `private`). The database's buffer cache keeps hot *pages*, not your computed JSON, so the expensive work still runs every time."
+        },
+        {
+          "id": "queue-is-not-capacity",
+          "prompt": "Producers send an **average** of 1,200 messages/s; the consumers can process 1,000/s. What does putting a queue between them do?",
+          "options": [
+            { "id": "grows", "text": "The queue grows for as long as that lasts — a queue levels bursts around an average the consumers can handle; it doesn't add capacity" },
+            { "id": "levels", "text": "It levels the load, so the consumers keep up" },
+            { "id": "drops", "text": "The queue automatically drops the extra 200/s" },
+            { "id": "speeds", "text": "Consumers speed up because they no longer wait on producers" }
+          ],
+          "answer": "grows",
+          "explanation": "Queue-based load leveling lets the downstream service be sized for the *average* load instead of the peak. Here the average itself exceeds capacity, so 200 more messages pile up every second — Azure's pattern names this case: monitor queue depth and scale consumers, or shed work at the producer. A queue that silently drops is a different (and much worse) design; and consumers don't get faster because the queue exists."
+        },
+        {
+          "id": "stale-set-fix",
+          "prompt": "Your cache-aside code already updates the database and *then* deletes the key, yet a link occasionally serves its old destination for a full TTL after an edit. Which change closes that gap with Redis as the cache?",
+          "options": [
+            { "id": "lease", "text": "Build a lease: a reader that misses takes a token key with `SET … NX`, the writer's invalidation deletes it too, and the fill is a Lua script that writes only if the reader's token is still there" },
+            { "id": "set-on-write", "text": "Have the writer `SET` the new value instead of deleting the key" },
+            { "id": "db-transaction", "text": "Run the reader's `SELECT` and its cache `SET` inside one database transaction" },
+            { "id": "shorter-ttl", "text": "Shorten the TTL" }
+          ],
+          "answer": "lease",
+          "explanation": "The old destination comes from a *stale set*: a reader that missed read the old row before the update and wrote it into the cache after the delete. Memcache's leases close it — the delete invalidates the reader's token, so its late set isn't stored — and in Redis you build the same thing from a token key plus a Lua script, which Redis runs atomically. Setting the new value on write doesn't help: the slow reader's set still arrives afterwards and overwrites it. A database transaction can't include the cache, so the late `SET` still lands. A shorter TTL only bounds how long the stale value lives; it doesn't stop it."
+        },
+        {
+          "id": "stampede",
+          "prompt": "Each of 40 app servers already coalesces concurrent misses in-process (one load per key per server, like cache-manager's `wrap`). When a very hot key expires, the database still takes a burst of identical queries every time. What removes the rest of the burst?",
+          "options": [
+            { "id": "shared-lease", "text": "Coalesce in the shared cache: one lease or lock key per key (`SET … NX PX`), and the servers that lose it wait briefly and read the cache again" },
+            { "id": "shorter-ttl", "text": "A shorter TTL, so the value is fresher" },
+            { "id": "bigger-map", "text": "A larger in-process map of in-flight loads" },
+            { "id": "bigger-db", "text": "A bigger database instance" }
+          ],
+          "answer": "shared-lease",
+          "explanation": "In-process coalescing caps the herd at one query **per server** — up to 40 here — because each process only knows its own in-flight loads. Removing the multiplier needs a decision every server can see, and that's the cache: AWS's Builders' Library describes coalescing done by the servers *or by an external cache*, and memcache's leases (one token per key every 10 seconds; other clients are told to wait) cut one set of herd-prone keys from a 17K/s to a 1.3K/s database peak. A shorter TTL makes the herd happen *more* often, a larger map is still one map per process, and a bigger database only raises the threshold."
+        },
+        {
+          "id": "read-your-writes",
+          "prompt": "Reads go to async Postgres replicas. A user saves their profile, gets 200 OK, and the reloaded page shows the old name for about a second. What's the targeted fix?",
+          "options": [
+            { "id": "primary-after-write", "text": "Route that user's reads to the primary for a short window after they write" },
+            { "id": "all-sync", "text": "Make every commit wait for every replica" },
+            { "id": "add-cache", "text": "Put a cache in front of the replicas" },
+            { "id": "retry-read", "text": "Have the client re-read until the value changes" }
+          ],
+          "answer": "primary-after-write",
+          "explanation": "Streaming replication is asynchronous by default (PostgreSQL 18 docs), so a replica can briefly trail the primary — fine for everyone except the person who just wrote. Sending only *their* reads to the primary for a short window fixes exactly that case (Brewer describes Facebook doing this for 20 seconds after an update). Synchronous commits for everyone fix it at a latency cost on every write; a cache adds a second stale copy; and re-reading \"until it changes\" can't know whether the old value is stale or the save didn't happen."
+        },
+        {
+          "id": "range-key-hotspot",
+          "prompt": "You shard an `orders` table by `created_at` ranges, one shard per month. What goes wrong first?",
+          "options": [
+            { "id": "hot-shard", "text": "Every new order lands on the current month's shard, so all write load is on one machine again" },
+            { "id": "range-slow", "text": "Queries for a month's orders become slow" },
+            { "id": "uneven-storage", "text": "Nothing important — only storage is a little uneven" },
+            { "id": "no-joins", "text": "You can no longer join orders to customers" }
+          ],
+          "answer": "hot-shard",
+          "explanation": "A monotonically increasing key sends every insert to the end of the range — Azure's Sharding pattern lists timestamps and auto-increment ids as keys to avoid for exactly this reason. Range sharding is *good* at \"this month's orders\" (one shard answers), so that option has it backwards. The real damage is that sharding was meant to spread writes, and this key puts them all in one place."
+        },
+        {
+          "id": "modulo-resize",
+          "prompt": "A cache cluster routes with `node = hash(key) % N`. Why is adding a fifth node to four so painful?",
+          "options": [
+            { "id": "most-move", "text": "Most keys — about 80% — map to a different node, so the cluster behaves as if it had been flushed" },
+            { "id": "new-empty", "text": "Only the new node starts empty; every other key stays where it was" },
+            { "id": "collisions", "text": "Hash collisions increase with more nodes" },
+            { "id": "last-node", "text": "Only keys on the last node move, which overloads it" }
+          ],
+          "answer": "most-move",
+          "explanation": "A key stays put only when `hash % 4 === hash % 5`, which holds for about one key in five, so ~80% move — and from 10 to 11 nodes, ~90%. That's the miss storm Azure warns about for `mod N`. \"Only the new node starts empty\" is the property of consistent hashing, where a new node takes over only the arcs before its positions (about 1/N of keys) and nothing moves between old nodes. Collisions aren't the issue; the changing divisor is."
+        },
+        {
+          "id": "cap-ca-claim",
+          "prompt": "A teammate says: \"Our Postgres primary with async read replicas is a CA system, so network partitions don't concern us.\" What's the best correction?",
+          "options": [
+            { "id": "bet", "text": "\"CA\" only bets that partitions are rare; when one happens each operation must still fail or answer stale — and even without one, async replicas already trade consistency for latency" },
+            { "id": "nosql-only", "text": "They're right: CAP only applies to NoSQL databases" },
+            { "id": "is-cp", "text": "Async replication makes it CP, so it's always consistent" },
+            { "id": "is-ap", "text": "It's AP, because replicas never lag" }
+          ],
+          "answer": "bet",
+          "explanation": "Brewer's restatement: you can't choose not to have partitions, so \"CA\" means assuming they're rarer than other failures — and when one occurs (a replica cut off from the primary), operations still choose between failing and serving possibly-old data. PACELC adds the everyday half: with no partition at all, async replication already picks latency over consistency, which is why replicas can return old values. CAP applies to any replicated data, and async replicas certainly can lag."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-caching-and-scaling",
+      "prompts": [
+        {
+          "id": "replica-caught-up",
+          "prompt": "Read-your-writes on PostgreSQL 18 replicas: you kept the primary's WAL position from the moment the user's write committed. Serve their next read from a replica only if it has *replayed* past that point.",
+          "code": [
+            "-- on the primary, right after the user's write commits; keep the result in their session",
+            "SELECT pg_current_wal_lsn();            -- e.g. 0/3000148",
+            "",
+            "-- on a replica, before serving that user's next read",
+            "SELECT ___() >= '0/3000148'::pg_lsn;   -- false → wait briefly, or read from the primary"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["pg_last_wal_replay_lsn"] }],
+          "explanation": "`pg_last_wal_replay_lsn()` is the last WAL position the standby has *replayed* — the changes its queries can see. Once it has passed the write's position, this replica will show the user their own write. The tempting wrong one is `pg_last_wal_receive_lsn()`: WAL that has arrived but not been replayed is invisible to queries. `pg_current_wal_lsn()` runs only on the primary; a standby in recovery refuses it."
+        },
+        {
+          "id": "numeric-sort",
+          "prompt": "Keep a hash ring's positions in numeric order.",
+          "code": "positions.sort((a, b) => ___);",
+          "blanks": [{ "id": "b1", "accept": ["a - b"] }],
+          "explanation": "Without a comparator, `Array.prototype.sort` compares elements as strings, so `10000` sorts before `900` and every lookup walks the ring out of order. A negative result puts `a` first."
+        },
+        {
+          "id": "ring-wrap",
+          "prompt": "After a binary search, `low` is the index of the first position ≥ the key's hash — or `positions.length` if there's none. Wrap around the ring.",
+          "code": "const index = low === positions.length ? ___ : low;",
+          "blanks": [{ "id": "c1", "accept": ["0"] }],
+          "explanation": "The ring is circular: a key hashing above the highest position belongs to the lowest one. Forgetting the wrap returns `undefined` for every key in the last arc."
+        },
+        {
+          "id": "remote-apply",
+          "prompt": "Make each commit wait until the synchronous standby has replayed it, so a read on that standby right after the commit sees the change.",
+          "code": "SET synchronous_commit = ___;",
+          "blanks": [{ "id": "d1", "accept": ["remote_apply", "'remote_apply'"] }],
+          "explanation": "With `remote_apply` (and a synchronous standby configured in `synchronous_standby_names`), the PostgreSQL 18 docs say commits wait for the standby to replay the transaction, \"making it visible to user queries\" — in simple cases, load balancing with causal consistency. In PACELC terms it buys consistency with latency on every commit. `on` only waits for the standby to flush the WAL, not to replay it."
+        },
+        {
+          "id": "redis-slots",
+          "prompt": "Redis Cluster's key → slot function. The modulus never changes, which is why adding a node moves slots instead of rehashing keys.",
+          "code": "HASH_SLOT = CRC16(key) mod ___",
+          "blanks": [{ "id": "e1", "accept": ["16384", "16,384"] }],
+          "explanation": "16,384 fixed slots, each owned by one master. Resharding moves whole slots between nodes (clients that ask the wrong node get `MOVED`), so the number of nodes never appears in a key's hash — the same separation consistent hashing achieves with a ring."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-caching-and-scaling",
+      "snippets": [
+        {
+          "id": "estimate-hit-ratio-drop",
+          "code": [
+            "// Estimate",
+            "reads_per_second = 10_000",
+            "",
+            "// Monday:  cache hit ratio 99%",
+            "// Tuesday: a deploy changes key names for some pages; hit ratio 98%",
+            "",
+            "database_reads_per_second(Monday)  = ?",
+            "database_reads_per_second(Tuesday) = ?"
+          ],
+          "question": "How many reads per second reach the database on each day?",
+          "answer": "100/s on Monday, 200/s on Tuesday — a one-point drop in hit ratio doubled database load",
+          "acceptable": ["100 then 200", "doubles", "100 and 200"],
+          "explanation": "The database sees the *miss* rate: 1% of 10,000 = 100/s, then 2% = 200/s. A dashboard showing \"98% hits\" looks almost unchanged while the database's load doubled, which is why hit ratio near the top should be read as its complement. Size the database for a bad day's miss rate, and remember a full cache outage is the 100% case — AWS's caching article recommends load-testing with the cache disabled."
+        },
+        {
+          "id": "modulo-reshuffle",
+          "code": [
+            "// hash32 maps a string to an unsigned 32-bit integer (the challenge's hash.ts)",
+            "const keys = Array.from({ length: 10_000 }, (_, i) => `user:${i}`);",
+            "",
+            "const moved = keys.filter((k) => hash32(k) % 4 !== hash32(k) % 5).length;",
+            "console.log(moved / keys.length);"
+          ],
+          "question": "Roughly what fraction of keys change node when a `hash % N` cluster grows from 4 nodes to 5?",
+          "answer": "About 0.8 — run with this hash it prints 0.7961",
+          "acceptable": ["~80%", "0.8", "0.7961", "about four in five"],
+          "explanation": "A key keeps its node only if its hash leaves the same remainder mod 4 and mod 5 — true for about one key in five — so ~80% move (and ~90% going from 10 to 11). On a consistent-hash ring with virtual nodes, the same change moves about 20% of keys, all of them *to the new node* (19.6% in the challenge's preview). That difference is the reason routers keep the node count out of the key's hash."
+        },
+        {
+          "id": "stale-set",
+          "code": [
+            "// cache-aside, TTL 1 hour; the database row for x starts as OLD",
+            "reader A:  cache.get(\"link:x\")           // miss",
+            "reader A:  row = db.select(\"x\")          // reads OLD",
+            "writer B:  db.update(\"x\", NEW)           // commits",
+            "writer B:  cache.del(\"link:x\")",
+            "reader A:  cache.set(\"link:x\", row, { ttlSeconds: 3600 })"
+          ],
+          "question": "What does `link:x` hold after the last line, and for how long will readers see it?",
+          "answer": "OLD — until the TTL expires (up to an hour) or another write deletes it",
+          "acceptable": ["the old value", "OLD, for up to an hour", "stale until the TTL"],
+          "explanation": "B did everything right — database first, then delete — but A read the row before B's update and wrote it into the cache after B's delete. Nothing deletes it again, so every reader is served OLD until expiry. Facebook's memcache paper calls this a stale set and fixes it with leases (B's delete invalidates A's token, so A's set isn't stored). Redis has no leases, but you can build one: a token key taken on the miss, deleted by the writer, and checked by a Lua script on the fill. Without one, your TTL is the upper bound on how long a stale set can live."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-consistent-hash", "challengeSlug": "consistent-hash-router" }
+  ]
+}

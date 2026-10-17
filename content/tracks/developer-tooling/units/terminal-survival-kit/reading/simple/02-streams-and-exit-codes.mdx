@@ -1,0 +1,56 @@
+---
+id: streams-and-exit-codes
+title: Three streams and one number
+---
+
+Every program you run gets three open channels and leaves one number behind.
+
+| Stream | Number | Default | Used for |
+| --- | --- | --- | --- |
+| stdin | 0 | your keyboard | input |
+| stdout | 1 | your terminal | the actual output |
+| stderr | 2 | your terminal | errors, warnings, progress |
+
+Both output streams land on your screen, so they look the same — until you redirect one.
+
+## Redirecting and piping
+
+```sh
+git log --oneline > history.txt      # stdout into a file (replaces it)
+date >> history.txt                  # append instead of replace
+pnpm build 2> errors.txt             # only stderr into a file
+pnpm build > build.log 2>&1          # both into one file
+pnpm build 2> /dev/null              # throw errors away
+git log --oneline | grep fix         # stdout of the left becomes stdin of the right
+```
+
+`2>&1` reads as "make stream 2 point wherever stream 1 points **right now**". Put it after the
+`> file`, so stream 1 already points at the file. (The medium tier shows what the other order
+does.)
+
+A pipe carries **only stdout**. If a command's complaint is on stderr, `| grep` never sees
+it — which is why `pnpm build | grep error` can print nothing while errors scroll past.
+
+## The exit code: 0 means success
+
+When a program finishes it returns a number. `0` is success; anything else is failure, and
+the number often says which failure. `$?` holds the last one:
+
+```sh
+% grep -q TODO notes.txt; echo $?
+1                                   # grep: 1 = no match, 2 = an error (e.g. no such file)
+% nosuchcommand; echo $?
+zsh: command not found: nosuchcommand
+127                                 # 127 = the shell couldn't find the program
+```
+
+Two operators branch on it:
+
+```sh
+pnpm test && git push          # push only if the tests exit 0
+pnpm build || echo "build failed"   # run the echo only if the build exits non-zero
+```
+
+That's the whole contract scripts, CI and git hooks are built on: **a step "fails" when its
+exit code isn't 0**. A tool that prints an error but exits 0 has, as far as everything
+downstream is concerned, succeeded.

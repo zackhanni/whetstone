@@ -1,0 +1,61 @@
+---
+id: percentiles-from-buckets
+title: Percentiles from buckets — what a histogram can and can't tell you
+---
+
+A service doesn't keep every latency to sort later. It increments bucket counters, and every
+question has to be answered from those counts. Five requests — 50, 150, 250, 900 and 4,000 ms —
+with buckets at 100, 300 and 1,000 ms:
+
+| `le` (ms) | 100 | 300 | 1000 | `+Inf` |
+| --- | --- | --- | --- | --- |
+| cumulative count | 1 | 3 | 4 | 5 |
+
+### "What share finished within 300 ms?" — exact, if a bucket ends there
+
+Read it straight off: `count(le=300) / count(+Inf)` = 3 / 5 = **60%**. Prometheus's histogram
+guide writes the same thing over a window:
+
+```text
+sum(rate(http_request_duration_seconds_bucket{le="0.3"}[5m]))
+  /
+sum(rate(http_request_duration_seconds_count[5m]))
+```
+
+and warns that it *strictly requires* a bucket boundary at 0.3. Ask "within 250 ms?" and the
+counts can't say — the requests between 100 and 300 ms are one number. So **put bucket
+boundaries at your thresholds**: if the target is "99% under 300 ms", 300 ms must be a bound.
+
+### "What's the p50?" — an estimate
+
+`histogram_quantile()` finds the bucket the rank falls in and assumes the observations inside
+it are spread evenly (linear interpolation). The p50 rank is 0.5 × 5 = 2.5, which lands in the
+100–300 bucket, three-quarters of the way through its two observations: 100 + 0.75 × 200 =
+**250 ms**. Here that happens to be exact; in general the error is bounded by the width of the
+bucket the quantile lands in — anywhere from 100 to 300 ms.
+
+Two edge rules from the Prometheus docs matter:
+
+- The lowest bucket is assumed to start at 0.
+- **A quantile that lands in the `+Inf` bucket returns the highest finite bound.** The p90 rank,
+  4.5, lands there, so the answer is **1,000 ms** — while the real slowest request took 4 s. If
+  your top bound is below your tail, the histogram can't show the tail at all.
+
+### Never average percentiles
+
+Each instance of a service can compute its own p99, but you can't combine them. Instance A
+serves 100 requests, 98 at 10 ms and two at 1 s; instance B serves 100 requests, all at
+10 ms. Their p99s are 1,000 and 10 ms; the average, **505 ms**, is a latency no request had, and the true
+p99 of all 200 requests is **10 ms**. Prometheus's guide calls averaged quantiles "statistically
+nonsensical". That's why its *summary* type, which precomputes quantiles in each process,
+can't be aggregated across instances, while histogram buckets can: sum the bucket counters
+from every instance (`sum by (le) (rate(...))`), then take the quantile.
+
+<!--more-->
+
+**Native histograms.** Prometheus 3.8 made native histograms stable (still opt-in with
+`scrape_native_histograms`): buckets are chosen automatically at a configurable resolution and
+stored as one series instead of one per bucket, so the estimation error shrinks without you
+picking bounds. Classic `le` buckets are still what most exporters and dashboards emit, and
+OpenTelemetry's HTTP conventions recommend explicit boundaries for request duration from 5 ms
+to 10 s.

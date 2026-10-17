@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 3,
+  "slug": "git-recovery",
+  "title": "Git recovery: undo at the right layer",
+  "skills": ["git", "undoing-changes"],
+  "difficulty": "core",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Pick the undo for where a mistake lives: `restore`, `restore --staged`, `commit --amend`, `reset`, or `revert` for anything already pushed",
+    "Predict what `reset --soft`, `--mixed` and `--hard` do to the branch, the index and the working tree — including untracked and staged-only files",
+    "Use `stash` without losing work (`-u`, `apply` vs `pop`), and spot the path-limited stash that saves nothing so the next `pop` applies an older entry",
+    "Recover a \"lost\" commit with `git reflog` or `ORIG_HEAD`, and say what the reflog can't bring back"
+  ],
+  "sources": [
+    { "title": "Pro Git: Reset Demystified", "url": "https://git-scm.com/book/en/v2/Git-Tools-Reset-Demystified" },
+    { "title": "Pro Git: Undoing Things", "url": "https://git-scm.com/book/en/v2/Git-Basics-Undoing-Things" },
+    { "title": "Git docs: git-reset", "url": "https://git-scm.com/docs/git-reset" },
+    { "title": "Git docs: git-restore", "url": "https://git-scm.com/docs/git-restore" },
+    { "title": "Git docs: git-stash", "url": "https://git-scm.com/docs/git-stash" },
+    { "title": "Git docs: git-revert", "url": "https://git-scm.com/docs/git-revert" },
+    { "title": "Git docs: git-reflog", "url": "https://git-scm.com/docs/git-reflog" },
+    { "title": "Git docs: gitrevisions (ORIG_HEAD, @{n})", "url": "https://git-scm.com/docs/gitrevisions" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-git-recovery", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-git-recovery",
+      "questions": [
+        {
+          "id": "unstage-keep-edits",
+          "prompt": "You ran `git add .` and staged `secrets.json` by mistake. You want it out of the next commit but your edits kept on disk. Which command?",
+          "options": [
+            { "id": "restore-staged", "text": "`git restore --staged secrets.json`" },
+            { "id": "restore", "text": "`git restore secrets.json`" },
+            { "id": "reset-hard", "text": "`git reset --hard`" },
+            { "id": "rm", "text": "`git rm secrets.json`" }
+          ],
+          "answer": "restore-staged",
+          "explanation": "The mistake lives in the **index**, so undo it there: `restore --staged` copies `HEAD`'s version (or nothing, for a new file) back into the index and leaves the working tree alone. Plain `git restore` copies the index into the working tree: here that changes nothing and the file stays staged (had there been unstaged edits, it would have thrown them away). `reset --hard` resets every tracked file — and deletes a file that was only ever staged. `git rm` refuses because the file has staged changes, and with `-f` it would delete it from disk."
+        },
+        {
+          "id": "pushed-bad-commit",
+          "prompt": "A commit pushed to `main` yesterday broke checkout. Three teammates have pulled since. What's the right undo?",
+          "options": [
+            { "id": "revert", "text": "`git revert <commit>` and push — a new commit that applies the opposite change" },
+            { "id": "reset-force", "text": "`git reset --hard <commit>~1`, then `git push --force`" },
+            { "id": "amend", "text": "`git commit --amend` to rewrite the bad commit" },
+            { "id": "delete", "text": "Delete `main` on the remote and push it again" }
+          ],
+          "answer": "revert",
+          "explanation": "Revert **adds** history, so everyone pulls it like any other commit. Reset and amend **rewrite** it: the push needs force, and the teammates who already have the bad commit keep it — their next ordinary push can put it straight back. Amend only ever touches the latest commit anyway, and yesterday's isn't necessarily that."
+        },
+        {
+          "id": "squash-last-three",
+          "prompt": "Your last three local commits should be one. Which sequence leaves you with one commit holding all three commits' changes?",
+          "options": [
+            { "id": "soft", "text": "`git reset --soft HEAD~3 && git commit`" },
+            { "id": "mixed", "text": "`git reset HEAD~3 && git commit`" },
+            { "id": "hard", "text": "`git reset --hard HEAD~3 && git commit`" },
+            { "id": "revert", "text": "`git revert HEAD~3..HEAD`" }
+          ],
+          "answer": "soft",
+          "explanation": "`--soft` moves the branch back three commits and leaves the index as it was — the combined changes are staged, so `git commit` records them as one. Plain `reset` (`--mixed`) also resets the index, so `commit` finds nothing staged (you'd need `git add -A` first, and any new files would show as untracked). `--hard` discards the changes. `revert` adds three new commits that undo the old ones."
+        },
+        {
+          "id": "hard-what-survives",
+          "prompt": "Your working tree has `notes.md` (never added) and `helper.ts` (new, staged with `git add`, never committed). You run `git reset --hard`. What's left?",
+          "options": [
+            { "id": "notes-only", "text": "`notes.md` survives; `helper.ts` is deleted" },
+            { "id": "both", "text": "Both survive — neither was ever committed" },
+            { "id": "neither", "text": "Both are deleted — `--hard` resets the whole folder" },
+            { "id": "helper-only", "text": "`helper.ts` survives because it was staged; `notes.md` is deleted" }
+          ],
+          "answer": "notes-only",
+          "explanation": "`--hard` makes the index and every **tracked** file match the target. Staging made `helper.ts` tracked, and the target commit doesn't have it, so it's removed from disk. `notes.md` was never in the index — untracked — so `--hard` doesn't touch it (that's `git clean`'s job). The staged content of `helper.ts` survives only as a dangling blob that `git fsck --lost-found` can dig up."
+        },
+        {
+          "id": "stash-pop-surprise",
+          "prompt": "`git stash list` shows `stash@{0}: On main: old experiment`. You edited only `config.json`, then ran `git stash push -- app.ts` and `git stash pop`. What happened?",
+          "options": [
+            { "id": "old-applied", "text": "The push saved nothing (`No local changes to save`, exit 0); `pop` applied and dropped the old experiment" },
+            { "id": "roundtrip", "text": "`app.ts` was stashed and restored, so nothing changed" },
+            { "id": "error", "text": "The push failed with a non-zero exit code, so `pop` never ran" },
+            { "id": "config-stashed", "text": "`config.json` was stashed instead, then restored" }
+          ],
+          "answer": "old-applied",
+          "explanation": "A path-limited stash saves changes to those paths only — `app.ts` had none, so nothing was pushed, and git still exits 0. `pop` takes the top entry, which was last week's experiment: it's applied on top of your `config.json` edit and dropped from the list. Check `git stash list` before popping, or in scripts compare `git rev-parse -q --verify refs/stash` before and after the push."
+        },
+        {
+          "id": "stash-untracked",
+          "prompt": "You run `git stash`, switch to another branch, and your new, never-added `draft.md` is still there in the working tree. Why?",
+          "options": [
+            { "id": "untracked", "text": "Untracked files aren't stashed by default; `git stash push -u` includes them" },
+            { "id": "failed", "text": "The stash failed silently" },
+            { "id": "branch", "text": "`draft.md` exists on the other branch too" },
+            { "id": "ignored", "text": "Markdown files are ignored by git" }
+          ],
+          "answer": "untracked",
+          "explanation": "`git stash` saves changes to tracked files (staged and unstaged) and resets them to `HEAD`. A file git doesn't track isn't part of either, so it stays put and follows you across branches. `-u` (`--include-untracked`) adds untracked files to the stash entry."
+        },
+        {
+          "id": "reflog-recover",
+          "prompt": "You ran `git reset --hard HEAD~2` — one commit too far. Nothing was pushed. How do you get the commits back?",
+          "options": [
+            { "id": "orig-head", "text": "`git reset --hard ORIG_HEAD` (or find the commit in `git reflog` and reset to `HEAD@{1}`)" },
+            { "id": "revert", "text": "`git revert HEAD~2`" },
+            { "id": "pull", "text": "`git pull`, since the remote still has them" },
+            { "id": "gone", "text": "You can't: `--hard` deletes the commits" }
+          ],
+          "answer": "orig-head",
+          "explanation": "Reset moves a branch; it never deletes commits. `ORIG_HEAD` records where `HEAD` was before the reset, and the reflog lists every position (`HEAD@{1}` is one move ago), so resetting back restores the branch exactly. Nothing was pushed, so the remote has nothing to pull. `revert` would add a commit undoing yet another one."
+        },
+        {
+          "id": "reflog-limits",
+          "prompt": "Which of these can the reflog **not** help you recover?",
+          "options": [
+            { "id": "unstaged", "text": "Edits you never staged, discarded by `git restore app.ts`" },
+            { "id": "reset", "text": "A commit you reset away two days ago" },
+            { "id": "amended", "text": "The original version of a commit you amended" },
+            { "id": "deleted-branch", "text": "The tip of a branch you deleted with `git branch -D`" }
+          ],
+          "answer": "unstaged",
+          "explanation": "The reflog records where `HEAD` and branches pointed, so it can lead back to any **commit** you had — a reset-away one, the pre-amend version, the last commit of a deleted branch (via `HEAD`'s reflog, if you'd had it checked out). Unstaged edits were never written into git at all, so there's nothing to point at. Reflog entries also expire (90 days, or 30 for unreachable ones, by default) and exist only in your local clone."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-git-recovery",
+      "prompts": [
+        {
+          "id": "unstage",
+          "prompt": "Unstage `app.ts` and keep the edits on disk.",
+          "code": "git restore ___ app.ts",
+          "blanks": [{ "id": "a1", "accept": ["--staged", "-S"] }],
+          "explanation": "`--staged` makes `restore` write to the index (from `HEAD`) instead of to the working tree. Without it, `restore` overwrites the file on disk with the index's version — discarding your unstaged edits."
+        },
+        {
+          "id": "uncommit-keep-staged",
+          "prompt": "Undo the last commit but keep its changes staged, ready to recommit.",
+          "code": "git reset ___ HEAD~1",
+          "blanks": [{ "id": "b1", "accept": ["--soft"] }],
+          "explanation": "`--soft` moves only the branch. The index still holds the undone commit's snapshot, so `git status` shows its changes as staged. `--mixed` (the default) would also unstage them; `--hard` would discard them."
+        },
+        {
+          "id": "stash-with-untracked",
+          "prompt": "Stash everything, including files you haven't added yet, with a label you'll recognise.",
+          "code": "git stash push ___ -m \"wip: retry logic\"",
+          "blanks": [{ "id": "c1", "accept": ["-u", "--include-untracked"] }],
+          "explanation": "Without `-u`, untracked files stay in the working tree. `-m` names the entry so `git stash list` shows `On main: wip: retry logic` instead of `WIP on main: <last commit>`."
+        },
+        {
+          "id": "undo-the-reset",
+          "prompt": "Undo the `reset --hard` you just ran.",
+          "code": "git reset --hard ___",
+          "blanks": [{ "id": "d1", "accept": ["ORIG_HEAD", "HEAD@{1}"] }],
+          "explanation": "`ORIG_HEAD` is where `HEAD` was before the last reset (or merge, or rebase). `HEAD@{1}` reads the reflog: where `HEAD` was one move ago. Right after the reset, both name the old tip."
+        },
+        {
+          "id": "revert-merge",
+          "prompt": "Revert a merge commit, keeping the branch you merged into as the mainline.",
+          "code": "git revert ___ 1 4f2a9c1",
+          "blanks": [{ "id": "e1", "accept": ["-m", "--mainline"] }],
+          "explanation": "A merge has two parents, so git needs to know which side to keep: `-m 1` keeps parent 1 (the branch that received the merge) and undoes what the merged branch brought in. Without it: `error: commit … is a merge but no -m option was given.`"
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-git-recovery",
+      "snippets": [
+        {
+          "id": "mixed-status",
+          "code": [
+            "# HEAD's commit changed a.txt (\"a1\" → \"a2\") and added b.txt",
+            "git reset -q HEAD~1",
+            "git status --short"
+          ],
+          "question": "What does `git status --short` print?",
+          "answer": "M a.txt (unstaged, right column), then ?? b.txt",
+          "acceptable": [" M a.txt / ?? b.txt", "a.txt modified and unstaged; b.txt untracked"],
+          "explanation": "Plain `git reset` is `--mixed`: the branch and the index go back to the parent; the working tree keeps `a2` and `b.txt`. So `a.txt` differs from the index only in the working tree (` M`, right column), and `b.txt` is no longer in the index at all — it's untracked (`??`), not deleted."
+        },
+        {
+          "id": "stash-saves-nothing",
+          "code": [
+            "% git stash list",
+            "stash@{0}: On main: old experiment",
+            "% git status --short",
+            " M config.json",
+            "% git stash push -- app.ts; echo \"exit=$?\"",
+            "% git stash pop -q; git status --short"
+          ],
+          "question": "What do the last two command lines print?",
+          "answer": "No local changes to save, exit=0 — then M app.ts and M config.json",
+          "acceptable": ["nothing saved, exit 0, then the old experiment is applied alongside config.json"],
+          "explanation": "`app.ts` has no changes, so the path-limited push saves nothing — and still exits 0. `pop` then applies the top entry, the old experiment (an edit to `app.ts`), on top of your `config.json` change, and drops it from the list. Both files now show as modified (` M`)."
+        },
+        {
+          "id": "teammate-after-force",
+          "code": [
+            "# You: git reset --hard HEAD~1 && git push --force   (removes \"Double the price\" from main)",
+            "# Your teammate had already pulled \"Double the price\". They run:",
+            "git pull",
+            "git push"
+          ],
+          "question": "What does the teammate's `git pull` report, and what does their `git push` do?",
+          "answer": "Already up to date. — then the push puts \"Double the price\" back on main",
+          "acceptable": ["pull: (forced update) then Already up to date; push: main -> main, restoring the commit"],
+          "explanation": "The fetch inside `pull` shows `+ fe6ee98...640fd80 main -> origin/main (forced update)`, but the teammate's `main` still contains the rewound commit and is now simply *ahead* of the remote — nothing to merge, `Already up to date.` Their next ordinary push is a fast-forward that restores it. Rewriting shared history doesn't remove a commit from anyone else's clone; `git revert` would have."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-git-reset", "challengeSlug": "git-reset-model" }
+  ]
+}

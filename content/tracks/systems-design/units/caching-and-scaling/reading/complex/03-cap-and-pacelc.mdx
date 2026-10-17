@@ -1,0 +1,39 @@
+---
+id: cap-and-pacelc
+title: CAP and PACELC in plain terms
+---
+
+Every replicated system decides what to do while its copies can't agree yet. CAP and PACELC name
+that decision — useful as vocabulary, misleading as a "pick two" slogan.
+
+**CAP**, in Eric Brewer's own restatement twelve years after proposing it: when the network
+splits the replicas (a **partition**), an operation either stays **consistent** — it refuses, or
+waits until it can coordinate — or stays **available** — it answers from the side it can reach,
+and the sides reconcile later. Brewer's corrections to the folk version matter more than the
+acronym:
+
+- The "2 of 3" framing "was always misleading". Partitions are rare, so there's little reason to
+  give up consistency or availability while the system isn't partitioned.
+- The choice can differ per operation, per piece of data, even per user — it isn't made once
+  for a whole database.
+- In practice a partition is a **time bound** on communication: a request that can't hear from
+  the other side before its timeout must choose right then between failing (C) and answering
+  anyway (A). Tighter timeouts mean "partitioned" more often.
+
+**PACELC** (Daniel Abadi) adds the trade-off that's present every day, not only during failures:
+**if Partition, choose Availability or Consistency; Else, choose Latency or Consistency.** Even on
+a healthy network, keeping copies in agreement costs round trips.
+
+Concrete settings are where this earns its keep:
+
+| Setting | Normal operation | When a node or link fails |
+| --- | --- | --- |
+| PostgreSQL 18 streaming replication, default (async) | fast commits; replicas may return old data — *latency over consistency* | committed transactions not yet on the standby can be lost if it's promoted — "proportional to the replication delay" |
+| PostgreSQL with a synchronous standby and `remote_apply` | each commit waits for the standby to replay it — *consistency over latency* | if the synchronous standby is down, commits wait — *consistency over availability* |
+| Redis Cluster | asynchronous replication: the master replies before replicas have the write | the spec says there are windows where acknowledged writes are lost, larger for clients on the minority side |
+
+None of those rows is wrong; each fits different data. A payment ledger wants the synchronous
+row and pays in latency. A feed or a cache can take an asynchronous row and pays in occasional
+staleness or loss. The sentence to say in a review names the data: "this read can be a second
+stale, so replicas are fine" or "this write must survive a failover, so it waits for a
+synchronous standby."

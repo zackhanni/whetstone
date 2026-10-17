@@ -1,0 +1,48 @@
+---
+id: retries-that-dont-make-it-worse
+title: Retries that don't make the outage worse
+---
+
+Retries are how distributed systems survive transient failures, and how small outages become big
+ones. AWS's Builders' Library article on retries calls them "selfish": a retrying client spends
+more of the server's time to raise its own chance of success. That's fine when failures are rare
+and random, and harmful when the failure *is* overload.
+
+**Retries multiply across layers.** The article's example: a five-deep stack of service calls,
+each layer making three tries. When the database at the bottom starts failing under load, every
+layer retries independently: 3 × 3 × 3 × 3 × 3 = **243** database calls for one user request —
+at the moment the database is least able to take them. The fix is structural, and it's the
+article's stated practice for ordinary operations: **retry at one layer**, and let the layers
+below fail fast.
+
+**Back off, cap, and add jitter.** Retrying immediately just repeats the collision. Exponential
+backoff waits longer after each failure (100 ms, 200 ms, 400 ms, …); a cap stops the waits growing
+forever; and jitter — randomness in each wait — keeps a thousand clients that failed together from
+retrying together. Limit the number of attempts too: the caller has its own timeout and will give
+up anyway.
+
+```ts
+// One retry policy, applied at one layer.
+const delayMs = Math.random() * Math.min(10_000, 100 * 2 ** attempt); // capped exponential backoff, randomised
+```
+
+**Only retry what's safe to repeat.** A timeout doesn't tell you whether the side effect
+happened, so a retried `POST` needs an idempotency key: one id per operation, reused on every
+attempt, recognised by the server. The header and the server's half are the HTTP track's
+[Request & response anatomy](/learn/http-and-apis/request-response-anatomy) unit; AWS's idempotent-APIs article describes the same contract with EC2's
+`ClientToken`. The design rule that article adds is where the id is recorded: **in the same
+atomic operation as the side effect**, so the server can never have done one without the other.
+In practice that's a row in the same database transaction as the work — not a note in a cache
+written afterwards.
+
+Queues need the same thinking from the other side: most deliver at least once, so a consumer may
+see a message twice and must be idempotent (the NestJS track's [Microservices & messaging](/learn/backend-nestjs/nest-microservices-and-messaging)
+covers the handler side; [Sync vs async APIs](/learn/http-and-apis/sync-vs-async-apis) covers webhooks, which retry too).
+
+<!--more-->
+
+Which failures are worth retrying at all is the [Request & response anatomy](/learn/http-and-apis/request-response-anatomy) unit's table. AWS's article
+adds a caveat from experience: client errors usually won't succeed if repeated unchanged, but
+under eventual consistency a client error one moment can be a success the next — a "not found"
+for a record another service has just created. So "never retry a client error" has exceptions,
+and they belong in the written retry policy rather than in an incident review.

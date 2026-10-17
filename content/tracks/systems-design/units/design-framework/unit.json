@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 3,
+  "slug": "design-framework",
+  "title": "A framework for any design: requirements → estimates → API → data → scale",
+  "skills": ["system-design", "architecture", "capacity-estimation", "http"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Split requirements into functional and non-functional, and turn an availability target into a downtime budget — lower still across hard dependencies",
+    "Estimate average and peak requests per second and storage from stated assumptions, showing every step of the arithmetic",
+    "Derive the API and data model from the requirements, including choosing 301 vs 302 for a redirect and a scheme for minting short codes",
+    "Find the hot path from the read:write ratio, say what to scale first, and name what the numbers say not to build yet"
+  ],
+  "sources": [
+    { "title": "AWS Well-Architected, Reliability pillar: Availability", "url": "https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/availability.html" },
+    { "title": "Google Cloud Architecture Framework: Set realistic targets for reliability", "url": "https://docs.cloud.google.com/architecture/framework/reliability/set-targets" },
+    { "title": "RFC 9110 (HTTP Semantics) §15.4: Redirection 3xx", "url": "https://www.rfc-editor.org/rfc/rfc9110#section-15.4" },
+    { "title": "RFC 9111 (HTTP Caching) §3: Storing responses in caches", "url": "https://www.rfc-editor.org/rfc/rfc9111#section-3" },
+    { "title": "Redis docs: Diagnosing latency issues", "url": "https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/latency/" },
+    { "title": "PostgreSQL 18 docs: INSERT … ON CONFLICT", "url": "https://www.postgresql.org/docs/18/sql-insert.html" },
+    { "title": "PostgreSQL 18 docs: Explicit locking (row-level locks)", "url": "https://www.postgresql.org/docs/18/explicit-locking.html" },
+    { "title": "AWS Builders' Library: Caching challenges and strategies", "url": "https://aws.amazon.com/builders-library/caching-challenges-and-strategies/" },
+    { "title": "Azure Architecture Center: Sharding pattern", "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/sharding" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-design-framework", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-design-framework",
+      "questions": [
+        {
+          "id": "functional-or-not",
+          "prompt": "Which of these is a **non-functional** requirement for a URL shortener?",
+          "options": [
+            { "id": "p99", "text": "Redirects answer within 50 ms at the 99th percentile" },
+            { "id": "expiry", "text": "A user can give a link an expiry date" },
+            { "id": "stats", "text": "A user can see how many times a link was clicked" },
+            { "id": "api-create", "text": "Links can be created through a public API" }
+          ],
+          "answer": "p99",
+          "explanation": "Functional requirements say *what* the system does — expiry, stats and an API are all features a user can point at. Non-functional requirements say *how well*: latency, availability, durability, freshness. They're the ones that drive architecture, which is why the unit insists on turning each into a checkable number (p99 under 50 ms) instead of an adjective (\"fast\")."
+        },
+        {
+          "id": "database-in-minute-two",
+          "prompt": "Two minutes into a design review, someone asks: \"Postgres or DynamoDB?\" What's the strongest reply?",
+          "options": [
+            { "id": "defer", "text": "Hold that until the access pattern and the numbers are on the table — then pick the store that fits them" },
+            { "id": "dynamo", "text": "DynamoDB, because it scales horizontally" },
+            { "id": "postgres", "text": "Postgres, because the team already knows it" },
+            { "id": "both", "text": "Both: Postgres for writes, DynamoDB for reads, to be safe" }
+          ],
+          "answer": "defer",
+          "explanation": "The order of work exists so a technology choice is an *output*. Once you know the hot operation is a primary-key lookup at ~4,000 reads/s with 40 writes/s, almost any mainstream store fits, and the real decisions (cache, replicas) are elsewhere. \"Because it scales\" and \"because we know it\" may both end up true — but neither is an argument until there's a number it answers. Running two stores \"to be safe\" adds a consistency problem the requirements never asked for. (Picking a data model from the read and write patterns is the Databases track's `relational-document-graph` unit.)"
+        },
+        {
+          "id": "monthly-downtime",
+          "prompt": "The redirect path targets **99.9% availability per 30-day month**. Roughly how much downtime does that allow?",
+          "options": [
+            { "id": "43m", "text": "About 43 minutes" },
+            { "id": "8h", "text": "About 8 hours 45 minutes" },
+            { "id": "86s", "text": "About 86 seconds" },
+            { "id": "4h", "text": "About 4 hours 22 minutes" }
+          ],
+          "answer": "43m",
+          "explanation": "0.1% of a 30-day month: 0.001 × 30 × 24 × 60 = 43.2 minutes. *8 hours 45 minutes* is the same target measured over a **year** (AWS's availability table) — mixing up the period is the usual slip. *86 seconds* is the per-day figure, and *4 hours 22 minutes* is 99.95% per year."
+        },
+        {
+          "id": "scale-first",
+          "prompt": "The estimates say: ~40 link creates/s, ~4,000 redirects/s, ~3 TB over five years. What do you scale first?",
+          "options": [
+            { "id": "read-path", "text": "The redirect read path — a cache in front of the lookup, then read replicas if needed" },
+            { "id": "shard", "text": "Shard the links table by code so writes spread across servers" },
+            { "id": "nosql", "text": "Move to a NoSQL store, since 3 TB is too much for a relational database" },
+            { "id": "queue-create", "text": "Put a queue in front of link creation to absorb write spikes" }
+          ],
+          "answer": "read-path",
+          "explanation": "Reads outnumber writes 100:1, so that's where load is. 40 writes/s (≈120 at a 3× peak) is comfortable for a single primary, so sharding buys cross-shard complexity for no gain — Azure's sharding guidance lists \"your bottleneck is read volume\" as a reason *not* to shard, because replicas and caches offload reads more cheaply. 3 TB is a disk and backup question, not a reason to change data stores, and a queue in front of creation would make the user wait for a code with no load problem to solve."
+        },
+        {
+          "id": "hard-dependencies",
+          "prompt": "The redirect service, its Postgres and its Redis are each designed for 99.9%, and a failure in **any** of them fails the redirect. What can the redirect path honestly claim?",
+          "options": [
+            { "id": "product", "text": "About 99.7% — hard dependencies multiply: 0.999³" },
+            { "id": "weakest", "text": "99.9% — the path is as available as its weakest part" },
+            { "id": "nines-add", "text": "99.9999% — three components add their nines together" },
+            { "id": "unknowable", "text": "Nothing until it's been load-tested" }
+          ],
+          "answer": "product",
+          "explanation": "Each hard dependency's failures are your failures, so the availabilities multiply: 0.999 × 0.999 × 0.999 ≈ 0.997, about 26 hours of downtime a year rather than 8¾. Nines *add* only for **redundant, independent** copies of the same component, where both must fail at once — the opposite arrangement. \"Weakest link\" would be true only if the failures always overlapped. Strictly, the product assumes independent failures (AWS's example says so); overlapping outages only help, and outages that never overlap give 1 − 3 × 0.1% = 99.7% — so about 99.7% is the claim that holds either way."
+        },
+        {
+          "id": "redirect-status",
+          "prompt": "Product wants accurate click counts **and** the ability to kill a phishing link immediately. Which redirect should the shortener send?",
+          "options": [
+            { "id": "302", "text": "302 (or 307) — not stored by caches unless you add caching headers, so every click reaches the server" },
+            { "id": "301", "text": "301 — browsers cache it, so redirects are faster" },
+            { "id": "308", "text": "308 — it's permanent and keeps the request method" },
+            { "id": "meta", "text": "200 with an HTML meta-refresh, so no redirect status is involved" }
+          ],
+          "answer": "302",
+          "explanation": "RFC 9110 makes 301 and 308 *heuristically cacheable*: a browser may reuse them without contacting you, so repeat clicks vanish from the count and a cached redirect keeps pointing at the phishing page — you can't purge a stranger's browser. 302 and 307 aren't stored unless their headers allow it — a lifetime such as `max-age`, or `Cache-Control: public`, which RFC 9111 says makes even a 302 heuristically cacheable — so send them without either. 301's speed is real, which is why it's tempting; it's just bought with exactly the two requirements in the prompt. A meta-refresh page adds a full page load to every click, and a 200 is itself heuristically cacheable, so it doesn't escape caching either."
+        },
+        {
+          "id": "counter-codes",
+          "prompt": "Short codes come from one counter written in base62 (`…aZ3`, `…aZ4`, `…aZ5`). What's the real cost of that scheme?",
+          "options": [
+            { "id": "enumerable", "text": "Anyone can enumerate every link by counting through the codes" },
+            { "id": "collide", "text": "Codes start colliding once the counter grows past 62⁷" },
+            { "id": "url-safe", "text": "Base62 includes characters that aren't safe in a URL path" },
+            { "id": "slow", "text": "Lookups get slower as the numbers grow" }
+          ],
+          "answer": "enumerable",
+          "explanation": "A counter never repeats, so it never collides — it just needs one more character after 62⁷ codes. Its cost is that codes are sequential: increment and you're looking at someone else's link, which is fine for public links and a leak for private ones (random codes slow that down without stopping it — a private link needs an authorization check). Base62 (`0-9a-zA-Z`) is URL-safe by construction, and a primary-key lookup costs the same for the millionth code as the first."
+        },
+        {
+          "id": "collision-rate",
+          "prompt": "Random 7-character base62 codes; 6 × 10⁹ are already in use out of ≈ 3.5 × 10¹². What determines how often a new insert has to retry?",
+          "options": [
+            { "id": "ratio", "text": "Used ÷ space ≈ 0.17% — a fresh random code is equally likely to land on any code" },
+            { "id": "birthday", "text": "The birthday bound — once you pass about √N codes, nearly every insert collides" },
+            { "id": "zero", "text": "Nothing — the primary key prevents collisions, so retries never happen" },
+            { "id": "url-length", "text": "The length of the long URLs being shortened" }
+          ],
+          "answer": "ratio",
+          "explanation": "Each new code is a uniform draw, so the chance it's taken is just the fraction of the space in use: 6 × 10⁹ / 3.52 × 10¹² ≈ 0.17%. The birthday bound is about a different event — *some* pair colliding somewhere — and says nothing about \"nearly every insert\". The primary key doesn't prevent collisions; it *detects* them, which is what makes the retry safe."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-design-framework",
+      "prompts": [
+        {
+          "id": "downtime-budget",
+          "prompt": "Turn 99.9% over a 30-day month into a downtime budget, in minutes.",
+          "code": [
+            "// 99.9% availability, 30-day month",
+            "budget_minutes = (1 - 0.999) * 30 * 24 * 60   // = ___"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["43.2", "43", "~43", "≈43"] }],
+          "explanation": "0.001 × 43,200 minutes = 43.2. The yearly figure for the same target is about 8 hours 45 minutes, so always say which period a percentage is measured over."
+        },
+        {
+          "id": "rps-from-month",
+          "prompt": "Convert a monthly volume into an average rate. The divisor is the number of seconds in a 30-day month.",
+          "code": "avg_per_second = requests_per_month / ___",
+          "blanks": [{ "id": "b1", "accept": ["2592000", "2,592,000", "2.592e6", "30*86400", "30*24*60*60", "30*24*3600", "2592e3"] }],
+          "explanation": "30 × 86,400 = 2,592,000 s, about 2.6 million. So 100 million a month is only ~39 a second on average — the conversion that makes big monthly numbers look their actual size. Then multiply by a stated peak factor; average isn't peak."
+        },
+        {
+          "id": "redirect-response",
+          "prompt": "Write the shortener's redirect so caches don't store it by default and the browser knows where to go.",
+          "code": [
+            "HTTP/1.1 ___ Found",
+            "___: https://example.com/a/very/long/path"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["302"] },
+            { "id": "c2", "accept": ["Location"] }
+          ],
+          "explanation": "302 isn't heuristically cacheable, so every click comes back through the server — that's what keeps counts accurate and links editable. `Location` carries the target. (307 would also work for a GET-only shortener; its reason phrase is \"Temporary Redirect\".)"
+        },
+        {
+          "id": "base62",
+          "prompt": "Encode a counter value as a base62 short code.",
+          "code": [
+            "const ALPHABET = \"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\";",
+            "",
+            "function encode(n: number): string {",
+            "  let code = \"\";",
+            "  do {",
+            "    code = ALPHABET[n % ___] + code;",
+            "    n = Math.floor(n / 62);",
+            "  } while (n > 0);",
+            "  return code;",
+            "}"
+          ],
+          "blanks": [{ "id": "d1", "accept": ["62", "ALPHABET.length"] }],
+          "explanation": "Base conversion: the remainder picks the next (rightmost) digit and the division shifts to the next place — `encode(125)` is `\"21\"` because 125 = 2 × 62 + 1. Seven characters reach 62⁷ ≈ 3.5 × 10¹² codes. The `do … while` makes `encode(0)` return `\"0\"` instead of an empty string."
+        },
+        {
+          "id": "insert-or-retry",
+          "prompt": "Insert a random code; if it's already taken, return no row instead of raising an error, so the caller can generate another and retry.",
+          "code": [
+            "INSERT INTO links (code, long_url) VALUES ($1, $2)",
+            "ON CONFLICT (code) DO ___",
+            "RETURNING code;"
+          ],
+          "blanks": [{ "id": "e1", "accept": ["NOTHING"] }],
+          "explanation": "`ON CONFLICT … DO NOTHING` skips the row instead of raising a unique violation, and `RETURNING` reports only rows actually inserted — so \"no row back\" means \"taken\". Checking with a `SELECT` first would leave a window where two creates both see the code free; the primary key arbitrating the insert closes it."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-design-framework",
+      "snippets": [
+        {
+          "id": "estimate-writes-per-second",
+          "code": [
+            "// Estimate — assumptions stated, round freely",
+            "new_links_per_month = 100_000_000",
+            "seconds_per_month   = 30 * 86_400",
+            "",
+            "average_writes_per_second = ?"
+          ],
+          "question": "About how many link creates per second is \"100 million a month\" on average?",
+          "answer": "About 40 per second (100,000,000 / 2,592,000 ≈ 38.6)",
+          "acceptable": ["~40/s", "38.6", "39 per second", "about 40"],
+          "explanation": "100,000,000 ÷ 2,592,000 ≈ 38.6 a second. Big monthly totals sound like a scaling problem and usually aren't: ~40 writes/s (≈120 at a 3× peak) is routine for one database primary. That single line of arithmetic is what lets you say \"no sharding for writes\" with confidence — and where the *reads* (100× more) become the real design question."
+        },
+        {
+          "id": "estimate-cross-ocean-rtt",
+          "code": [
+            "// Estimate — requirement: p99 redirect under 50 ms for users in New York AND London",
+            "// one region, in New York; distance to London ≈ 5,600 km",
+            "// assumption: light in fibre covers ≈ 200 km per millisecond",
+            "",
+            "minimum_round_trip_from_london_ms = ?"
+          ],
+          "question": "What's the least time a London user's redirect can take to reach New York and come back — and does one region meet the requirement?",
+          "answer": "At least ~56 ms (2 × 5,600 km ÷ 200 km/ms) — already over 50 ms, so one region can't meet it",
+          "acceptable": ["~56 ms", "56 ms, no", "over 50 ms — needs a second region", "about 55-60 ms"],
+          "explanation": "2 × 5,600 ÷ 200 = 56 ms of pure propagation, before routing detours, TLS, queueing or any processing — and real fibre paths are longer than the great circle. In-region hops are cheap by comparison (Redis's docs put a 1 Gbit/s network at about 200 µs), so the budget is spent by distance, not by servers. That's the point of turning \"fast\" into a number early: arithmetic, not a technology choice, says the redirect must be served from both continents."
+        },
+        {
+          "id": "estimate-collision-rate",
+          "code": [
+            "// Estimate — random base62 codes, 6 characters",
+            "space         = 62 ** 6          // ≈ 5.68 × 10^10",
+            "codes_in_use  = 6_000_000_000    // five years of links",
+            "",
+            "fraction_of_new_inserts_that_collide = ?"
+          ],
+          "question": "After five years, what fraction of new inserts hit an already-taken 6-character code?",
+          "answer": "About 10.6% (6 × 10⁹ / 5.68 × 10¹⁰)",
+          "acceptable": ["~10%", "10.6%", "about 1 in 9", "0.106"],
+          "explanation": "A fresh random code is equally likely to be any code, so the chance it's taken is used ÷ space = 6 × 10⁹ / 5.68 × 10¹⁰ ≈ 10.6% — roughly one insert in nine retries once. Workable with a retry loop, but one more character drops it to ≈ 0.17%. The surprise for many people is the *method*: this is a simple ratio, not the birthday paradox, which answers \"does any pair collide?\" — a question a unique constraint makes harmless."
+        }
+      ]
+    }
+  ]
+}

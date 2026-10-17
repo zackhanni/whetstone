@@ -1,0 +1,47 @@
+---
+id: copies-and-pieces
+title: Copies and pieces — replication vs partitioning
+---
+
+Once one database machine isn't enough, there are two moves, and they solve different problems:
+
+- **Replication makes copies.** Every replica holds all the data. Reads can go to any copy, and
+  a copy can take over if the primary dies. Writes still all go to one primary and flow out to
+  the copies. *Scales reads and survives failures; doesn't scale writes or storage.*
+- **Partitioning cuts the data into pieces.** Each piece — a *partition*, or a *shard* when the
+  pieces live on different machines — holds some of the rows, chosen by a **partition key** such
+  as `customer_id` or a date. A write lands on exactly one piece. *Scales writes and storage;
+  every query that needs several pieces gets harder.*
+
+Real systems do both: each shard is a primary with its own replicas.
+
+```
+               ┌─ shard 1 (customers a–h): primary + 2 replicas
+router ──key──>├─ shard 2 (customers i–p): primary + 2 replicas
+               └─ shard 3 (customers q–z): primary + 2 replicas
+```
+
+The costs differ in kind:
+
+| | Replication | Partitioning |
+| --- | --- | --- |
+| New failure mode | a replica is behind the primary (**lag**) | a query or transaction spans shards |
+| The hard question | "can this read see slightly old data?" | "which key keeps related data together?" |
+| Reversible? | add or drop a replica any time | changing the key means moving every row |
+
+That last row decides the order. Azure's Sharding pattern calls the shard key "the most
+critical design decision in a sharded system", because changing it later means migrating all
+the data on a live system. Replicas are cheap to add and remove; a partition key is close to
+permanent. So the usual sequence when a database gets busy is: fix queries and indexes (the
+Databases track), cache, add read replicas — and shard only when *writes or storage* outgrow one
+primary.
+
+<!--more-->
+
+"Partitioning" also names something smaller. PostgreSQL's declarative partitioning (range, list
+or hash, in PostgreSQL 18) splits one large table into pieces **on the same server**. That helps
+with dropping old data and keeping hot index pages in memory, but it adds no machines; sharding
+across servers is something Postgres doesn't do by itself. One rule carries over and explains a
+lot about sharded systems: PostgreSQL can only enforce a unique or primary key on a partitioned
+table if the key includes the partition key columns, because each partition's index sees only
+its own rows. Uniqueness across pieces has to be designed for.

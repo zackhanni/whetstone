@@ -1,0 +1,43 @@
+---
+id: three-signals
+title: Logs, metrics and traces answer different questions
+---
+
+Production is a black box until it tells you something. It can tell you three ways, and each
+answers a different question:
+
+| Signal | One data point is… | Answers | Cost grows with |
+| --- | --- | --- | --- |
+| **Metric** | a number for a time window: *412 requests, 3 errors* | "Is it healthy? Is it getting worse?" | the number of distinct label combinations |
+| **Log** | one event, with whatever detail you attach | "What happened to *this* request or user?" | traffic |
+| **Trace** | one request's path through every service, as timed **spans** | "Where did the time go — which hop failed?" | traffic (so it's usually sampled) |
+
+Dashboards and alerts are usually built on metrics, because they're cheap to keep for months.
+When one fires, you drill into traces to find *where*, and logs to find *what exactly*.
+
+### Structured logs: fields, not sentences
+
+```js
+// Hard to search: the useful values are buried in prose
+console.log(`order o_123 failed for user 42 after 2310ms: payment timeout`);
+
+// Structured: one JSON object per line, values in named fields
+console.log(JSON.stringify({
+  level: "error", msg: "order failed", order_id: "o_123",
+  duration_ms: 2310, error: "payment timeout",
+  trace_id: "c50ed0daa0f6fd6a6087220a3d34fffa",
+}));
+```
+
+The second line can be filtered (`level = "error" and duration_ms > 2000`), counted and joined
+— no regex over prose. Two habits make it pay off:
+
+- **Same field names everywhere** — `order_id` in every service, not `orderId` here and
+  `order` there. OpenTelemetry's docs make the point that JSON alone isn't "structured" in a
+  useful sense; a stable schema is.
+- **Carry the trace ID.** With `trace_id` on every line, one click goes from a slow trace to
+  every log line that request wrote, across services. OpenTelemetry SDKs can add it for you
+  when you route your logging library through them.
+
+What not to log: passwords, tokens, full card numbers, and personal data you don't need —
+logs are copied, shipped and kept far more widely than your database.

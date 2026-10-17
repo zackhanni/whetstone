@@ -1,0 +1,53 @@
+---
+id: what-actually-gates-a-merge
+title: What actually gates a merge
+---
+
+A green "Merge" button means the **repository's rules** are satisfied — not that the change is
+right. Those rules live in branch protection (or the newer rulesets) on the target branch. The
+settings you'll meet most, as GitHub's docs describe them:
+
+| Setting | Effect |
+| --- | --- |
+| Require pull request reviews | N approvals from people with write access; a write-access "Request changes" blocks until that reviewer approves |
+| — dismiss stale approvals | a push that changes the diff withdraws existing approvals |
+| — require review from code owners | files with a `CODEOWNERS` entry need their owner's approval |
+| Require status checks | named checks must pass on the PR's **latest** commit |
+| — require branches to be up to date ("strict") | the PR must also contain the base branch's latest commit |
+| Require conversation resolution | every review thread resolved |
+| Require linear history | only squash or rebase merges |
+
+By default a protection rule also **blocks force-pushes and deletion** of that branch — which is
+why `git push --force` to a protected `main` fails no matter what you type. And by default the
+rules **don't apply to repository admins** unless "Do not allow bypassing the above settings" is on.
+
+## Status checks: the CI gate
+
+A **status check** is a pass/fail/pending result attached to a commit, usually posted by CI. Only
+checks marked **required** gate the merge; the rest are information.
+
+```sh
+% gh pr checks 42 --required --watch      # wait for the required checks on PR #42
+```
+
+**Strict vs loose.** With "require branches to be up to date", a PR that was green yesterday must
+take in the latest `main` (Update branch, or rebase and push) and pass again before it can merge.
+That catches two PRs that each pass alone and break together, at the cost of more CI runs. A merge
+queue gives the same guarantee without making every author update by hand.
+
+## Auto-merge: say yes now, merge when it's ready
+
+```sh
+gh pr merge 42 --squash --auto
+```
+
+When reviews or checks are still pending, `--auto` enables **auto-merge**: GitHub merges as soon as
+every requirement is met. GitHub switches it off again if someone without write access pushes to
+the branch or changes its base branch.
+
+## Why this matters to you as an author
+
+- A PR that's "approved" but red can't merge; a PR that's green but unreviewed can't either. Read
+  the merge box — it lists exactly which requirement is missing.
+- A required check is only as good as the job behind it. The complex example shows two ways a
+  required check reports "passing" or "blocked" for reasons unrelated to your code.

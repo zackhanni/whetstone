@@ -1,0 +1,39 @@
+---
+id: choosing-a-partition-key
+title: Choosing a partition key
+---
+
+Azure's Sharding pattern lists what makes a good shard key: **immutable, high-cardinality,
+spreads data and load evenly, and matches the dominant query**, so most requests touch one shard.
+And what to avoid: monotonically increasing values (auto-increment ids, timestamps),
+low-cardinality attributes (booleans, small enums) and values that change.
+
+Three ways to route a key to a shard, each failing differently:
+
+| Strategy | Routes by | Good at | Fails by |
+| --- | --- | --- | --- |
+| Range | key ranges (`a–h`, `2026-10`) | range scans — "all orders this month" from one shard | hotspots: new rows all land at the end of the range |
+| Hash | `hash(key)` | spreading load evenly | range queries now touch every shard |
+| Lookup | a directory, key → shard | moving one tenant; uneven tenant sizes | the directory is one more thing to keep available (cache it) |
+
+Walk two candidate keys through an orders table:
+
+- **`created_at`, by range.** Every insert happens *now*, so every insert hits the newest shard
+  while the rest sit idle. The write load — the reason to shard — is back on one machine.
+- **`customer_id`, by hash.** Inserts spread across shards, and "this customer's orders" is a
+  one-shard query. "All orders today" becomes a query to every shard, and Azure's note on
+  fan-out queries applies: even run in parallel, the slowest shard sets the latency.
+
+Hashing evens out *keys*, not *traffic*. If one customer is a thousand times busier than the
+rest, every one of their requests lands on the same shard however good the hash — a **hot key**.
+Two application-level fixes: cache that key's reads (AWS's caching article names hot-key and
+hot-partition throttling as a signal a cache is worth adding), or spread its writes by appending a
+suffix. DynamoDB's guide calls that *write sharding*: `2014-07-09.1` … `2014-07-09.200` instead of
+one date key — at the cost that reading that day now means querying all 200 suffixes and merging.
+
+The key also decides what *stays easy*. Data queried together should share a key so it lands
+together — an order and its line items both under `customer_id`. A transaction that spans
+shards needs distributed coordination — Azure notes that protocols such as two-phase commit add
+latency and failure modes and reduce throughput — and a unique constraint across shards has no
+single index to enforce it. Most sharded designs avoid both by choosing a key that keeps each
+transaction, and each uniqueness rule, on one shard.

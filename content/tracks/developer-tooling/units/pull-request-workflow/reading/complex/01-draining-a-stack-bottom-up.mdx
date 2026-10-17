@@ -1,0 +1,66 @@
+---
+id: draining-a-stack-bottom-up
+title: Draining a stack of pull requests, bottom-up
+---
+
+A hand-built stack: PR #1 merges `feature-a` into `main`; PR #2 merges `feature-b` into
+**`feature-a`**, so it shows only `b`'s diff. Reviews happen in parallel. Merging is where stacks go
+wrong, and there are two separate failure modes.
+
+## Failure 1: the base branch disappears and takes PR #2 with it
+
+GitHub's docs describe the happy path: "If you delete a head branch after its pull request has been
+merged, GitHub checks for any open pull requests in the same repository that specify the deleted
+branch as their base branch" and changes their base to the merged PR's base. The docs don't say
+whether every way of deleting the branch triggers that.
+
+Not every way does. `gh pr merge 1 --delete-branch` deletes the remote branch through the API, and
+the GitHub CLI issue tracker has an open bug from 2020 (cli/cli#1168) in which the child PR is
+**closed** instead of retargeted; a commenter there traced it to the API call that deletes the
+branch. A similar report from August 2026 (cli/cli#14223) is labelled a platform bug and still
+open. One commenter on #1168 found that turning on the repo's "Automatically delete head
+branches" setting avoided it in 2020 and no longer did by 2024. Once closed, the PR can't be
+retargeted (`Cannot change the base branch of a closed pull request.`), and in #14223 reopening it
+was refused too — so PR #2 may have to be recreated, losing its review history.
+
+Don't depend on which deletion path you took. **Retarget first, then merge and delete:**
+
+```sh
+gh pr edit 2 --base main          # PR #2 now targets main (its diff briefly includes a's commits)
+gh pr merge 1 --squash            # merge the bottom PR; if gh offers to delete the branch, say no
+```
+
+## Failure 2: after a squash, the upper branch still carries the old commits
+
+`main` now has one squash commit; `feature-b` still has `A1`, `A2` underneath `B1`. Rebase only
+`b`'s own commits onto `main` — your local `feature-a` branch marks where they start, which is why
+it's worth keeping until this step is done:
+
+```sh
+git fetch
+git switch feature-b
+git rebase --onto origin/main feature-a     # replay feature-a..feature-b
+git push --force-with-lease                 # PR #2 now shows only b's diff again
+git push origin --delete feature-a          # safe now: nothing targets it
+```
+
+With a **merge commit** instead of a squash, a plain `git rebase origin/main` does the same job,
+because `A1`, `A2` are already in `main`'s history. With a one-commit `feature-a`, rebase skips the
+duplicate on its own.
+
+## The rule
+
+Drain **bottom-up**, one PR at a time: retarget the next PR to `main` → merge the bottom → rebase the
+next branch onto `main` (with `--onto` after a squash) → force-push with a lease → delete the old
+base. Merging from the top down doesn't work: merging PR #2 first lands `b` in `feature-a`, not in
+`main`.
+
+<!--more-->
+
+**GitHub's native stacks.** GitHub put stacked pull requests into public preview on July 30, 2026
+(the `gh stack` CLI extension, or the website). In a stack created that way, merging a PR lands it
+together with every unmerged PR below it, and the PRs above stay open and are rebased and
+retargeted automatically. The merge requirements for every PR in the stack come from the bottom
+PR's base branch (typically `main`), and rules such as code-owner approvals still apply to each PR.
+Everything above is what that feature automates — and what you still do by hand for a chain of
+ordinary PRs. Check the current stacked-PR docs before relying on preview behaviour.

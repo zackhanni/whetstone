@@ -1,0 +1,42 @@
+---
+id: two-ways-to-build-a-feed
+title: Two ways to build a feed — do the work on write or on read
+---
+
+A home feed shows recent posts from the accounts you follow. There are two places to do the
+merging:
+
+**Fan-out on write (push).** When someone posts, copy a reference to the post into the stored
+timeline of *every follower*. Reading your feed is then one cheap lookup of a list that's already
+built.
+
+```
+post by @ana (300 followers)  →  300 inserts, one into each follower's timeline
+open my feed                   →  read my timeline: one query, already sorted
+```
+
+**Fan-out on read (pull).** Store each post once. When you open your feed, fetch recent posts from
+every account you follow and merge them on the spot.
+
+```
+post by @ana   →  1 insert
+open my feed   →  query recent posts of the 200 accounts I follow, merge, sort, cut to 50
+```
+
+Each one puts the cost where the other saves it:
+
+| | Fan-out on write | Fan-out on read |
+| --- | --- | --- |
+| Cost of a post | one write per follower | one write |
+| Cost of opening the feed | one read | one read per followed account, plus a merge |
+| A post appears in feeds | after the fan-out finishes | immediately |
+| Worst case | an account with millions of followers | a user who follows thousands of accounts |
+
+The precomputed timeline is a **materialized view**: Azure's pattern describes exactly this — a
+prepopulated, read-only view built for one query, maintained when the source changes, and
+"completely disposable", because it can be rebuilt from the posts and the follow graph. Thinking
+of it that way answers some questions for free: a lost timeline is rebuilt, not restored; and a
+timeline is a *cache* of the feed query, with all of a cache's staleness.
+
+Which one wins is decided by numbers — how many reads per write, and how lopsided the follower
+counts are. The medium tier does that arithmetic.

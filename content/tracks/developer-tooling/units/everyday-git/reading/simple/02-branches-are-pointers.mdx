@@ -1,0 +1,57 @@
+---
+id: branches-are-pointers
+title: A branch is a pointer; origin/main is a photo
+---
+
+A **branch** is not a folder or a copy of your code. It's a name that points at one commit.
+When you commit on a branch, git makes the new commit and moves that name forward to it.
+
+```text
+A ── B ── C          main → C
+          └── D      fix-cart → D      HEAD → fix-cart
+```
+
+**`HEAD`** is "where you are": usually it points at a branch, and that branch is the one your
+next commit moves. `git switch -c fix-cart` creates a new name pointing at the current commit and
+moves `HEAD` to it. Creating a branch only records a name and a commit id — make them freely.
+
+## Remotes, and the branches that mirror them
+
+Your clone is a complete repository. `origin` is just the default name for the repo you cloned
+from. Git keeps **remote-tracking branches** — `origin/main`, `origin/fix-cart` — that record
+where the remote's branches were **the last time you talked to it**.
+
+```sh
+git fetch              # download new commits; move origin/* to match the remote
+git pull               # git fetch, then integrate your branch's upstream (say origin/main)
+git push               # upload your commits; move the remote's branch (and origin/*)
+```
+
+So `origin/main` is a photo, not a live view. After a teammate pushes, your `origin/main` is
+stale until you fetch:
+
+```sh
+% git status
+On branch main
+Your branch is up to date with 'origin/main'.       # up to date with the photo
+% git fetch
+% git status
+On branch main
+Your branch is behind 'origin/main' by 1 commit, and can be fast-forwarded.
+```
+
+## Upstream: which remote branch "goes with" yours
+
+A local branch can have an **upstream** — the remote-tracking branch that `git status` compares
+it with and that a bare `git pull` integrates from. `git branch -vv` shows it in brackets:
+
+```sh
+% git branch -vv
+* main      fc12a46 [origin/main: behind 1] Add cart
+  fix-cart  9b3e1d0 Fix cart total rounding           # no upstream yet
+```
+
+You set it the first time you push a branch: `git push -u origin fix-cart` pushes and records
+`origin/fix-cart` as the upstream, so later a plain `git push` and `git pull` know where to go.
+Which upstream a branch gets **by default** is the subject of the next example — and the source
+of a nasty surprise.

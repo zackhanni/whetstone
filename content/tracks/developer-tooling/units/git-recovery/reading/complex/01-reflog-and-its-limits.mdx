@@ -1,0 +1,60 @@
+---
+id: reflog-and-its-limits
+title: The reflog — git's undo history, and what it can't bring back
+---
+
+Every time `HEAD` or a branch moves — commit, reset, rebase, amend, switch — git appends a line to
+a **reflog**: "this ref used to point here". Commits that no branch points at any more are still
+in the object store, and the reflog is the list of where they are.
+
+A real run: three commits, then a `reset --hard HEAD~2` too many.
+
+```sh
+% git log --oneline
+9947bb8 Add checkout form                  # two commits "gone"
+% git reflog
+9947bb8 HEAD@{0}: reset: moving to HEAD~2
+c4929d4 HEAD@{1}: commit: Show card errors inline
+9694b65 HEAD@{2}: commit: Validate card number
+9947bb8 HEAD@{3}: commit (initial): Add checkout form
+```
+
+`HEAD@{1}` is "where HEAD was one move ago". Two ways back:
+
+```sh
+git reset --hard HEAD@{1}         # move the branch back (or: git reset --hard ORIG_HEAD)
+git branch rescue c4929d4         # or keep the commit on a new branch and decide later
+```
+
+`ORIG_HEAD` holds where `HEAD` was before the last reset, merge or rebase — handy right after
+the mistake. The reflog is better when you've done more since. `git reflog show main` lists the
+branch's own moves, and `git log -g` shows the same entries with full commit details.
+
+## The limits
+
+- **It's local.** Reflogs record moves "in the local repository". They aren't pushed, and a fresh
+  clone starts with one entry (`clone: from …`). A teammate can't recover your lost commit from
+  their reflog, and you can't recover it after deleting the clone.
+- **It expires.** `git gc` (which git also runs automatically now and then) prunes reflog entries:
+  by default after **90 days**, or **30 days** for entries that aren't reachable from the branch
+  tip any more (`gc.reflogExpire`, `gc.reflogExpireUnreachable`). Once an entry is gone, the
+  commit can be garbage-collected.
+- **It only knows commits and ref moves.** Unstaged edits were never stored anywhere.
+  `git restore <file>` or `reset --hard` on them is final.
+
+## The last resort: staged but never committed
+
+`git add` does store content — as a blob object — even if you never commit it. After a
+`reset --hard` threw away a staged file, the blob is "dangling" (nothing refers to it), and
+`git fsck` can find it:
+
+```sh
+% git fsck --lost-found
+dangling blob 248d032f84c5b8ce411481462743cfe1e50b31ba
+% cat .git/lost-found/other/248d032f…
+staged work
+```
+
+You get the contents back, without the file name. It's slow archaeology, but it's the difference
+between "lost" and "found it". The habit that makes it unnecessary: commit early on a branch —
+a commit is in the reflog; a dropped stash or a staged-only file is much harder to find.

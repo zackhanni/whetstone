@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "terraform-plan-gate",
+  "title": "Summarise a Terraform plan and gate what auto-applies",
+  "skills": ["infrastructure", "terraform", "terraform-state"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "plan-gate.ts",
+  "acceptanceCriteria": [
+    "`describeChange` returns `replace` for both `[\"delete\", \"create\"]` and `[\"create\", \"delete\"]`",
+    "No-op changes and data-source reads add nothing to the summary",
+    "A replacement counts as one add and one destroy, never as a change",
+    "Every change that carries `importing` counts once under `import`, whatever its actions",
+    "`needsApproval` is true whenever any change's actions include `delete`, and false otherwise",
+    "Every sample plan's summary matches the `Plan:` line Terraform printed for it"
+  ]
+}

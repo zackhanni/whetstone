@@ -1,0 +1,47 @@
+---
+id: numbers-you-can-defend
+title: An estimate is assumptions plus arithmetic, written down
+---
+
+A back-of-envelope estimate isn't a guess at the answer. It's a chain — **assumption → unit
+conversion → result** — with every link visible, so anyone who disagrees can point at the one
+line they'd change.
+
+Three conversions cover most of it:
+
+- A day is **86,400 s**. Rounding to 100,000 is fine for orders of magnitude, but it
+  overstates by about 16%, so say that you rounded.
+- A 30-day month is **2,592,000 s** (about 2.6 million).
+- Average isn't peak. Traffic bunches up by hour and by event, so a **peak factor** is a
+  number you state and justify ("3× for the evening peak"), not one you look up.
+
+```
+Assume: 100 million new links a month                      (assumption)
+Writes: 100,000,000 / 2,592,000 s   ≈ 38.6/s  → call it 40/s
+Assume: a link is opened 100× for every time one is made    (assumption)
+Reads:  40/s × 100                  ≈ 4,000/s on average
+Assume: peak = 3× average                                   (assumption)
+Peak:   ≈ 12,000 redirects/s and ≈ 120 creates/s
+```
+
+Availability targets convert the same way: a percentage is a **downtime budget**. AWS's
+Well-Architected reliability pillar tabulates the common ones:
+
+| Target | Maximum unavailability per year |
+| --- | --- |
+| 99% | 3 days 15 hours |
+| 99.9% | 8 hours 45 minutes |
+| 99.95% | 4 hours 22 minutes |
+| 99.99% | 52 minutes |
+| 99.999% | 5 minutes |
+
+Over a 30-day month, 99.9% is 0.001 × 43,200 minutes ≈ **43 minutes** — one bad deploy.
+Every extra nine costs more to build and to operate, which is why Google's reliability guidance
+says to aim high but not to set a target of 100%.
+
+<!--more-->
+
+Round hard and keep the exponent honest. Being off by 20% changes nothing in a design; being
+off by 10× changes the architecture. That's why the written steps matter more than the
+precision: a reviewer who doubts "100 reads per create" can redo one line instead of
+distrusting the whole answer.

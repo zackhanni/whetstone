@@ -1,0 +1,57 @@
+---
+id: gitignore-only-ignores-untracked
+title: .gitignore only ignores files git isn't tracking
+---
+
+The gitignore manual's first paragraph: a gitignore file "specifies intentionally untracked files
+that Git should ignore. Files already tracked by Git are not affected." So adding a pattern for a
+file that's **already committed** does nothing at all:
+
+```sh
+% git log --oneline
+3a1f0c2 Ignore .env          # added ".env" to .gitignore
+9be41d7 Initial commit       # ...but .env was committed here
+% echo "SECRET=2" > .env
+% git status --short
+ M .env                       # still tracked, still showing up, still committable
+```
+
+Ignore rules only answer the question "should this **untracked** file show up as `??` and be
+picked up by `git add .`?". Once a file is in the index, git tracks it no matter what
+`.gitignore` says. Even `git check-ignore` agrees, quietly:
+
+```sh
+% git check-ignore -v .env              # prints nothing, exits 1: tracked files aren't checked
+% git check-ignore --no-index -v .env   # ignore the index: which rule *would* match?
+.gitignore:1:.env	.env
+```
+
+## Untracking it
+
+```sh
+git rm --cached .env           # remove from the index; the file stays on your disk
+git commit -m "Stop tracking .env"
+```
+
+`--cached` is the important half: plain `git rm` deletes the file from your disk too. After the
+commit, the `.gitignore` rule finally applies, and `.env` disappears from `git status`.
+
+## Two consequences people miss
+
+**Teammates lose the file.** The commit records "`.env` was deleted". When a teammate pulls it,
+git removes `.env` from **their** working tree — it was tracked there, and the new commit says
+it's gone. (If they had local edits to it, the update refuses until they deal with them.) Tell
+the team before you push, or have them back the file up first.
+
+**The old content is still in history.** `git rm --cached` stops future commits from containing
+the file; every earlier commit still does, on every clone and fork. If the file held a secret,
+the secret is leaked: rotate it. Rewriting history doesn't un-leak a value that was already
+pushed (the Web Security track's secrets unit covers that side).
+
+<!--more-->
+
+**Ignored is not the same as safe.** `git add -f` adds an ignored file anyway, and a rule
+written for a directory (`build/`) doesn't match a file named `build`. To see every ignored file
+in a working tree, run `git status --short --ignored --untracked-files=all` — ignored paths show
+as `!!`. Without `--untracked-files=all`, a wholly ignored directory shows as one `!! build/` line
+and hides the files inside it.

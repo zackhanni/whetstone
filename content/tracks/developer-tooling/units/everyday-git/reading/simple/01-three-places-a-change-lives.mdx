@@ -1,0 +1,51 @@
+---
+id: three-places-a-change-lives
+title: Three places a change lives
+---
+
+Git has three copies of your files, and every everyday command moves changes between them:
+
+```text
+ working tree  ──git add──▶  index (staging area)  ──git commit──▶  commits (history)
+ the files you edit          the next commit, as you've built it    snapshots, each with a parent
+```
+
+- The **working tree** is the folder you edit. Git doesn't record anything here by itself.
+- The **index** (also called the staging area) is the commit you're *about to* make. `git add`
+  copies a file's current content into it — the content at that moment, not a link to the file.
+- A **commit** is a snapshot of the whole index, plus a message and a pointer to its parent
+  commit. Once made, it doesn't change.
+
+## The loop
+
+```sh
+git status                  # what differs between the three places
+git diff                    # working tree vs index: changes you haven't staged
+git add src/cart.ts         # stage this file's current content
+git diff --staged           # index vs last commit: exactly what the commit will contain
+git commit -m "Fix cart total rounding"
+git log --oneline           # the history, newest first
+```
+
+`git diff` with no arguments only shows **unstaged** changes. Once you `git add` everything,
+it prints nothing — that doesn't mean nothing changed, it means the index caught up. To see what
+you're about to commit, `git diff --staged` (`--cached` is the same flag).
+
+## Reading `git status --short`
+
+Two columns: the left one compares the index with the last commit, the right one compares the
+working tree with the index.
+
+```text
+M  src/cart.ts      staged, no further edits
+ M src/api.ts       edited, not staged
+MM src/order.ts     staged, then edited again — the commit gets the staged version
+A  src/new.ts       a new file, staged
+?? notes.md         untracked: git has never been told about it
+```
+
+`MM` is the one that surprises people: you staged a change, kept editing, and committed. The
+commit contains what you staged, and the later edits are still sitting in the working tree.
+
+`git commit -a` stages every change to files git already **tracks**, then commits. It skips
+untracked files, so a new file still needs its own `git add`.

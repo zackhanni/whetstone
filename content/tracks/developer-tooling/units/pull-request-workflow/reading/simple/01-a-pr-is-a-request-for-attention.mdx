@@ -1,0 +1,53 @@
+---
+id: a-pr-is-a-request-for-attention
+title: A pull request is a request for someone's attention
+---
+
+A pull request asks a reviewer to understand a change well enough to share responsibility for it.
+Everything about a good PR makes that cheaper.
+
+## One purpose per PR
+
+GitHub's own advice: "Small, focused pull requests are easier to review and safer to merge."
+The test is whether you can state the purpose in one sentence. "Bump the ORM, refactor the
+repository layer, and add order export" is three PRs:
+
+```text
+PR 1  Bump the ORM to 7.2                     (mechanical; reviewer skims)
+PR 2  Move order queries into OrderRepository (refactor; no behaviour change)
+PR 3  Add CSV export for orders               (the feature; the real review)
+```
+
+Each is easy to say yes to, easy to revert alone, and fails CI for one reason. If PR 3 needs PR 2,
+that's a **stack** — the complex example covers merging one.
+
+Before asking anyone else, review it yourself: read the whole diff in the **Files changed** tab,
+look for debug output, stray files and unrelated formatting, and check that CI is green.
+
+## Commit messages that survive
+
+Git's own manual: "begin the commit message with a single short (no more than 50 characters) line
+summarizing the change, followed by a blank line and then a more thorough description." Pro Git
+adds: write it in the imperative — "Fix bug", not "Fixed bug" — and use the body for the motivation.
+
+```text
+Round cart totals once, after summing
+
+Line totals were rounded individually and then summed, so a cart of
+three $0.333 items showed $0.99 instead of $1.00. Sum the exact
+amounts and round the result.
+```
+
+The subject is what `git log --oneline`, `git revert` and every review tool show. The body is for
+the person running `git blame` on this line in two years: **why**, not a list of files.
+
+## A description that does the reviewer's first five minutes
+
+- **Why** — the problem, or a link to the issue.
+- **What** — the approach, in a few lines.
+- **Where to look** — "the logic is in `pricing.ts`; the rest is fixture updates".
+- **How it was checked** — tests added, what you ran by hand.
+
+`Fixes #88` (or `Closes`, `Resolves`) in the description links the issue and closes it when the PR
+merges — but only when the PR targets the repository's **default branch**. Against any other base,
+GitHub's docs say the keywords are ignored.

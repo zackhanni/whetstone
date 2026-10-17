@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 3,
+  "slug": "git-reset-model",
+  "title": "Model what `git reset` does to the three trees",
+  "skills": ["git", "undoing-changes"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "reset.ts",
+  "acceptanceCriteria": [
+    "Every mode moves the current branch to the target and keeps `HEAD` on that branch",
+    "`--soft` leaves the index and working tree alone: the undone changes show as staged",
+    "`--mixed` resets the index to the target and leaves the working tree alone",
+    "`--hard` makes the index and every tracked file match the target",
+    "`--hard` leaves untracked files in the working tree",
+    "`--hard HEAD` discards staged and unstaged work, including a file that was only ever staged",
+    "No commit is deleted: `ORIG_HEAD` and the reflog lead back to the old tip, and resetting to it undoes the reset",
+    "The repo passed in is not modified"
+  ]
+}

@@ -1,0 +1,63 @@
+---
+id: tokens-and-gh-auth
+title: Tokens — for people, for scripts, and for gh
+---
+
+Over HTTPS, a **personal access token** (PAT) is what you type where git asks for a password.
+It's also what any script uses to call GitHub's API. Treat it like a password: GitHub's docs
+say exactly that.
+
+## Fine-grained vs classic
+
+GitHub has two kinds and recommends **fine-grained** tokens:
+
+| | Fine-grained | Classic |
+| --- | --- | --- |
+| Reaches | one owner (you or one org), optionally only chosen repos | every repo your account can reach |
+| Permissions | per area: Contents read, Issues write, Pull requests read… | broad scopes like `repo` |
+| Gaps | can't span several orgs at once; not for Packages | works where fine-grained doesn't |
+
+So a token for "a script that labels issues in `acme/api`" should be fine-grained, limited to
+that one repo, with Issues: read and write — and nothing else. If it leaks, that's all it can
+do. Give every token an expiry; GitHub also deletes tokens that go unused for a year.
+
+## Where git keeps the token
+
+You don't paste the token at every push. A **credential helper** stores it after the first use.
+Apple's git (the one from Xcode's Command Line Tools) ships configured with
+`credential.helper=osxkeychain`, so the token lands in the macOS Keychain. GitHub's docs suggest
+letting `gh` or Git Credential Manager do this instead.
+
+## `gh auth login`: for you, in your terminal
+
+```sh
+% gh auth login
+```
+
+It asks which host, which protocol (HTTPS or SSH) and how to sign in — by default a browser
+page plus a one-time code — then stores its token in the system credential store. Choose HTTPS
+and answer **yes** to "authenticate Git with your GitHub credentials", and `gh` configures
+itself as git's credential helper (the same thing `gh auth setup-git` does). Choose SSH and it
+offers to upload a public key for you.
+
+## Automation: give it a token, don't make it log in
+
+A CI job, a cron script or an agent's shell has nobody to answer those questions. For them:
+
+```sh
+export GH_TOKEN=…          # from your secret store, never typed into a command line
+gh pr list                 # gh uses GH_TOKEN and skips its stored login entirely
+```
+
+`gh` reads `GH_TOKEN` (then `GITHUB_TOKEN`) before any stored credentials, and its manual
+favours `GH_TOKEN` for fine-grained tokens. `gh auth login --with-token < token.txt` stores a
+token read from standard input, but its manual describes that flag as taking a classic token.
+
+<!--more-->
+
+**Why not paste the token into the command?** `gh auth login --with-token <<< ghp_…` or
+`curl -H "Authorization: Bearer ghp_…"` puts the secret in your shell history file —
+macOS's default `/etc/zshrc` sets `HISTFILE=~/.zsh_history` and saves the last 1,000 lines. A
+token passed as an argument, like the `curl` one, is also visible to anyone who lists processes
+while the command runs. Read it from a file or a secret manager into an environment variable
+instead.

@@ -1,0 +1,73 @@
+---
+id: squash-merges-and-stacked-branches
+title: A squash merge under a stacked branch
+---
+
+A **stack**: `feature-b` was branched from `feature-a` before `feature-a` merged, so `b` contains
+`a`'s commits plus its own. Then `feature-a`'s pull request is **squash-merged**: GitHub (or
+`git merge --squash`) writes one brand-new commit on `main` with all of `a`'s changes.
+
+```text
+main:       Base ── S "Feature A (#1)"          ← a new commit, not A1 or A2
+feature-b:  Base ── A1 ── A2 ── B1
+```
+
+`A1` and `A2` are not in `main`'s history — `S` has the same *changes* but is a different
+commit. So, to git, `feature-b` still has three commits `main` lacks:
+
+```text
+% git log --oneline main..feature-b
+f41646c B1: add b
+ef2efb3 A2: tweak a
+7cf7928 A1: add a
+% git rebase main
+CONFLICT (add/add): Merge conflict in a.txt
+error: could not apply 7cf7928... A1: add a
+```
+
+`git rebase main` replays `A1` onto a `main` that already contains its final result, and they
+collide (real run, Git 2.50). The pull request has the same problem: if `feature-b`'s PR targets
+`main`, GitHub's three-dot diff starts at the merge base, `Base`, so `a`'s changes show up again
+as if they were `b`'s.
+
+## The fix: name the old base as the upstream
+
+`git rebase --onto <newbase> <upstream>` replays only `upstream..branch` — so pass the **old** base:
+
+```text
+% git rebase --abort
+% git rebase --onto main feature-a          # replay feature-a..feature-b = just B1
+Successfully rebased and updated refs/heads/feature-b.
+% git log --oneline
+929c58c B1: add b
+6f0090e Feature A (#1)
+2955620 Base
+```
+
+That needs `feature-a` (or the id of its last commit) still around locally — another reason not to
+delete a base branch before you've moved what's stacked on it.
+
+## Two cases where it just works
+
+- **A one-commit base.** If `feature-a` was a single commit, `S` makes exactly the same change, and
+  rebase skips it on its own: `warning: skipped previously applied commit bb52381`. It compares
+  each commit's patch with the commits upstream gained, so only an exact match is dropped.
+- **A merge commit instead of a squash.** If `main` merged `feature-a` with a merge commit, `A1` is
+  reachable from `main` through that merge's second parent, and `git rebase main` replays only `B1`.
+
+## Keeping a stack current before anything merges
+
+When `main` moves under a stack, rebase the **top** branch with `--update-refs` (Git 2.38+): it
+moves every branch pointer it passes, so the lower branches follow.
+
+```text
+% git switch feature-b
+% git rebase --update-refs main
+Successfully rebased and updated refs/heads/feature-b.
+Updated the following refs with --update-refs:
+	refs/heads/feature-a
+```
+
+Then force-push each branch with `--force-with-lease`. (`git config --global rebase.updateRefs
+true` makes it the default.) The pull-request unit covers the GitHub side: retargeting each PR
+before its base branch is deleted.

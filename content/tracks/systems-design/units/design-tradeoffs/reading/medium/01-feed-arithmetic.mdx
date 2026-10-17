@@ -1,0 +1,55 @@
+---
+id: feed-arithmetic
+title: Choosing a feed design by arithmetic
+---
+
+Assumptions first, every one labelled:
+
+```
+Posts:              10M a day                       (assumption)  →     116 posts/s
+Followers per post: 200 on average                  (assumption)
+Feed opens:         500M a day                      (assumption)  →   5,800 reads/s
+Followed accounts:  200 per user on average         (assumption)
+```
+
+**Fan-out on write:** every post is copied into 200 timelines.
+
+```
+writes: 116 posts/s × 200 followers   ≈ 23,000 timeline inserts/s
+reads:  5,800/s, each one lookup of a prebuilt list
+```
+
+**Fan-out on read:** every feed open queries 200 accounts' recent posts.
+
+```
+writes: 116 inserts/s
+reads:  5,800/s × 200 followed accounts ≈ 1.16 million per-account lookups/s, plus a merge each
+```
+
+Sending those as 200 separate queries is the N+1 shape from the Databases track's
+[N+1 queries](/learn/databases/n-plus-one-queries) unit. Batching them into one `WHERE author_id = ANY($1)` query saves the
+round trips, but the database still reads 200 accounts' recent posts for every open.
+
+Write fan-out turns 1.16M lookups/s on the latency-sensitive path (someone is staring at a
+spinner) into 23k inserts/s on a path that can be **asynchronous**: the post is accepted
+immediately and workers fill timelines behind it. That's usually the right trade for a
+read-heavy feed. Two numbers break it.
+
+**Huge accounts.** Averages hide the tail. An account with 10 million followers turns one post
+into 10 million inserts. If the fan-out workers sustain 50,000 inserts/s in total (an assumption
+— measure yours), the last follower sees the post 200 seconds later, and every other post queues
+behind it meanwhile. The usual answer is a **hybrid**: fan out on write for ordinary accounts, but
+*don't* fan out posts from accounts above a follower threshold. Instead, at read time, merge in
+the recent posts of the few huge accounts the reader follows. Most users follow only a handful of
+huge accounts, so the read-time merge stays small.
+
+**Inactive followers.** Fan-out on write does work for every follower, including ones who never
+open the app again. Skipping fan-out to users inactive for a while — and building their timeline
+on read when they return — removes work nobody would see. Because a timeline is a materialized
+view, rebuildable from posts and follows (Azure's pattern calls such views disposable), "build it
+on demand" is always a valid fallback.
+
+Write the decision in the four parts: *options* push, pull, hybrid; *deciding fact* reads
+outnumber posts 50:1 and the follower distribution has a long tail; *give up* storage for
+timelines and a second code path for huge accounts; *change my mind* if fan-out lag at p99
+exceeds the freshness requirement, lower the threshold.

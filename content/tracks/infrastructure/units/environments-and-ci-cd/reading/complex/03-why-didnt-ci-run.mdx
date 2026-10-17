@@ -1,0 +1,47 @@
+---
+id: why-didnt-ci-run
+title: Why didn't CI run? A checklist
+---
+
+The riskiest PR is the one whose checks never started: nothing is red, so at a glance it looks
+tested. When a workflow you expected is missing, it is almost always one of these, all
+documented in GitHub's Actions reference.
+
+**1. The PR doesn't target the filtered branch.** `on.pull_request.branches: [main]` matches
+the PR's *base*. A PR stacked on `feature/login` never runs main's CI — every check you see on
+it came from workflows without that filter.
+
+**2. The PR was retargeted, not updated.** When the parent PR merges and the child is
+retargeted onto `main`, that's an `edited` event, and `pull_request` defaults to `opened`,
+`synchronize` and `reopened`. Nothing runs until a new commit is pushed, or the PR is closed
+and reopened — or the workflow adds `edited` to `types`, accepting runs on title edits too.
+
+**3. A path filter skipped a required check.** The workflow never starts, so its required
+check sits at "Pending" — *Waiting for status to be reported* — and blocks the merge. GitHub's
+fix: don't require workflows that can be skipped. If you need the saving, filter inside the
+workflow instead: a job skipped by an `if:` condition reports **Success**.
+
+**4. The PR has a merge conflict.** `pull_request` workflows don't run until it's resolved.
+
+**5. A bot opened or updated the PR with `GITHUB_TOKEN`.** `opened`, `synchronize` and
+`reopened` runs from such a PR wait for someone with write access to approve them, and other
+events caused by `GITHUB_TOKEN` (except `workflow_dispatch` and `repository_dispatch`) create
+no runs at all — a guard against workflows triggering each other forever.
+
+**6. It ran — on something other than your commit.** A `pull_request` run checks out the
+*merge* of your branch into the base (`refs/pull/<n>/merge`), so a PR can turn red because
+`main` moved, with no new commit of yours.
+
+### Before you rely on a check, read its triggers
+
+"CI covers this" is a claim about two places in a file: the `on:` block (events, branches,
+paths, `types`) **and** each job's `if:`. A workflow that triggers on your PR can still skip
+the one job you care about. Read both, then look for the check on an actual PR — and open its
+log, to see that the step really executed rather than reporting success for a skip.
+
+<!--more-->
+
+**Large pushes change the rules.** If a push contains more than 1,000 commits, or GitHub
+can't generate the diff in time, path-filtered workflows always run; and if the diff has more
+than 3,000 files, a workflow whose matching files aren't among the first 3,000 doesn't run.
+Path filters are a cost optimisation, not a guarantee.

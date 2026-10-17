@@ -13,6 +13,9 @@
     "databases",
     "testing-and-quality",
     "web-security",
-    "reference-cards"
+    "developer-tooling",
+    "reference-cards",
+    "systems-design",
+    "infrastructure"
   ]
 }

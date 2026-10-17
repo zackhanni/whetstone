@@ -1,0 +1,49 @@
+---
+id: replicas-and-read-your-writes
+title: Read replicas and the read-your-writes problem
+---
+
+A read replica is a copy of the primary that serves read-only queries. In PostgreSQL 18 that's a
+hot standby fed by streaming replication, which the docs say is **asynchronous by default**: the
+primary commits and replies, and *then* the change reaches the standby — "typically under one
+second" if the standby keeps up with the load. The Hot Standby chapter states the consequence:
+data on the standby is *eventually consistent* with the primary, so the same query run on both at
+nearly the same moment can return different results.
+
+Usually nobody notices. Everyone notices this one:
+
+```
+t=0 ms    POST /profile {name: "Ada"}  → primary: UPDATE … COMMIT → 200 OK
+t=40 ms   GET /profile                  → replica, 200 ms behind  → name: "Ana"
+```
+
+The user saved, saw "Saved", and the page shows the old name. Nothing failed; the read went to a
+copy that hadn't caught up yet.
+
+Fixes, roughly from cheapest to most expensive:
+
+- **Send a user's reads to the primary right after they write.** Only that user, only for a
+  short window, then back to replicas. Brewer describes Facebook doing exactly this: after a user
+  updated their page, their reads went to the master copy, and after 20 seconds they reverted to
+  the nearby copy, which by then should have the update.
+- **Wait for the replica to catch up.** Note the primary's WAL position after the commit
+  (`pg_current_wal_lsn()`), and only read from a replica whose `pg_last_wal_replay_lsn()` has
+  passed it — otherwise wait briefly or use the primary.
+- **Make the commit wait.** With a synchronous standby and `synchronous_commit = remote_apply`,
+  a commit doesn't return until the synchronous standby has *replayed* it, which the docs say
+  allows, in simple cases, load balancing with causal consistency. Every write now pays a round trip to the
+  standby, and if that standby goes away, commits wait.
+- **Decide the lag is fine.** A follower count, a product listing, a dashboard: if the
+  requirement tolerates a few seconds, say so and read from replicas freely.
+
+The design question is never "are replicas consistent?" — by default they aren't — but **"which
+reads can tolerate lag, and what do the rest do instead?"**
+
+<!--more-->
+
+Replicas cost something on the read path too. A long query on a hot standby can conflict with
+changes the primary already made (vacuum removing rows the query still needs, a dropped table).
+The standby either delays applying WAL — so lag grows — or cancels the query once
+`max_standby_streaming_delay` is exceeded. `hot_standby_feedback` prevents the vacuum conflicts
+at the price of table bloat on the primary. Running analytics on a replica is a reasonable
+pattern; it just isn't free.

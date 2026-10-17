@@ -33,7 +33,7 @@ With `Promise.all` here, one flaky recommendations service would blank the whole
 **`all` failing fast doesn't stop the others.** When one input rejects, `Promise.all` rejects
 immediately, but the remaining requests keep running and their results are thrown away. MDN:
 "The other operations continue to run, but their outcomes are not available". If they should
-stop, cancel them yourself (the `cancellation-and-races` unit).
+stop, cancel them yourself (the [Cancellation & races](/learn/async-javascript/cancellation-and-races) unit).
 
 **`any` (ES2021) and `AggregateError`.** If every input rejects, `any` rejects with an
 `AggregateError` whose `.errors` array holds each reason, in input order. `Promise.any([])`

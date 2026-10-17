@@ -1,0 +1,40 @@
+---
+id: the-order-of-work
+title: Five steps, in an order that feeds itself
+---
+
+A design discussion usually goes wrong the same way: someone names a database in minute two,
+and every later decision gets bent to fit it. The fix is an order of work where each step's
+output is the next step's input:
+
+1. **Requirements** — what it must do (functional) and how well (non-functional: latency,
+   availability, durability, how fresh data must be).
+2. **Estimates** — how much: requests per second on average and at peak, storage over the
+   retention period, the read:write ratio.
+3. **API** — the operations the requirements name, written as requests and responses.
+4. **Data model** — the records those operations read and write, keyed the way the hottest
+   operation looks them up.
+5. **Scale** — only now: which path is hot, what breaks first at the estimated load, and what
+   to add (a cache, replicas, a queue, shards).
+
+A URL shortener, one line per step (the numbers come from the next example):
+
+| Step | URL shortener |
+| --- | --- |
+| Requirements | Create a short link for a long URL; `/{code}` redirects to it; redirects are fast and almost always up |
+| Estimates | ~40 creates/s and ~4,000 redirects/s on average — 100× more reads than writes |
+| API | `POST /api/links` → `201` with the code; `GET /{code}` → a redirect with a `Location` header |
+| Data model | `links(code PRIMARY KEY, long_url, created_at, …)` — one lookup by `code` is the whole read path |
+| Scale | The redirect is the hot path: cache it, add read replicas. 40 writes/s needs nothing special |
+
+Look at what the order bought you. By step 5 you know the redirect is the only thing worth
+optimising, and that sharding the database would solve a problem the numbers say you don't
+have. (Why a primary-key lookup stays fast as the table grows is the Databases track's
+`indexes` unit.)
+
+<!--more-->
+
+The steps loop. An estimate can send you back to requirements ("4,000 redirects a second from
+two continents — what's the latency target per region?"), and a data-model choice can change
+the API. The order is about not *starting* from a technology, not about never revisiting a
+step.

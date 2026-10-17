@@ -1,0 +1,52 @@
+---
+id: a-line-becomes-words
+title: The shell turns your line into words, then runs a program
+---
+
+When you press Enter, the program you typed doesn't see your line. The **shell** (zsh, the
+macOS default since Catalina) reads it first, **expands** it, splits it into **words**, and
+then starts the program with those words as its arguments.
+
+```sh
+cd ~/projects/shop        # ~ becomes /Users/you before cd ever runs
+ls src/*.ts               # the shell, not ls, turns *.ts into the matching file names
+echo "Hello $USER"        # "$USER" is replaced; echo receives one word: Hello ada
+echo 'Hello $USER'        # single quotes: nothing is replaced; echo receives Hello $USER
+```
+
+So `ls` never sees `*.ts` — it receives `src/a.ts src/b.ts`. That one fact explains most
+terminal surprises.
+
+## Where you are, and how paths read
+
+The shell has a **current working directory** (`pwd` prints it). A path is read from there
+unless it starts with `/`:
+
+| Path | Means |
+| --- | --- |
+| `/Users/ada/shop/package.json` | **absolute** — from the root, works anywhere |
+| `src/app.ts` | **relative** — from the current directory |
+| `.` / `..` | this directory / the parent (`cd ..` goes up one) |
+| `~` | your home directory (`$HOME`), expanded by the shell |
+
+The everyday verbs: `pwd` (where am I), `cd` (go), `ls` (list), `cat` (print a file),
+`less` (page through one; `q` quits, `/word` searches), `grep pattern file` (lines that
+match), `find . -name '*.json'` (files by name, recursively). The flags you'll reach for are
+in the **Common CLI flags** cards; this unit is about what the shell does around them.
+
+## Quotes decide what the shell touches
+
+- **Single quotes** `'…'` — everything literal. No `$VAR`, no `~`, no `*`.
+- **Double quotes** `"…"` — `$VAR` and `$(command)` still expand, but the result stays **one
+  word**, and `*` and `~` stay literal.
+- **No quotes** — every expansion happens: `~`, `$VAR`, globs like `*.ts`.
+
+That's why this fails:
+
+```sh
+% cd "~/Documents"
+cd: no such file or directory: ~/Documents
+```
+
+The quotes stopped `~` from expanding, so `cd` looked for a folder literally named `~`. Write
+`cd ~/Documents`, or `cd "$HOME/Documents"` when the path has spaces.

@@ -183,8 +183,8 @@ authoring session doesn't invent its own.
 | `security` — **landed** with `http-and-apis` | Web Security (XSS, CSP, CSRF, OWASP) | `auth` gains `security` — **done** |
 | `testing` — **landed** with `testing-and-quality` | Testing & Quality (Vitest, Playwright) | — |
 | `databases` — **landed** with `databases` | Databases | — |
-| `tooling` — **landed** with `http-and-apis` (`curl`) | Terminal, Git & GitHub | — |
-| `system-design`, `infrastructure` | Capstone tracks | `architecture` may gain `system-design` |
+| `tooling` — **landed** with `http-and-apis` (`curl`); Terminal, Git & GitHub tags with `developer-tooling` | Terminal, Git & GitHub | — |
+| `system-design` — **landed** with `systems-design`; `infrastructure` — **landed** with `infrastructure` | Capstone tracks | `architecture` gains `system-design` — **done** (and `rate-limiting` too) |
 
 Re-parenting is free: a tag gaining a parent changes no content file, because units store only
 the leaf tag.

@@ -1,0 +1,75 @@
+---
+id: the-push-that-lands-on-main
+title: The branch that pushes to main
+---
+
+The habit "always branch from the freshest `main`" leads people to write:
+
+```sh
+git fetch
+git switch -c feature origin/main
+```
+
+It does start the branch from the remote's latest `main`. It **also** does something you didn't
+ask for — read the first line of the output:
+
+```text
+branch 'feature' set up to track 'origin/main'.
+Switched to a new branch 'feature'
+```
+
+`branch.autoSetupMerge` defaults to `true`, which means: when the start point is a
+**remote-tracking branch**, make it the new branch's upstream. So `feature`'s upstream is now
+`main` on the remote:
+
+```sh
+% git config --get-regexp '^branch\.feature'
+branch.feature.remote origin
+branch.feature.merge refs/heads/main
+% git status -sb                         # after one commit
+## feature...origin/main [ahead 1]
+```
+
+## What happens at push time depends on who's pushing
+
+**Plain `git push` on the command line refuses**, because `push.default` is `simple` (the default
+since Git 2.0) and `simple` only pushes to an upstream with the same name:
+
+```text
+fatal: The upstream branch of your current branch does not match
+the name of your current branch.  To push to the upstream branch
+on the remote, use
+
+    git push origin HEAD:main
+```
+
+Note the first suggestion: it's offering to push your feature work **to main**.
+
+**A tool that pushes "to the upstream" doesn't refuse.** VS Code's Push and Sync, for example,
+push `<branch>:<its upstream>` — here `feature:main`. So does any setup with
+`push.default=upstream`:
+
+```text
+% git -c push.default=upstream push
+To github.com:acme/shop.git
+   84c2515..ea0a552  feature -> main
+```
+
+`feature -> main`: your unreviewed commits are on `main` — and if `main` deploys on push, they're
+in production.
+
+## Starting branches that can't do that
+
+```sh
+git switch -c feature                       # from your local main (no upstream set)
+git switch --no-track -c feature origin/main     # from the remote's main, no upstream
+git push -u origin feature                  # first push: upstream = origin/feature
+```
+
+Branching from a **local** branch sets no upstream (with the default setting), and `--no-track`
+says so explicitly. Either way, the first push with `-u` gives the branch the upstream it should
+have had — its own name on the remote. If a branch already has the wrong upstream, that same
+`git push -u origin feature` replaces it.
+
+Check any branch before trusting a push button: `git branch -vv` shows `[origin/main]` next to a
+branch that will push to main.

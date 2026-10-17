@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "slug": "rebase-replay-set",
+  "title": "Work out which commits a rebase replays",
+  "skills": ["git", "rebase"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "replay.ts",
+  "acceptanceCriteria": [
+    "A commit upstream can reach through **any** parent — including a merge commit's second parent — is not replayed",
+    "The commits come back oldest first, the order of the `pick` lines",
+    "Merge commits are dropped",
+    "A commit whose `patch` upstream already has (a cherry-pick, or a one-commit squash merge) is skipped",
+    "Only commits upstream gained since the two sides split count as \"already upstream\": re-applying a change from the shared history is still replayed",
+    "After a multi-commit squash merge, the old base's commits are replayed again",
+    "With the old base as upstream (`rebase --onto main feature-a`), only the branch's own commit is replayed"
+  ]
+}

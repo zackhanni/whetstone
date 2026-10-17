@@ -1,0 +1,415 @@
+{
+  "schemaVersion": 3,
+  "slug": "pull-request-workflow",
+  "title": "The pull-request workflow, from draft to drained stack",
+  "skills": [
+    "github",
+    "pull-requests",
+    "code-review",
+    "gh-cli"
+  ],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Scope a PR to one reviewable purpose and write a commit message and description that say why — ≤50-character imperative subject, blank line, body; `Fixes #N` closes issues only on the default branch",
+    "Run the review loop — draft vs ready, Comment / Approve / Request changes, pending review comments — and say what actually blocks a merge",
+    "Read required status checks as gates: a job skipped by its condition counts as success, while a workflow that never runs blocks with \"Waiting for status to be reported\"",
+    "Choose merge commit, squash or rebase-and-merge knowing what each does to `main`'s history and to branches built on the PR",
+    "Drain a hand-built stack bottom-up: retarget the child before its base branch is deleted, then `rebase --onto` and force-push with a lease"
+  ],
+  "sources": [
+    {
+      "title": "GitHub Docs: Helping others review your changes",
+      "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/helping-others-review-your-changes"
+    },
+    {
+      "title": "GitHub Docs: Pull requests (drafts)",
+      "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-pull-requests"
+    },
+    {
+      "title": "GitHub Docs: Reviewing proposed changes in a pull request",
+      "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/reviewing-proposed-changes-in-a-pull-request"
+    },
+    {
+      "title": "GitHub Docs: About protected branches",
+      "url": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches"
+    },
+    {
+      "title": "GitHub Docs: Troubleshooting required status checks",
+      "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks"
+    },
+    {
+      "title": "GitHub Docs: Using conditions to control job execution (a skipped job reports Success)",
+      "url": "https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/using-conditions-to-control-job-execution"
+    },
+    {
+      "title": "GitHub Docs: About merge methods on GitHub",
+      "url": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github"
+    },
+    {
+      "title": "GitHub Docs: Merging a pull request",
+      "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/merging-a-pull-request"
+    },
+    {
+      "title": "GitHub Docs: Linking a pull request to an issue",
+      "url": "https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue"
+    },
+    {
+      "title": "GitHub Docs: Automatically merging a pull request",
+      "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/automatically-merging-a-pull-request"
+    },
+    {
+      "title": "GitHub Docs: About stacked pull requests",
+      "url": "https://docs.github.com/en/pull-requests/get-started/about-stacked-prs"
+    },
+    {
+      "title": "GitHub Changelog: Stacked pull requests are now in public preview (2026-07-30)",
+      "url": "https://github.blog/changelog/2026-07-30-stacked-pull-requests-are-now-in-public-preview/"
+    },
+    {
+      "title": "GitHub CLI manual: gh pr merge",
+      "url": "https://cli.github.com/manual/gh_pr_merge"
+    },
+    {
+      "title": "Git docs: git-commit (Discussion: commit messages)",
+      "url": "https://git-scm.com/docs/git-commit"
+    },
+    {
+      "title": "Pro Git: Contributing to a Project (commit guidelines)",
+      "url": "https://git-scm.com/book/en/v2/Distributed-Git-Contributing-to-a-Project"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-pr-workflow",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-pr-workflow",
+      "questions": [
+        {
+          "id": "split-the-pr",
+          "prompt": "Your branch bumps the ORM, refactors the order queries into a repository class, and adds CSV export (1,800 lines). How should it reach review?",
+          "options": [
+            {
+              "id": "three-prs",
+              "text": "Three PRs — bump, refactor, export — stacked if the export depends on the refactor"
+            },
+            {
+              "id": "one-pr-description",
+              "text": "One PR with a detailed description of all three parts"
+            },
+            {
+              "id": "squash",
+              "text": "One PR, squash-merged so `main` gets a single commit"
+            },
+            {
+              "id": "three-commits",
+              "text": "One PR with three commits — that's equivalent to three PRs"
+            }
+          ],
+          "answer": "three-prs",
+          "explanation": "GitHub's guidance: small, focused PRs are easier to review and safer to merge — one purpose each. Separate PRs can be approved, reverted and CI-checked independently; a mechanical bump gets skimmed, the feature gets real attention. Good commits inside one PR help, but the PR is still reviewed, gated and merged as one unit. Squashing changes what lands on `main`, not how hard the review is."
+        },
+        {
+          "id": "commit-message",
+          "prompt": "Which commit message follows the git manual's and Pro Git's guidance?",
+          "options": [
+            {
+              "id": "good",
+              "text": "`Round cart totals once, after summing`, a blank line, then a body explaining the rounding bug"
+            },
+            {
+              "id": "past",
+              "text": "`Fixed the bug where cart totals were wrong when discounts applied and refactored helpers`"
+            },
+            {
+              "id": "vague",
+              "text": "`fix stuff`"
+            },
+            {
+              "id": "files",
+              "text": "`Update cart.ts, pricing.ts and pricing.test.ts`"
+            }
+          ],
+          "answer": "good",
+          "explanation": "A short summary line (the git manual says no more than 50 characters), imperative mood (\"Fix\", not \"Fixed\"), a blank line, then the *why* in the body. The second is past tense, far too long for a subject and bundles two changes. \"fix stuff\" says nothing in `git log --oneline`. A list of files duplicates what the diff already shows and omits the reason."
+        },
+        {
+          "id": "keyword-wrong-base",
+          "prompt": "A PR into `release-2.4` (not the default branch) says `Fixes #88` and has merged. Issue #88 is still open. Why?",
+          "options": [
+            {
+              "id": "default-only",
+              "text": "Closing keywords are interpreted only when the PR targets the default branch; elsewhere they're ignored"
+            },
+            {
+              "id": "syntax",
+              "text": "The keyword must be `Closes`, not `Fixes`"
+            },
+            {
+              "id": "commit",
+              "text": "The keyword must be in a commit message, not the description"
+            },
+            {
+              "id": "delay",
+              "text": "Issues close a few hours after the merge"
+            }
+          ],
+          "answer": "default-only",
+          "explanation": "GitHub's docs: the keywords \"are interpreted only when the pull request targets the repository's default branch. If the pull request targets any other branch, then these keywords are ignored.\" `fixes`, `closes` and `resolves` (and their variants) are all valid. Close the issue by hand, or when the fix reaches the default branch."
+        },
+        {
+          "id": "request-changes-ignored",
+          "prompt": "A reviewer chose **Request changes**, yet the author merged five minutes later without approval. How?",
+          "options": [
+            {
+              "id": "no-rule",
+              "text": "Request changes only blocks when a branch protection rule or ruleset requires reviews; this branch has none"
+            },
+            {
+              "id": "admin",
+              "text": "The author must be an admin — only admins can merge over a review"
+            },
+            {
+              "id": "dismissed",
+              "text": "A new push automatically dismissed the review"
+            },
+            {
+              "id": "draft",
+              "text": "Reviews don't apply until the PR leaves draft"
+            }
+          ],
+          "answer": "no-rule",
+          "explanation": "GitHub's docs: Request changes \"is purely informational and will not prevent merging unless a ruleset or classic branch protection rule\" requires reviews. With such a rule, a write-access reviewer's Request changes blocks until that reviewer approves. Admins *can* bypass protection by default, but that's not needed when nothing is protected. Dismissing stale reviews applies to approvals, and a draft can't be merged at all."
+        },
+        {
+          "id": "pending-comments",
+          "prompt": "You left twelve line comments on a teammate's PR an hour ago. They say they can't see any. What happened?",
+          "options": [
+            {
+              "id": "pending",
+              "text": "The comments are pending — visible only to you — until you submit the review"
+            },
+            {
+              "id": "permissions",
+              "text": "They lack read access to review comments"
+            },
+            {
+              "id": "outdated",
+              "text": "A new push marked every comment outdated and deleted it"
+            },
+            {
+              "id": "draft",
+              "text": "Comments on a draft PR are never shown to its author"
+            }
+          ],
+          "answer": "pending",
+          "explanation": "Line comments made with **Start a review** stay pending, and GitHub's docs say they're \"only visible to you\" until you submit the review — as Comment, Approve or Request changes. That's deliberate: the author gets the whole review at once instead of twelve separate pings. Nothing about access or drafts is involved; submit the review (or discard it) from the review box."
+        },
+        {
+          "id": "waiting-for-status",
+          "prompt": "A docs-only PR is blocked: the required check `build` says \"Waiting for status to be reported.\" The `build` workflow only runs when files under `src/` change. Why is it blocked?",
+          "options": [
+            {
+              "id": "never-ran",
+              "text": "The workflow was filtered out, so `build` never reported; a required check with no report stays pending and blocks"
+            },
+            {
+              "id": "skipped-fails",
+              "text": "Skipped checks count as failures"
+            },
+            {
+              "id": "slow",
+              "text": "CI is still queued; wait longer"
+            },
+            {
+              "id": "docs",
+              "text": "Required checks don't run on Markdown files"
+            }
+          ],
+          "answer": "never-ran",
+          "explanation": "GitHub's troubleshooting docs: a workflow skipped by path or branch filtering leaves its checks \"Pending\", blocking the merge — \"Avoid requiring workflows that can be skipped.\" Note the asymmetry: a *job* skipped by its own condition reports Success and doesn't block, so a skipped required check can just as easily wave untested code through."
+        },
+        {
+          "id": "skipped-is-success",
+          "prompt": "The required check `test` is green on a PR — but its job has a condition that was false for this PR, so it never ran. Can the PR merge?",
+          "options": [
+            {
+              "id": "yes",
+              "text": "Yes — a job skipped by its own condition reports Success, which satisfies the required check"
+            },
+            {
+              "id": "no",
+              "text": "No — skipped required checks always block"
+            },
+            {
+              "id": "pending",
+              "text": "No — it stays pending until the job runs"
+            },
+            {
+              "id": "admin",
+              "text": "Only an admin can merge over a skipped check"
+            }
+          ],
+          "answer": "yes",
+          "explanation": "GitHub's docs: \"A job that is skipped will report its status as 'Success'. It will not prevent a pull request from merging, even if it is a required check.\" (Successful statuses are success, skipped and neutral.) So the gate passed without testing anything. Contrast a workflow filtered out entirely — that reports nothing, and the check blocks as pending."
+        },
+        {
+          "id": "squash-then-continue",
+          "prompt": "PR #10 was squash-merged. You kept committing on the same branch and opened PR #11 from it. PR #11 lists PR #10's commits again. Why?",
+          "options": [
+            {
+              "id": "new-commit",
+              "text": "The squash created a new commit on `main`; the branch's original commits never entered `main`'s history"
+            },
+            {
+              "id": "bug",
+              "text": "A GitHub display bug; they'll disappear after a refresh"
+            },
+            {
+              "id": "revert",
+              "text": "Squash merging reverted the original commits"
+            },
+            {
+              "id": "base",
+              "text": "PR #11 must be targeting PR #10's branch"
+            }
+          ],
+          "answer": "new-commit",
+          "explanation": "GitHub's merge-methods docs warn about exactly this: after a squash merge, continuing on the same head branch makes later PRs list the already-merged commits (and can repeat conflicts). The fix is to start each change from the updated `main` — or `git fetch`, then `git rebase --onto origin/main <old tip>` to keep only the new commits (the squash commit is on GitHub's `main`, not yet in your local one)."
+        },
+        {
+          "id": "drain-order",
+          "prompt": "PR #2 (`feature-b` → `feature-a`) is stacked on PR #1 (`feature-a` → `main`). Both are approved. What's the safe order?",
+          "options": [
+            {
+              "id": "retarget-first",
+              "text": "`gh pr edit 2 --base main`, merge #1, `git fetch`, `git rebase --onto origin/main feature-a` on `feature-b`, force-push with a lease, then delete `feature-a`"
+            },
+            {
+              "id": "merge-delete",
+              "text": "`gh pr merge 1 --squash --delete-branch`, then fix PR #2's base afterwards"
+            },
+            {
+              "id": "top-down",
+              "text": "Merge #2 first, then #1, so everything arrives together"
+            },
+            {
+              "id": "close-reopen",
+              "text": "Close #2, merge #1, then reopen #2 against `main`"
+            }
+          ],
+          "answer": "retarget-first",
+          "explanation": "Retarget the child **before** its base branch can disappear: GitHub's docs promise a retarget when a merged PR's head branch is deleted, but `gh pr merge --delete-branch` has an open bug report (cli/cli#1168) in which the child PR is closed instead — and a closed PR can't change its base. Merging #2 first lands `b` in `feature-a`, not `main`. After a squash, `--onto` drops `a`'s now-duplicate commits from `feature-b`; fetch first and rebase onto `origin/main`, because the squash commit was made on GitHub and your local `main` doesn't have it yet. GitHub's native stacks (public preview since July 2026) automate this for stacks created as stacks."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-pr-workflow",
+      "prompts": [
+        {
+          "id": "draft-then-ready",
+          "prompt": "Open the PR as a draft, then later mark it ready for review.",
+          "code": [
+            "gh pr create --fill ___",
+            "gh pr ___"
+          ],
+          "blanks": [
+            {
+              "id": "a1",
+              "accept": [
+                "--draft",
+                "-d"
+              ]
+            },
+            {
+              "id": "a2",
+              "accept": [
+                "ready"
+              ]
+            }
+          ],
+          "explanation": "`--draft` opens the PR in draft state: CI runs, merging is impossible, code owners aren't requested. `gh pr ready` marks the current branch's PR ready and requests code-owner reviews; `gh pr ready --undo` converts it back where your plan supports drafts."
+        },
+        {
+          "id": "close-issue",
+          "prompt": "In a PR to the default branch, make issue 88 close automatically when the PR merges.",
+          "code": "___ #88",
+          "blanks": [
+            {
+              "id": "b1",
+              "accept": [
+                "Fixes",
+                "Fix",
+                "Fixed",
+                "Closes",
+                "Close",
+                "Closed",
+                "Resolves",
+                "Resolve",
+                "Resolved"
+              ]
+            }
+          ],
+          "explanation": "GitHub recognises `close`, `closes`, `closed`, `fix`, `fixes`, `fixed`, `resolve`, `resolves` and `resolved` followed by the issue reference — in the PR description or a commit message, and only when the PR targets the default branch."
+        },
+        {
+          "id": "retarget-child",
+          "prompt": "Before merging the bottom PR of a stack, point the PR above it at `main`.",
+          "code": "gh pr edit 2 ___ main",
+          "blanks": [
+            {
+              "id": "c1",
+              "accept": [
+                "--base",
+                "-B"
+              ]
+            }
+          ],
+          "explanation": "`--base` changes the branch a PR merges into. Doing it while PR #2 is still open means nothing depends on whether deleting `feature-a` later retargets or closes it."
+        },
+        {
+          "id": "auto-merge",
+          "prompt": "Squash-merge PR 42 automatically as soon as its required reviews and checks pass.",
+          "code": "gh pr merge 42 --squash ___",
+          "blanks": [
+            {
+              "id": "d1",
+              "accept": [
+                "--auto"
+              ]
+            }
+          ],
+          "explanation": "`--auto` enables auto-merge when requirements are still pending; GitHub merges when everything is met. It's turned off again if someone without write access pushes to the branch or switches its base."
+        },
+        {
+          "id": "drop-merged-base",
+          "prompt": "PR 1 (`feature-a`) was squash-merged. Replay only `feature-b`'s own commits onto `main`, then update its PR safely.",
+          "code": [
+            "git rebase --onto origin/main ___ feature-b",
+            "git push ___"
+          ],
+          "blanks": [
+            {
+              "id": "e1",
+              "accept": [
+                "feature-a"
+              ]
+            },
+            {
+              "id": "e2",
+              "accept": [
+                "--force-with-lease"
+              ]
+            }
+          ],
+          "explanation": "With the old base as the upstream, rebase replays `feature-a..feature-b` — only B's commits — so the squash-merged A commits aren't replayed on top of their own squash. The rebase rewrote `feature-b`, so the push must force; the lease makes it refuse if someone else pushed in the meantime."
+        }
+      ]
+    }
+  ]
+}
