@@ -1,0 +1,46 @@
+---
+id: which-one-when
+title: Server Component, Server Action or Route Handler — which one, when
+---
+
+Ask two questions: **who sends the request**, and **is it a read or a write?**
+
+| Job | Reach for | Why |
+| --- | --- | --- |
+| Data a page or layout renders | A Server Component that queries directly (through your data-access layer) | No API hop; the query and secrets stay on the server |
+| A form or button in *your* UI that changes data | A Server Action | Typed call from the component; one round trip returns the result and the updated UI |
+| A caller that isn't your React tree: a Stripe webhook, a mobile app, a partner's integration | A Route Handler | They speak HTTP to a stable URL; you control method, status and headers |
+| A non-UI response: RSS, CSV export, a file download, a streamed body | A Route Handler | You return a raw `Response` with your own `Content-Type` |
+| A read the browser repeats (polling, search-as-you-type) | A `GET` Route Handler called from the client, or the page re-rendered from `searchParams` | A GET can be cached by URL and runs in parallel |
+
+Two traps sit in that table.
+
+**Don't fetch your own Route Handler from a Server Component.**
+
+```tsx
+// ❌ app/products/page.tsx
+const res = await fetch("http://localhost:3000/api/products"); // a server calling itself
+// ✅
+const products = await getProducts(); // the same function the Route Handler would call
+```
+
+The Backend-for-Frontend guide spells out the cost: an extra HTTP round trip on every render,
+and for a page prerendered at build time the build fails, because no server is listening while
+`next build` runs.
+
+**Don't use a Server Action to read.** Actions are POST requests, and the client dispatches
+them one at a time (a property of Next's client dispatcher; the server doesn't queue them). Firing one per
+keystroke queues the searches behind each other, and a POST response is never cached by URL.
+
+A few Route Handler facts worth having cold in Next.js 16:
+
+- `app/api/orders/route.ts` exports one function per method: `GET`, `POST`, `PUT`, `PATCH`,
+  `DELETE`, `HEAD`, `OPTIONS`. An unimplemented method gets `405`; `OPTIONS` is answered for you
+  if you don't write it.
+- A `route.ts` can't sit in the same segment as a `page.tsx`: each one owns every HTTP method for
+  its URL.
+- `GET` handlers are **not cached by default** — that changed in Next 15. In Next 14 a `GET`
+  handler without dynamic APIs was static by default, a habit that still shows up in old code.
+  With `cacheComponents` on, a `GET` handler follows the page model instead: one that reads no
+  request data and nothing uncached is prerendered at build (the caching unit covers this).
+- A Route Handler is public the moment it deploys. Authenticate inside it like any API endpoint.

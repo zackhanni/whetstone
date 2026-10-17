@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 3,
+  "slug": "server-components-actions-route-handlers",
+  "title": "Server Components, Server Actions & Route Handlers: where code runs",
+  "skills": ["nextjs", "server-components", "server-actions", "route-handlers", "auth"],
+  "difficulty": "core",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Explain what runs where in the App Router: Server Components only on the server (async, no state or effects), and `'use client'` as the entry to the client module graph whose props must be serialisable",
+    "Choose a Server Component read, a Server Action or a Route Handler for a job, from who sends the request and whether it reads or writes",
+    "Explain that a Server Action is a POST to the page that renders it, reachable without your UI, and write the session and ownership check inside it",
+    "Spot the `proxy.ts` redirect that swallows a Server Action and the `catch` that swallows `redirect()`/`notFound()`, and fix each"
+  ],
+  "sources": [
+    { "title": "Next.js docs: Server and Client Components", "url": "https://nextjs.org/docs/app/getting-started/server-and-client-components" },
+    { "title": "Next.js docs: Mutating Data (Server Functions)", "url": "https://nextjs.org/docs/app/getting-started/mutating-data" },
+    { "title": "Next.js docs: route.js (Route Handlers)", "url": "https://nextjs.org/docs/app/api-reference/file-conventions/route" },
+    { "title": "Next.js docs: Backend for Frontend (caveats)", "url": "https://nextjs.org/docs/app/guides/backend-for-frontend" },
+    { "title": "Next.js docs: Data Security", "url": "https://nextjs.org/docs/app/guides/data-security" },
+    { "title": "Next.js docs: proxy.js", "url": "https://nextjs.org/docs/app/api-reference/file-conventions/proxy" },
+    { "title": "Next.js docs: redirect", "url": "https://nextjs.org/docs/app/api-reference/functions/redirect" },
+    { "title": "Next.js docs: unstable_rethrow", "url": "https://nextjs.org/docs/app/api-reference/functions/unstable_rethrow" },
+    { "title": "React docs: 'use client' (serializable types)", "url": "https://react.dev/reference/rsc/use-client" },
+    { "title": "React docs: 'use server' (security considerations)", "url": "https://react.dev/reference/rsc/use-server" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-where-code-runs", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-where-code-runs",
+      "questions": [
+        {
+          "id": "use-client-placement",
+          "prompt": "A layout renders a logo, six nav links and one search box that uses `useState`. Where does `'use client'` go?",
+          "options": [
+            { "id": "leaf", "text": "At the top of the search box's file only" },
+            { "id": "layout", "text": "At the top of the layout, since it renders the search box" },
+            { "id": "every-parent", "text": "On the search box and on every component above it, so the hook has a client parent" },
+            { "id": "root", "text": "On the root layout, so every component can use hooks" }
+          ],
+          "answer": "leaf",
+          "explanation": "`'use client'` marks a module **and everything it imports** as client code, and a Server Component may render a Client Component directly. Putting it on the search box keeps the logo and links server-only (no JavaScript shipped for them). Marking the layout or the root drags their whole import tree into the client bundle; parents never need the directive for a child to be interactive."
+        },
+        {
+          "id": "function-prop",
+          "prompt": "`page.tsx` (a Server Component) renders `<Picker onPick={(id) => console.log(id)} />`, and `Picker`'s file starts with `'use client'`. What happens?",
+          "options": [
+            { "id": "error", "text": "React can't serialise a plain function into the payload, so rendering fails; move the handler into `Picker` or pass a Server Action" },
+            { "id": "browser", "text": "It works: the arrow function is shipped to the browser and runs on each pick" },
+            { "id": "server", "text": "It works: each pick calls back to the server, where the function runs" },
+            { "id": "dev-only", "text": "It works in production; only the dev server complains" }
+          ],
+          "answer": "error",
+          "explanation": "Props crossing the server→client boundary are serialised. Strings, numbers, plain objects, `Date`, `Map`, `Set`, Promises, JSX and **Server Functions** cross; ordinary functions and class instances don't. A Server Action *does* call back to the server, which is why it is the one kind of function allowed through, and an ordinary closure isn't."
+        },
+        {
+          "id": "children-slot",
+          "prompt": "`page.tsx` renders `<Modal><Cart /></Modal>`. `Modal` is a Client Component; `Cart` is a Server Component that queries the database. Does `Cart`'s query code reach the browser?",
+          "options": [
+            { "id": "no", "text": "No: `Modal` doesn't import `Cart`, so Next renders `Cart` on the server and passes `Modal` the finished output" },
+            { "id": "yes-under-client", "text": "Yes: everything rendered under a Client Component becomes a Client Component" },
+            { "id": "needs-use-server", "text": "Only if `Cart` lacks a `'use server'` directive" },
+            { "id": "bundled-unused", "text": "Yes, it's bundled but never executed" }
+          ],
+          "answer": "no",
+          "explanation": "The client boundary follows **imports**, not the visual tree. `Cart` is created by the Server Component and handed to `Modal` as `children`, so it stays in the server module graph. Had `Modal`'s file imported and rendered `Cart` itself, `Cart` would become client code, dragging its database code into the client bundle, where it can't run. Note `'use server'` marks Server Functions, not Server Components."
+        },
+        {
+          "id": "page-check-not-action",
+          "prompt": "The Data Security guide's admin page redirects non-admins, and its inline delete action checks `isAdmin` **again**. Why isn't the page's check enough?",
+          "options": [
+            { "id": "separate-entry", "text": "The action is its own POST entry point; the page's check only decides what HTML renders and can't stop the action from running" },
+            { "id": "prod-skip", "text": "`redirect()` is skipped in production builds" },
+            { "id": "client-run", "text": "Server Actions run in the browser, where the page's check can't reach" },
+            { "id": "style", "text": "It's defensive style; the page's redirect already blocks non-admins from the action" }
+          ],
+          "answer": "separate-entry",
+          "explanation": "Calling an action sends a POST to the page's URL with an action id, and Next executes the action itself; nothing in the page's render can veto it. Anyone who can replay that POST reaches the action. Action ids are encrypted and unused actions are dropped from the build, but the docs are explicit: verify authentication **and** authorization inside every action, because those measures only make an endpoint harder to find."
+        },
+        {
+          "id": "webhook-choice",
+          "prompt": "Stripe must notify your app when a payment succeeds. What receives the notification?",
+          "options": [
+            { "id": "route-handler", "text": "A `POST` Route Handler, e.g. `app/api/webhooks/stripe/route.ts`, reading the raw body to verify the signature" },
+            { "id": "action", "text": "A Server Action, since it's a mutation" },
+            { "id": "server-component", "text": "A Server Component page that Stripe loads" },
+            { "id": "proxy", "text": "`proxy.ts`, because it sees every request first" }
+          ],
+          "answer": "route-handler",
+          "explanation": "The caller is a third party speaking plain HTTP to a stable URL, so it needs a Route Handler: you choose the method, read the body with `request.text()`, and answer with your own status. A Server Action is a call **your** React client makes (the action id, payload format and origin check all assume it). Proxy is for redirects, rewrites and headers in front of routes, not for handling business events."
+        },
+        {
+          "id": "own-route-handler",
+          "prompt": "`app/products/page.tsx` does `await fetch(\"https://shop.example/api/products\")`, its own Route Handler, which reads the database. What's wrong?",
+          "options": [
+            { "id": "direct", "text": "Call the data function directly: the extra HTTP hop costs every render, and a page prerendered at build fails because no server is listening" },
+            { "id": "nothing", "text": "Nothing; Next short-circuits fetches to its own routes" },
+            { "id": "relative", "text": "It should use a relative URL, `fetch(\"/api/products\")`" },
+            { "id": "force-cache", "text": "It only needs `cache: \"force-cache\"`" }
+          ],
+          "answer": "direct",
+          "explanation": "The Backend-for-Frontend guide's caveat: fetch in Server Components from the source, not via your Route Handlers. A server-side `fetch` is a real HTTP request (there is no short-circuit, and a relative URL has no origin to resolve against on the server). Keep the query in a shared server-only function; the Route Handler, if other clients need it, calls the same function."
+        },
+        {
+          "id": "action-for-search",
+          "prompt": "A search box calls a Server Action on every keystroke to fetch results, and results arrive late and in a burst. What's the underlying problem?",
+          "options": [
+            { "id": "queued-post", "text": "Actions are POSTs that the client dispatches one at a time, so the searches queue; a read belongs in a `GET` Route Handler or the page's `searchParams`" },
+            { "id": "onchange", "text": "Server Actions can't be called from `onChange`, only from forms" },
+            { "id": "no-cache-header", "text": "The action is missing a `Cache-Control` header" },
+            { "id": "rsc", "text": "Server Actions run in a Web Worker, which is slow" }
+          ],
+          "answer": "queued-post",
+          "explanation": "Next documents that Server Functions are designed for mutations and that the client dispatches and awaits them one at a time. A burst of reads therefore runs sequentially, and a POST is never cached by URL. Debouncing helps the request count, not the queue. Actions *can* be called from event handlers; that part was fine."
+        },
+        {
+          "id": "proxy-matcher-excludes",
+          "prompt": "You edit the proxy `matcher` so it no longer runs for `/settings/:path*`, to speed those pages up. What else stopped going through proxy?",
+          "options": [
+            { "id": "actions", "text": "Every Server Action called from those pages: they're POSTs to the same `/settings/…` paths" },
+            { "id": "nothing", "text": "Nothing: Server Actions go to a separate internal endpoint that proxy always sees" },
+            { "id": "assets", "text": "Only the static files those pages load" },
+            { "id": "api", "text": "Every Route Handler under `/api`" }
+          ],
+          "answer": "actions",
+          "explanation": "The proxy docs say it directly: Server Functions are not separate routes; they are POST requests to the route where they are used, so a matcher that excludes a path skips the actions on that path. If proxy was doing an auth check, those actions just lost it, which is why the check belongs inside each action as well."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-where-code-runs",
+      "prompts": [
+        {
+          "id": "client-directive",
+          "prompt": "This component holds state. Make it the entry point of a Client Component.",
+          "code": [
+            "___",
+            "import { useState } from \"react\";",
+            "",
+            "export function SearchBox() {",
+            "  const [q, setQ] = useState(\"\");",
+            "  return <input value={q} onChange={(e) => setQ(e.target.value)} />;",
+            "}"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["'use client'", "'use client';"] }],
+          "explanation": "The directive goes on the first line, above the imports, in single or double quotes (not backticks). It makes this module and everything it imports client code; the Server Component that imports `SearchBox` stays on the server."
+        },
+        {
+          "id": "server-directive",
+          "prompt": "Mark every export of this file as a Server Action that a Client Component may import.",
+          "code": [
+            "___",
+            "import { auth } from \"@/lib/auth\";",
+            "",
+            "export async function archivePost(postId: string) {",
+            "  const session = await auth();",
+            "  if (!session) throw new Error(\"Unauthorized\");",
+            "  // load the post, check session.user.id owns it, then archive",
+            "}"
+          ],
+          "blanks": [{ "id": "b1", "accept": ["'use server'", "'use server';"] }],
+          "explanation": "A Client Component can't define a Server Action, but it can import one from a file whose first line is `'use server'`. Every export must be async, because the call is a network request. The auth check on the next lines is not optional: the action is a public POST endpoint."
+        },
+        {
+          "id": "webhook-handler",
+          "prompt": "Receive a payment provider's webhook. Read the body exactly as sent, since signature checks run over the raw bytes.",
+          "code": [
+            "// app/api/webhooks/payments/route.ts",
+            "export async function ___(request: Request) {",
+            "  const payload = await request.___();",
+            "  // verify the signature header against payload, then handle the event",
+            "  return new Response(null, { status: 200 });",
+            "}"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["POST"] },
+            { "id": "c2", "accept": ["text", "arrayBuffer"] }
+          ],
+          "explanation": "A Route Handler exports one function per HTTP method; webhooks arrive as `POST`. `request.text()` (or `request.arrayBuffer()`) gives the body untouched; `request.json()` would parse it and lose the exact bytes the signature was computed over."
+        },
+        {
+          "id": "proxy-page-visits",
+          "prompt": "Only redirect page visits in `proxy.ts`, so Server Action calls to the same path pass through.",
+          "code": [
+            "export function proxy(request: NextRequest) {",
+            "  const isPageVisit = [\"GET\", \"HEAD\"].includes(request.___);",
+            "  if (isPageVisit && request.nextUrl.pathname === \"/signup\" && request.cookies.has(\"session\")) {",
+            "    return NextResponse.redirect(new URL(\"/\", request.url));",
+            "  }",
+            "}"
+          ],
+          "blanks": [{ "id": "d1", "accept": ["method"] }],
+          "explanation": "A Server Action is a `POST` to the page that renders it, so a path-only redirect answers the action with a 307 and it never runs. Checking `request.method` limits the redirect to visits; the action does its own auth check."
+        },
+        {
+          "id": "rethrow-first",
+          "prompt": "This loader may call `notFound()`. Let Next's signals through before logging real errors.",
+          "code": [
+            "import { notFound, unstable_rethrow } from \"next/navigation\";",
+            "",
+            "try {",
+            "  const post = await loadPost(id); // calls notFound() when missing",
+            "  return <Post post={post} />;",
+            "} catch (err) {",
+            "  ___(err);",
+            "  console.error(\"post failed to load\", err);",
+            "  return <p>Couldn't load this post.</p>;",
+            "}"
+          ],
+          "blanks": [{ "id": "e1", "accept": ["unstable_rethrow"] }],
+          "explanation": "`notFound()` and `redirect()` work by throwing. `unstable_rethrow(err)` as the first line of the `catch` rethrows those (and Next's build-time rendering signals) and does nothing for an ordinary error, so the 404 page renders instead of \"Couldn't load this post.\""
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-where-code-runs",
+      "snippets": [
+        {
+          "id": "serialisable-props",
+          "code": [
+            "// app/orders/[id]/page.tsx — Server Component",
+            "class Money { constructor(public cents: number, public currency: string) {} }",
+            "",
+            "<OrderCard",
+            "  placedAt={new Date(\"2026-10-01\")}",
+            "  total={new Money(4200, \"USD\")}",
+            "  tags={new Set([\"gift\"])}",
+            "  onCancel={() => cancelOrder(order.id)}",
+            "/>",
+            "",
+            "// order-card.tsx starts with 'use client'"
+          ],
+          "question": "Which props can React not serialise across the boundary?",
+          "answer": "total and onCancel",
+          "acceptable": ["total, onCancel", "the Money instance and the arrow function", "the class instance and the plain function"],
+          "explanation": "React's serialiser is richer than JSON: `Date`, `Set` and `Map` cross intact (JSON would have turned the date into a string and the set into `{}`). What it refuses is instances of your own classes, which would lose their prototype, and ordinary functions, which can't run on the other side. Pass `{ cents, currency }` as a plain object, and move the cancel handler into `OrderCard` or pass a Server Action."
+        },
+        {
+          "id": "redirect-in-try",
+          "code": [
+            "\"use server\";",
+            "export async function publish(formData: FormData) {",
+            "  try {",
+            "    await savePost(formData); // succeeds",
+            "    redirect(\"/posts\");",
+            "  } catch {",
+            "    return { error: \"Could not publish.\" };",
+            "  }",
+            "}"
+          ],
+          "question": "The save succeeds. What does the user see?",
+          "answer": "The error \"Could not publish.\" and no redirect, although the post was saved",
+          "acceptable": ["Could not publish.", "an error message and they stay on the form", "the error, no redirect"],
+          "explanation": "`redirect()` throws a `NEXT_REDIRECT` error so Next can stop and redirect. The `catch` sits between the throw and Next, so it swallows the signal and returns the error object; the user is told publishing failed while the post exists, and a retry creates a duplicate. Move `redirect()` below the `try/catch`, or call `unstable_rethrow(err)` first in the `catch`."
+        },
+        {
+          "id": "proxy-eats-action",
+          "code": [
+            "// proxy.ts",
+            "export function proxy(request: NextRequest) {",
+            "  const signedIn = request.cookies.has(\"session\");",
+            "  if (request.nextUrl.pathname === \"/signup\" && signedIn) {",
+            "    return NextResponse.redirect(new URL(\"/\", request.url));",
+            "  }",
+            "}",
+            "",
+            "// app/signup/signup-form.tsx ('use client'), on submit:",
+            "await signUpInBrowser(email, password); // sets the \"session\" cookie",
+            "await createProfile(formData);          // a Server Action that inserts the profile row"
+          ],
+          "question": "Does createProfile insert the profile row?",
+          "answer": "No: the action's POST to /signup now carries the session cookie, proxy answers it with a 307, and the action never runs",
+          "acceptable": ["no", "no, proxy redirects the POST", "no, the action never runs"],
+          "explanation": "The action is sent as `POST /signup` (the page that renders the form), and proxy runs for it like any request. The redirect was written for signed-in *visitors*, but the cookie set one line earlier makes the action match too. Nothing errors on the server and nothing is logged by the action, so the bug hides until someone notices accounts without profiles. Redirect only `GET`/`HEAD` requests."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-proxy-actions", "challengeSlug": "proxy-spares-server-actions" }
+  ]
+}
