@@ -8,8 +8,8 @@ app.useGlobalPipes(
   new ValidationPipe({
     whitelist: true,              // strip properties with no decorator
     forbidNonWhitelisted: false,  // …or 400 instead of stripping
-    transform: true,              // return a real DTO instance, coerce declared types
-    forbidUnknownValues: true,    // fail loudly if the "DTO" has no metadata at all
+    transform: true,              // hand the handler a real DTO instance
+    forbidUnknownValues: true,    // 400 on an object with no validation metadata (Nest defaults this to false)
   }),
 );
 ```
@@ -29,24 +29,32 @@ await this.repo.update(id, dto);   // ❌ mass assignment: role/credits go strai
 instead — better for internal APIs where an unknown field means the client is wrong, worse for
 public APIs where you want forward compatibility.
 
-## `transform` gives you an instance, and coercion
+## What `transform` does — and doesn't
 
-Two distinct effects:
+Three distinct effects, easy to blur together:
 
 - The handler receives an **instance of the DTO class**, not a plain object — so DTO methods
-  and `class-transformer` `@Expose`/`@Type` behaviour work.
-- Declared primitive types are coerced (`"2"` → `2`) when combined with
-  `transformOptions: { enableImplicitConversion: true }` or an explicit `@Type(() => Number)`.
+  and `class-transformer` `@Expose`/`@Type` behaviour work. (The pipe builds that instance to
+  validate *either way*; `transform` only decides whether your handler gets it.)
+- A **named** path or query param declared `number` or `boolean` is cast:
+  `@Query("page") page: number` turns `"2"` into `2` — and `"abc"` into `NaN`, with no error.
+  It's a cast, not a check.
+- **Body DTO properties are not converted.** `{ "quantity": "3" }` against `@IsInt() quantity`
+  is still a 400. A property converts only when it asks to: an explicit
+  `@Type(() => Number)`, or `transformOptions: { enableImplicitConversion: true }` on the pipe.
 
-Implicit conversion is convenient and occasionally surprising: it will happily turn
-`"false"` into a truthy boolean-ish value depending on the target type, and it coerces
-*before* validators run. Prefer the explicit `@Type(() => Number)` on query DTOs, where the
-input genuinely is always a string.
+Implicit conversion is convenient and surprising in two ways, both because it converts *before*
+the validators run. A `boolean` property gets `Boolean(value)`, and `Boolean("false")` is
+`true`. A `string` property turns `42` into `"42"`, so `@IsString()` stops catching numbers.
+Prefer the explicit `@Type(() => Number)` on query DTOs, where the input genuinely is always a
+string, and an explicit `@Transform` for booleans — `@Type(() => Boolean)` makes the same
+`Boolean("false")` mistake.
 
 ## The status codes are part of the contract
 
 - **400** — the body/params failed validation. `ValidationPipe` throws `BadRequestException`
-  with a `message` array of human-readable failures.
+  with a `message` array of human-readable failures. (Nest 12 adds `errorFormat: "grouped"`,
+  which keys the messages by property path instead.)
 - **422** — sometimes preferred for "syntactically fine, semantically invalid". Pick one and
   be consistent; Nest's default is 400.
 - **500** — what you get when validation *didn't* happen and the handler blew up on

@@ -15,6 +15,7 @@
   "sources": [
     { "title": "NestJS docs: Validation", "url": "https://docs.nestjs.com/application/validation" },
     { "title": "NestJS docs: Pipes", "url": "https://docs.nestjs.com/pipes" },
+    { "title": "NestJS docs: Configuration", "url": "https://docs.nestjs.com/application/configuration" },
     { "title": "class-validator README", "url": "https://github.com/typestack/class-validator" },
     { "title": "class-transformer README", "url": "https://github.com/typestack/class-transformer" }
   ],
@@ -34,7 +35,7 @@
             { "id": "strict", "text": "`strict: true` in tsconfig" }
           ],
           "answer": "pipe",
-          "explanation": "TypeScript types are erased; the decorators only add metadata. `app.useGlobalPipes(new ValidationPipe(...))` (or `@UsePipes`) is the runtime component that reads that metadata, transforms the payload, and throws 400. It must be a class, not an interface, precisely because the metadata needs somewhere to live."
+          "explanation": "TypeScript checks nothing at runtime: the parameter's class and the decorators survive only as metadata. `app.useGlobalPipes(new ValidationPipe(...))` (or `@UsePipes`) is the runtime component that reads that metadata, transforms the payload, and throws 400. It must be a class, not an interface, precisely because the metadata needs somewhere to live."
         },
         {
           "id": "whitelist-why",
@@ -50,15 +51,15 @@
         },
         {
           "id": "query-strings",
-          "prompt": "`@Query(\"page\") page: number` receives `?page=2`. What is `page` at runtime?",
+          "prompt": "The app registers `new ValidationPipe({ whitelist: true, transform: true })` globally. A handler takes `@Query(\"page\") page: number`, and a client sends `?page=abc`. What does the handler receive?",
           "options": [
-            { "id": "string", "text": "The string \"2\" — the query string is text; the annotation doesn't convert it" },
-            { "id": "number", "text": "The number 2; Nest reads the type annotation and converts" },
-            { "id": "nan", "text": "NaN, unless ParseIntPipe is applied" },
-            { "id": "undefined", "text": "undefined, because query params need a DTO" }
+            { "id": "nan", "text": "`NaN`, with no error — `transform` casts a named query param declared `number`, but nothing validates the result" },
+            { "id": "400", "text": "Nothing: the pipe answers 400, because `page` is declared as a `number`" },
+            { "id": "string", "text": "The string `\"abc\"` — a type annotation never converts anything" },
+            { "id": "undefined", "text": "`undefined`, because query params need a DTO" }
           ],
-          "answer": "string",
-          "explanation": "Params, query and headers are always strings on the wire, and the type annotation is erased — so you get a string typed as a number, which quietly breaks arithmetic and comparisons. Fix it with `ParseIntPipe`, or a query DTO with `@Type(() => Number)` and `transform: true`."
+          "answer": "nan",
+          "explanation": "With `transform: true`, Nest casts a *named* `@Param()`/`@Query()` argument declared `number` (`+value`) or `boolean` (`value === \"true\"`): `?page=2` arrives as `2`, and `?page=abc` as `NaN`. A cast isn't a check — the class-validator rules only run for DTO classes, not for a bare `number`, so nothing answers 400. The string answer is what you'd get *without* `transform`. To reject bad input, use `ParseIntPipe` (400 \"Validation failed (numeric string is expected)\") or a query DTO with `@Type(() => Number)` and `@IsInt()`."
         },
         {
           "id": "nested-pair",
@@ -70,7 +71,7 @@
             { "id": "isdefined", "text": "`@IsDefined()` plus `@IsNotEmptyObject()`" }
           ],
           "answer": "validate-type",
-          "explanation": "`@ValidateNested()` tells class-validator to recurse; `@Type()` tells class-transformer to instantiate the nested class so its decorator metadata is actually found (and needs `transform: true`). Miss either one and the whole subtree is silently unvalidated — the most common validation hole in a Nest codebase."
+          "explanation": "`@ValidateNested()` tells class-validator to recurse; `@Type()` tells class-transformer to instantiate the nested class so its decorator metadata is actually found. It works with or without `transform: true`: `ValidationPipe` always builds the instances to validate them, and `transform` only decides whether the handler receives them. Miss either decorator and the subtree is silently unvalidated — and with `whitelist: true`, a nested object without `@Type` arrives emptied, `{}`. `@IsObject()` only checks that *something* object-shaped is there."
         },
         {
           "id": "unique-email",
@@ -94,7 +95,7 @@
             { "id": "only-way", "text": "It's the only way to allow partial bodies" }
           ],
           "answer": "inherits",
-          "explanation": "Duplicated DTOs drift: someone tightens `@MaxLength` on create and PATCH silently keeps accepting the old input. `PartialType` (with `PickType`/`OmitType`/`IntersectionType`) keeps one source of truth. Note `@IsOptional()` means \"may be absent\" — not \"may be null\"."
+          "explanation": "Duplicated DTOs drift: someone tightens `@MaxLength` on create and PATCH silently keeps accepting the old input. `PartialType` (with `PickType`/`OmitType`/`IntersectionType`) keeps one source of truth. Know what it lets through: `@IsOptional()` skips every validator when the value is `undefined` **or `null`**, so the derived DTO accepts `{ \"note\": null }`. `PartialType(CreateOrderDto, { skipNullProperties: false })` means \"may be absent, never null\"."
         },
         {
           "id": "response-dto",
@@ -116,7 +117,7 @@
       "prompts": [
         {
           "id": "global-pipe",
-          "prompt": "Make validation the application-wide default: strip undeclared properties and return DTO instances with coerced types.",
+          "prompt": "Make validation the application-wide default: strip undeclared properties and hand the handler real DTO instances.",
           "code": [
             "app.useGlobalPipes(",
             "  new ValidationPipe({ ___: true, ___: true }),",
@@ -126,7 +127,7 @@
             { "id": "a1", "accept": ["whitelist"] },
             { "id": "a2", "accept": ["transform"] }
           ],
-          "explanation": "Registered globally, so the next controller someone adds is validated by default rather than by accident. `whitelist` strips undecorated properties (mass-assignment defence); `transform` gives the handler a real DTO instance and enables declared-type coercion."
+          "explanation": "Registered globally, so the next controller someone adds is validated by default rather than by accident. `whitelist` strips undecorated properties (mass-assignment defence); `transform` gives the handler a real DTO instance and casts named path/query params declared `number` or `boolean` — DTO properties still convert only with `@Type()` (or `enableImplicitConversion`)."
         },
         {
           "id": "optional-field",
@@ -141,7 +142,7 @@
             { "id": "b1", "accept": ["IsOptional"] },
             { "id": "b2", "accept": ["MaxLength"] }
           ],
-          "explanation": "`@IsOptional()` skips the remaining validators when the value is `undefined` — it does not permit `null`, and it isn't a substitute for a default. Without it, `@IsString()` fails on an absent field."
+          "explanation": "`@IsOptional()` skips every validator on the property when the value is `undefined` or `null` — so `note: null` passes too, and it isn't a substitute for a default. Without it, `@IsString()` fails on an absent field. To allow absent but reject `null`, use `@ValidateIf((_, value) => value !== undefined)` instead."
         },
         {
           "id": "nested",
