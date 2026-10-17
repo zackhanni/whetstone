@@ -120,7 +120,7 @@
             { "id": "try-catch", "text": "Wrap `new Date(input)` in `try/catch`" }
           ],
           "answer": "isnan-gettime",
-          "explanation": "An Invalid Date is still a `Date` object (so `instanceof` passes) and objects are truthy (so `!d` passes). The constructor never throws for bad input; it returns a Date whose time value is `NaN`. Checking that number is the only reliable test."
+          "explanation": "An Invalid Date is still a `Date` object (so `instanceof` passes) and objects are truthy (so `!d` passes). The constructor doesn't throw for a bad string or number; it returns a Date whose time value is `NaN`. Checking that number is the only reliable test."
         }
       ]
     },

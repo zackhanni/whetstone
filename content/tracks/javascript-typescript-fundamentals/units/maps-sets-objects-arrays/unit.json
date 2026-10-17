@@ -14,6 +14,7 @@
   "sources": [
     { "title": "MDN: Map", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map" },
     { "title": "MDN: Set", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Set" },
+    { "title": "V8 blog: Optimizing hash tables (Map and Set use hash tables)", "url": "https://v8.dev/blog/hash-code" },
     { "title": "MDN: Object.groupBy()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/groupBy" },
     { "title": "MDN: Map.groupBy()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map/groupBy" },
     { "title": "MDN: JSON.stringify()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify" },

@@ -24,4 +24,5 @@ On a fast connection the client looks fine. On a real one it has four problems:
   `try` and in the `catch`. That covers requests that ignore their signal, and `cancel()` (which
   leaves no current search).
 - `AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])` gives one signal with
-  both ways to stop. A timeout rejects with a `DOMException` whose `name` is `"TimeoutError"`.
+  both ways to stop. Keep the timeout signal in a variable: if it has aborted, the search timed
+  out. The error's `name` can't tell you, because some requests wrap the abort in their own error.

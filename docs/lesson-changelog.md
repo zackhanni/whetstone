@@ -15,6 +15,7 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — PR #35/#36 review — graders check full parse results, throttle's latest `this`, timeouts by deadline; fixed `Object.is`, `satisfies`, Vitest pools, DST and a dozen more claims.
 - 2026-10-17 — taxonomy — `async` now also sits under `javascript`, `AbortController` also under `async`; new `event-loop` and `promises` tags for the Async JavaScript track.
 - 2026-10-17 — async-javascript/event-loop — run-to-completion; one task, then every microtask, then maybe a render; predicting `setTimeout(0)`/`then`/`queueMicrotask`/`await` order; long tasks and self-requeuing microtasks freezing the page; chunking with a task-boundary yield; host-specific orderings (`nextTick` in CJS vs ESM).
 - 2026-10-17 — async-javascript/timers — the delay is a minimum (busy thread, the 4 ms nesting clamp incl. `setInterval` repeats, background throttling, 2³¹−1 overflow); recursive `setTimeout` vs `setInterval`; handle types, args and `this` in DOM vs Node; `unref`/`refresh`. Challenge `polling-loop-stops-cleanly`.

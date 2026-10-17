@@ -4,6 +4,15 @@ import { WAIT_MS } from "./config";
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Waits until `done()` is true, or gives up after `timeoutMs`. Used instead of one fixed sleep
+ * for "this should happen eventually": a background tab can stretch a timer to ~1 s.
+ */
+async function until(done: () => boolean, timeoutMs = 3000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!done() && Date.now() < deadline) await sleep(WAIT_MS / 5);
+}
+
+/**
  * A callback that records the first argument of every call. Anything that isn't a string (the
  * whole argument array passed as one argument, say) is recorded as such, so it can't pass.
  */
@@ -103,6 +112,18 @@ describe("throttle", () => {
     expect(calls.join(",")).toBe("a");
     await sleep(WAIT_MS * 2);
     expect(calls.join(",")).toBe("a,c");
+  });
+
+  it("gives the trailing run the latest call's `this`, not the one that started the timer", async () => {
+    const seen: string[] = [];
+    const throttled = throttle(function (this: { name: string } | undefined) {
+      seen.push(this?.name ?? `no this: ${String(this)}`);
+    }, WAIT_MS);
+    throttled.call({ name: "first" }); // leading run
+    throttled.call({ name: "second" }); // window closed: this call starts the trailing timer
+    throttled.call({ name: "latest" });
+    await until(() => seen.length >= 2);
+    expect(seen.join(",")).toBe("first,latest");
   });
 
   it("runs a single call only once", async () => {

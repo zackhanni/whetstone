@@ -3,12 +3,14 @@ id: one-thing-at-a-time
 title: JavaScript runs one thing at a time, to completion
 ---
 
-A page's JavaScript runs on **one thread**. At any moment exactly one piece of code is running,
-and once a function starts, nothing else (no timer, no click handler, no promise callback) can
-cut in until the call stack is empty again. MDN calls this **run-to-completion**.
+A page's JavaScript runs on **one thread**, the main thread. At any moment exactly one piece of
+code is running on it, and once a function starts, nothing else (no timer, no click handler, no
+promise callback) can cut in until the call stack is empty again. MDN calls this
+**run-to-completion**. (A Web Worker is a separate thread with its own event loop, which talks to
+the page by messages; the long-tasks reading comes back to it.)
 
-So "asynchronous" never means "runs at the same time". It means "runs **later**, as a separate
-job, after the current code has finished".
+So "asynchronous" never means "runs at the same time as your other code". It means "runs
+**later**, on the same thread, as a separate job, after the current code has finished".
 
 ```js
 console.log("A");
