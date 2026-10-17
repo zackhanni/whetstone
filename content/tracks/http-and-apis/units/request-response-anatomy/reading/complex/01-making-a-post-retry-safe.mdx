@@ -1,0 +1,80 @@
+---
+id: making-a-post-retry-safe
+title: Making a POST retry-safe with an Idempotency-Key
+---
+
+`POST /payments` times out. Three different things may have happened, and the client can't tell
+them apart:
+
+1. The request never reached the server.
+2. The server charged the card, and the response was lost on the way back.
+3. The server is still working on it.
+
+A `502` or `504` from a gateway is the same uncertainty in status-code form: the proxy gave up
+on the upstream, but the upstream may have finished the work. Retrying blindly turns outcome 2
+into a double charge; not retrying turns outcome 1 into a lost order.
+
+## One key per operation, reused on every attempt
+
+The fix is to make the `POST` *recognisable*. The client generates a unique key for the
+**operation** — the user's one click on "Pay" — and sends it on the first attempt and on every
+retry of that attempt:
+
+```ts
+async function createPayment(input: PaymentInput, send: typeof fetch) {
+  const key = crypto.randomUUID();                // ONCE, outside the loop
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await send("/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+        body: JSON.stringify(input),
+      });
+      if (!RETRYABLE.has(res.status) || attempt === MAX_ATTEMPTS) return res;
+      await sleep(delayFor(res, attempt));        // honour Retry-After if present
+    } catch (err) {
+      if (attempt === MAX_ATTEMPTS) throw err;    // no response: the same key makes a resend safe
+      await sleep(delayFor(null, attempt));
+    }
+  }
+}
+```
+
+On the server, the key is a lookup before any work: first time seen → do the work and store the
+response under the key; seen and finished → return the stored response without doing anything;
+seen and still running → refuse with `409 Conflict`; same key with a **different** body →
+`422`, because the client is misusing the key. Keys expire after a documented window.
+
+Generate the key inside the loop and every attempt looks like a brand-new payment — the header
+is present, and it protects nothing.
+
+## What's worth retrying at all
+
+| Outcome | Retry? |
+| --- | --- |
+| No response (network error, timeout) | Yes — idempotent methods as-is, `POST`/`PATCH` only with a key |
+| `429`, `503` | Yes, after the server's `Retry-After` if it sent one |
+| `502`, `504` | Yes, under the same rules as "no response" |
+| `408` | Yes — the server says it never got the whole request |
+| Other `4xx` | No — the same bytes get the same answer |
+| `500` | A policy decision: it's "unexpected", not "temporary" |
+
+`Retry-After` is either a number of seconds or an HTTP date (RFC 9110, section 10.2.3). When the
+server sends one, it knows more than your exponential backoff does.
+
+<!--more-->
+
+**Where the header comes from.** `Idempotency-Key` is specified in an IETF httpapi working-group
+Internet-Draft (`draft-ietf-httpapi-idempotency-key-header`, revision 07, October 2025), which
+expired in April 2026 without becoming an RFC. The `409`/`422` behaviour above is that draft's.
+Payment APIs use the same header name, but each sets its own rules — Stripe's API v1, for
+example, keeps keys for at least 24 hours and replays the saved response for a retry, even when
+that saved response was a `500`. Read the provider's docs before you rely on the details.
+
+**The server's half is a unique constraint.** "Look up the key, then insert it" races when two
+retries arrive together. Insert the key first under a unique index (status `processing`), and
+let the second insert fail — that's what turns into the `409`.
+
+**Not every retry is yours.** SDKs, HTTP client libraries and service-mesh retry policies can
+retry too. If two layers each retry three times, one click can become nine requests — another
+reason the server should be the one that enforces idempotency.
