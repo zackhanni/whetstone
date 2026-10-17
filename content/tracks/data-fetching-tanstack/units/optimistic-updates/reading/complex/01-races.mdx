@@ -1,0 +1,73 @@
+---
+id: races
+title: The races — and what guards each one
+---
+
+An optimistic update is a bet against everything else touching the same cache entry. Three
+races, each reproduced headlessly against TanStack Query v5.104.
+
+## A refetch that was already on its way
+
+A focus refetch reads the server, then the user clicks, then the refetch answers — with the
+pre-click value. Without `cancelQueries` in `onMutate`, that response overwrites the optimistic
+write and the box un-ticks (in the test run, `done` went back to `false` the moment the old
+refetch landed). With it, the in-flight fetch is cancelled and its late response is ignored,
+even when the `queryFn` doesn't use the abort `signal` — consuming the signal additionally
+aborts the request itself.
+
+## Two mutations, one snapshot
+
+The user ticks todo 1, then todo 2, before either PATCH returns. Each `onMutate` snapshots the
+*whole list*:
+
+```text
+toggle 1: snapshot [1:false, 2:false] → write [1:true,  2:false]
+toggle 2: snapshot [1:true,  2:false] → write [1:true,  2:true ]
+toggle 1 fails → restore its snapshot  → [1:false, 2:false]   ← todo 2's tick is gone too
+```
+
+Rolling back a whole-list snapshot undoes every newer optimistic change. Todo 2 un-ticks
+although its save is still running (and may succeed). The fix is a narrower rollback: undo only
+*this* mutation's change.
+
+```ts
+onError: (_error, { id }, onMutateResult) => {
+  queryClient.setQueryData<Todo[]>(key, (old) =>
+    old?.map((t) => (t.id === id ? onMutateResult!.previousTodo : t)),
+  );
+},
+```
+
+…with `onMutate` returning `{ previousTodo }` — just the row it changed.
+
+## One mutation's re-sync lands mid-sequence
+
+Toggle 1 settles and invalidates while toggle 2's PATCH is still in flight. That refetch
+returns server data *without* toggle 2, so todo 2 flickers off, then back on when its own
+`onSettled` refetches — measured: `2:✓ → 2:· → 2:✓`. Invalidate only when this is the last
+mutation of its kind still running, and the flicker is gone:
+
+```ts
+onSettled: () => {
+  if (queryClient.isMutating({ mutationKey: ["todos", "toggle"] }) === 1) {
+    return queryClient.invalidateQueries({ queryKey: todoKeys.lists() });
+  }
+},
+```
+
+The `=== 1` is deliberate: inside `onSettled`, the mutation running it still counts as pending.
+Measured: with two toggles in flight, the first `onSettled` saw `isMutating()` = 2, the last saw
+1. This needs a `mutationKey` to filter on.
+
+## Which recipe dodges which race
+
+The `variables` recipe writes nothing to the cache, so it has no stale snapshots to restore and
+nothing for a refetch to overwrite; overlapping saves just render several pending rows
+(`useMutationState` returns all of them). It still re-syncs on settle. That's a reason to prefer
+it whenever only one place needs to show the pending change.
+
+<!--more-->
+
+**`scope` instead.** Giving the mutation `scope: { id: "todos" }` runs toggles one at a time,
+which removes the overlap — at the cost of making the second click wait for the first PATCH.
+Pick it when order on the server matters more than speed.

@@ -1,0 +1,44 @@
+---
+id: the-cache-recipe
+title: The cache recipe — cancel, snapshot, write, return, roll back, re-sync
+---
+
+Six steps across three callbacks. Each one exists because something specific goes wrong without
+it.
+
+```ts
+useMutation({
+  mutationFn: ({ id, done }: { id: number; done: boolean }) => api.patchTodo(id, done),
+
+  onMutate: async ({ id, done }) => {
+    await queryClient.cancelQueries({ queryKey: ["todos"] });          // 1. cancel
+    const previous = queryClient.getQueryData<Todo[]>(["todos"]);      // 2. snapshot
+    queryClient.setQueryData<Todo[]>(["todos"], (old) =>               // 3. write
+      old?.map((t) => (t.id === id ? { ...t, done } : t)),
+    );
+    return { previous };                                               // 4. return
+  },
+
+  onError: (error, variables, onMutateResult) => {
+    queryClient.setQueryData(["todos"], onMutateResult?.previous);     // 5. roll back
+  },
+
+  onSettled: () => queryClient.invalidateQueries({ queryKey: ["todos"] }), // 6. re-sync
+});
+```
+
+1. **Cancel** outgoing fetches of the key. A refetch that read the server *before* the click
+   would otherwise land *after* your write and paint the old value back. Cancelled, its response
+   is ignored.
+2. **Snapshot** what's cached now — before you change it — so there's something to go back to.
+3. **Write** the expected result, immutably, so every reader of the key re-renders.
+4. **Return** the snapshot. Whatever `onMutate` returns reaches `onError`, `onSuccess` and
+   `onSettled` as their third argument (`onMutateResult` in the current v5 docs).
+5. **Roll back** on failure by writing the snapshot back. The user sees the box un-tick at once,
+   without waiting for a request.
+6. **Re-sync** when it's over — success *or* failure — by invalidating. Your write was a guess;
+   the refetch replaces it with what the server actually stored (and with anything else that
+   changed meanwhile).
+
+`onMutate` runs before the `mutationFn` and is awaited, so the request isn't sent until the
+cancel has finished and the optimistic write is on screen.

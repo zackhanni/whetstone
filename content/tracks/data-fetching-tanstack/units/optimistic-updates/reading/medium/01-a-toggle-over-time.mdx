@@ -1,0 +1,75 @@
+---
+id: a-toggle-over-time
+title: An optimistic toggle, moment by moment
+---
+
+The recipe in a custom hook, then what the user sees at each step — for a save that succeeds
+and one that fails.
+
+```ts
+export function useToggleTodo(filters: TodoFilters) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["todos", "toggle"],
+    mutationFn: ({ id, done }: { id: number; done: boolean }) => api.patchTodo(id, done),
+    onMutate: async ({ id, done }) => {
+      await queryClient.cancelQueries({ queryKey: todoKeys.lists() });
+      const previous = queryClient.getQueryData<Todo[]>(todoKeys.list(filters));
+      queryClient.setQueryData<Todo[]>(todoKeys.list(filters), (old) =>
+        old?.map((t) => (t.id === id ? { ...t, done } : t)),
+      );
+      return { previous };
+    },
+    onError: (_error, _vars, onMutateResult) => {
+      queryClient.setQueryData(todoKeys.list(filters), onMutateResult?.previous);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: todoKeys.lists() }),
+  });
+}
+```
+
+(`filters` is the list the user is looking at.)
+
+| Moment | Box | Mutation `status` |
+| --- | --- | --- |
+| click → `onMutate` | ticked (written into the cache) | `pending` |
+| PATCH in flight | ticked | `pending` |
+| **success:** `onSettled` refetch running | ticked | `pending` (the returned promise) |
+| **success:** refetch done | ticked — now the server's value | `success` |
+| **failure:** `onError` | un-ticked at once (snapshot restored) | `pending` |
+| **failure:** `onSettled` refetch running | un-ticked | `pending` |
+| **failure:** refetch done | un-ticked — the server's value | `error` |
+
+Two rows surprise people. A failed save is rolled back immediately, but the mutation only
+becomes `error` — and `isError` only turns true — **after** the returned `onSettled` refetch
+has finished, because the mutation settles after its last callback (observed headlessly against
+v5.104). If the error message must appear the instant the save fails, show it from `onError`
+or don't return the refetch. And the success path shows the server's value in the end, not
+yours: if the server normalised something, the refetch wins.
+
+**Why cancel `lists()` but write one list?** Any list refetch in flight could carry the old
+`done` value, so cancel the family. The snapshot and write target the list on screen; other
+cached lists catch up when the invalidation marks them stale.
+
+## The UI-only version, across components
+
+When the pending item must show somewhere other than the component that called `mutate`, read
+pending mutations with `useMutationState`, matched by `mutationKey`:
+
+```tsx
+const pendingTitles = useMutationState({
+  filters: { mutationKey: ["addTodo"], status: "pending" },
+  select: (mutation) => mutation.state.variables as string,
+});
+// → an array: one entry per add still in flight
+```
+
+It's an array because several mutations can be pending at once. Key the rows by
+`mutation.state.submittedAt` when titles can repeat.
+
+<!--more-->
+
+**Callback arguments since v5.89.** `onMutate` also receives a second argument, `context`, whose
+`client` is the `QueryClient` (`await context.client.cancelQueries(...)`), and the other callbacks
+receive it fourth. The official optimistic-updates guide is written that way now. Closing over
+`useQueryClient()` — as above — works in every v5 release.

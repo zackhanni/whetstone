@@ -1,0 +1,50 @@
+---
+id: two-ways-to-be-optimistic
+title: Show the result before the server confirms it — two ways
+---
+
+An optimistic update shows what the write will *probably* produce while the request is still
+running, then reconciles with what the server actually says. TanStack Query v5 documents two
+ways to do it, and the choice is about **how many places must show the change**.
+
+**1. In the UI, from `variables` (new in v5).** Leave the cache alone. While the mutation is
+pending, render what you're sending:
+
+```tsx
+const addTodo = useMutation({
+  mutationFn: (title: string) => api.createTodo(title),
+  onSettled: () => queryClient.invalidateQueries({ queryKey: ["todos"] }), // returned: stay pending
+});
+
+<ul>
+  {todos.map((todo) => <li key={todo.id}>{todo.title}</li>)}
+  {addTodo.isPending && <li style={{ opacity: 0.5 }}>{addTodo.variables}</li>}
+</ul>
+```
+
+The faded item disappears when the mutation settles; by then the refetch has put the real one in
+the list. If the save fails, it disappears too — **no rollback needed**, because nothing was
+written. (`variables` survives an error, so you can render "Couldn't save — Retry" instead.)
+
+**2. In the cache, from `onMutate`.** Write the expected result into the cached data, so every
+component reading that key shows it — the list, a counter in the header, a detail pane. The
+price is that you changed shared state, so you must undo it if the server says no:
+
+```ts
+useMutation({
+  mutationFn: toggleTodo,
+  onMutate: async (vars) => { /* cancel, snapshot, write, return the snapshot */ },
+  onError: (err, vars, snapshot) => { /* put the snapshot back */ },
+  onSettled: () => queryClient.invalidateQueries({ queryKey: ["todos"] }),
+});
+```
+
+| | Via `variables` | Via the cache |
+| --- | --- | --- |
+| Shows the change | where you render it | everywhere that key is read |
+| On failure | nothing to undo | roll back the snapshot |
+| Code | a few lines | the full recipe (next example) |
+
+The docs' advice: if one place shows the optimistic result, use `variables`; if several do,
+write the cache. Either way, **invalidate when it settles** — the server's answer replaces your
+guess.

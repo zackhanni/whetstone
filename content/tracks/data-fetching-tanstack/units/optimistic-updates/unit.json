@@ -1,0 +1,418 @@
+{
+  "schemaVersion": 3,
+  "slug": "optimistic-updates",
+  "title": "Optimistic updates and their races",
+  "skills": [
+    "tanstack-query",
+    "optimistic-updates"
+  ],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Write the cache recipe: `onMutate` cancels, snapshots, writes and returns the snapshot; `onError` rolls back; `onSettled` invalidates",
+    "Predict what a refetch already in flight does to an optimistic write, with and without `cancelQueries`",
+    "Choose the v5 UI-only recipe (`variables` while pending, `useMutationState` elsewhere) over a cache write when one place shows the change",
+    "Spot the races between overlapping mutations — a whole-list rollback undoing a newer change, a mid-sequence re-sync — and guard them with a per-item rollback and `isMutating`"
+  ],
+  "sources": [
+    {
+      "title": "TanStack Query v5 docs: Optimistic Updates",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/optimistic-updates"
+    },
+    {
+      "title": "TanStack Query v5 docs: Mutations",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/mutations"
+    },
+    {
+      "title": "TanStack Query v5 docs: Query Cancellation",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/query-cancellation"
+    },
+    {
+      "title": "TanStack Query v5 docs: Filters (mutation filters)",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/filters"
+    },
+    {
+      "title": "TanStack Query v5 reference: useMutationState",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/reference/useMutationState"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-optimistic",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-optimistic",
+      "questions": [
+        {
+          "id": "why-cancel",
+          "prompt": "Why does the cache recipe start `onMutate` with `await queryClient.cancelQueries({ queryKey: ['todos'] })`?",
+          "options": [
+            {
+              "id": "late-refetch",
+              "text": "So a refetch that read the server before the click can't overwrite the optimistic write"
+            },
+            {
+              "id": "bandwidth",
+              "text": "To free the network for the PATCH, so the mutation's own request goes out first"
+            },
+            {
+              "id": "required",
+              "text": "Because `setQueryData` throws while a query for the same key is still fetching"
+            },
+            {
+              "id": "dedupe",
+              "text": "To stop a double-click from sending the same mutation twice while the first is pending"
+            }
+          ],
+          "answer": "late-refetch",
+          "explanation": "A focus refetch or invalidation may already be in flight with the pre-click value. If it answers after your write, it replaces the optimistic data and the box un-ticks. Cancelling makes the library ignore that response (and abort the request if the `queryFn` uses `signal`). `setQueryData` works fine during a fetch — that's exactly the problem — and cancelling queries has nothing to do with how often the mutation runs."
+        },
+        {
+          "id": "snapshot-after-write",
+          "prompt": "A teammate takes the snapshot *after* the optimistic `setQueryData`. What breaks?",
+          "options": [
+            {
+              "id": "no-rollback",
+              "text": "The rollback restores the optimistic value, so a failed save stays on screen"
+            },
+            {
+              "id": "nothing",
+              "text": "Nothing — the snapshot and the cache are the same object either way"
+            },
+            {
+              "id": "double",
+              "text": "The optimistic change is applied twice, because the snapshot already contains it"
+            },
+            {
+              "id": "throws",
+              "text": "`onError` throws, because a snapshot taken after the write is `undefined`"
+            }
+          ],
+          "answer": "no-rollback",
+          "explanation": "The snapshot is the value to go back to, so it must be read before you change anything. Read afterwards, it *is* the optimistic value, and \"rolling back\" writes it again. (The updater returns a new array, so before and after are different objects — order matters.)"
+        },
+        {
+          "id": "snapshot-transport",
+          "prompt": "How does `onError` get hold of the snapshot taken in `onMutate`?",
+          "options": [
+            {
+              "id": "return",
+              "text": "`onMutate` returns it; `onError` receives it as its third argument"
+            },
+            {
+              "id": "read-again",
+              "text": "`onError` reads it again with `getQueryData(['todos'])` before restoring it"
+            },
+            {
+              "id": "variables",
+              "text": "It's on `variables`, next to the arguments passed to `mutate`"
+            },
+            {
+              "id": "ref",
+              "text": "Keep it in a `useRef` in the component that calls `mutate`"
+            }
+          ],
+          "answer": "return",
+          "explanation": "Whatever `onMutate` returns is passed to `onError`, `onSuccess` and `onSettled` as their third argument (`onMutateResult` in the current docs; older v5 docs called it `context`). Reading the cache again in `onError` returns the optimistic value. `variables` holds what you passed to `mutate`. A ref is shared by every in-flight mutation of that component, so overlapping saves overwrite each other's snapshot."
+        },
+        {
+          "id": "which-recipe",
+          "prompt": "Posting a comment should show it, faded, at the bottom of the comment list under the post. Nothing else on the page reflects comments. Which approach fits best?",
+          "options": [
+            {
+              "id": "variables",
+              "text": "Render `variables` while the mutation `isPending`, and invalidate in `onSettled`"
+            },
+            {
+              "id": "cache",
+              "text": "The full cache recipe: cancel, snapshot, write, roll back"
+            },
+            {
+              "id": "local-state",
+              "text": "Copy the comment into a `useState` list and merge it with the query data"
+            },
+            {
+              "id": "none",
+              "text": "No optimistic UI: wait for the POST and the refetch before showing the comment"
+            }
+          ],
+          "answer": "variables",
+          "explanation": "One place shows the pending comment, so v5's UI-only recipe is the least code and needs no rollback: when the mutation settles the faded item disappears and the refetched list contains the real one. The cache recipe earns its complexity when several components must show the change. A copy in `useState` is a second source of truth you'd have to reconcile by hand."
+        },
+        {
+          "id": "variables-after-error",
+          "prompt": "With the `variables` recipe, the POST fails. What happens to the faded item, and what can you still do?",
+          "options": [
+            {
+              "id": "gone-retry",
+              "text": "It disappears, but `variables` still holds the text, so you can offer a Retry"
+            },
+            {
+              "id": "stays",
+              "text": "It stays faded until you call `reset()`, which clears the pending state"
+            },
+            {
+              "id": "rollback-needed",
+              "text": "It stays in the list until `onError` removes it from the cache"
+            },
+            {
+              "id": "lost",
+              "text": "It disappears, and the text is gone: `variables` is cleared when a mutation fails"
+            }
+          ],
+          "answer": "gone-retry",
+          "explanation": "The item was only rendered while `isPending`, so it vanishes when the mutation settles — nothing was written to the cache, so there's nothing to roll back. The docs point out that `variables` isn't cleared on error: render it with `isError` and offer `mutate(variables)` as a retry."
+        },
+        {
+          "id": "whole-list-rollback",
+          "prompt": "Each toggle snapshots the **whole list** in `onMutate` and restores it in `onError`. The user ticks todo 1, then todo 2; both PATCHes are in flight. Toggle 1 fails. What does the list show?",
+          "options": [
+            {
+              "id": "both-unticked",
+              "text": "Both un-ticked: toggle 1's snapshot predates toggle 2, so restoring it undoes both"
+            },
+            {
+              "id": "only-1",
+              "text": "Todo 1 un-ticked and todo 2 still ticked, because each rollback restores its own row"
+            },
+            {
+              "id": "both-ticked",
+              "text": "Both ticked: a rollback waits until every other pending toggle has settled first"
+            },
+            {
+              "id": "throws",
+              "text": "Toggle 1's rollback throws, because the list has changed since its snapshot was taken"
+            }
+          ],
+          "answer": "both-unticked",
+          "explanation": "Toggle 1's snapshot was taken before todo 2 was ticked, so writing it back erases todo 2's optimistic tick too, while its save is still running (it reappears only when a later re-sync brings it back). Roll back only the row this mutation changed: return `{ previousTodo }` from `onMutate`, and in `onError` replace just that row."
+        },
+        {
+          "id": "is-mutating-one",
+          "prompt": "To avoid a re-sync landing mid-sequence, `onSettled` invalidates only when `queryClient.isMutating({ mutationKey: ['todos', 'toggle'] }) === 1`. Why 1 and not 0?",
+          "options": [
+            {
+              "id": "self",
+              "text": "In its own `onSettled`, the mutation still counts as pending"
+            },
+            {
+              "id": "off-by-one",
+              "text": "`isMutating` counts from 1, so 1 means that no mutations are running"
+            },
+            {
+              "id": "zero-never",
+              "text": "It should be 0; with 1, the last toggle never invalidates"
+            },
+            {
+              "id": "queries",
+              "text": "The 1 is the list query, which counts as mutating while it refetches"
+            }
+          ],
+          "answer": "self",
+          "explanation": "A mutation settles after its last callback, so while `onSettled` runs it is still pending and counted. Measured with two toggles in flight: the first `onSettled` saw 2, the last saw 1. Testing for 0 would skip the invalidation every time. `isMutating` counts mutations only — queries have `isFetching`."
+        },
+        {
+          "id": "error-shows-late",
+          "prompt": "The recipe's `onSettled` *returns* the invalidation. A save fails while the list refetch takes 2 seconds. When does the box un-tick, and when does `isError` become true?",
+          "options": [
+            {
+              "id": "untick-now-error-later",
+              "text": "Un-ticks at once (in `onError`); `isError` turns true after the refetch, ~2 s later"
+            },
+            {
+              "id": "both-now",
+              "text": "Both at once: the box un-ticks and `isError` turns true the moment the PATCH fails"
+            },
+            {
+              "id": "both-later",
+              "text": "Both after the refetch, about 2 s later, when the server's state arrives"
+            },
+            {
+              "id": "never-error",
+              "text": "`isError` never turns true, because the last callback (`onSettled`) succeeded"
+            }
+          ],
+          "answer": "untick-now-error-later",
+          "explanation": "`onError` runs as soon as the PATCH fails, so the rollback is immediate. But the mutation's status changes only after its last callback, and a returned promise from `onSettled` is awaited first, so the mutation stays `pending` until the refetch finishes and only then becomes `error`. Show the message from `onError` if it must appear immediately. Callback outcomes don't change the mutation's own result."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-optimistic",
+      "prompts": [
+        {
+          "id": "on-mutate",
+          "prompt": "Write `onMutate` for adding a todo: stop outgoing refetches, snapshot, write optimistically, and hand the snapshot on.",
+          "code": [
+            "onMutate: async (newTodo: Todo) => {",
+            "  await queryClient.___({ queryKey: [\"todos\"] });",
+            "  const previous = queryClient.___<Todo[]>([\"todos\"]);",
+            "  queryClient.setQueryData<Todo[]>([\"todos\"], (old) => [...(old ?? []), newTodo]);",
+            "  ___ { previous };",
+            "},"
+          ],
+          "blanks": [
+            {
+              "id": "m1",
+              "accept": [
+                "cancelQueries"
+              ]
+            },
+            {
+              "id": "m2",
+              "accept": [
+                "getQueryData"
+              ]
+            },
+            {
+              "id": "m3",
+              "accept": [
+                "return"
+              ]
+            }
+          ],
+          "explanation": "Cancel first so a late refetch can't overwrite the write; snapshot before writing; return the snapshot so the other callbacks receive it. `onMutate` is awaited before the request is sent."
+        },
+        {
+          "id": "rollback-resync",
+          "prompt": "Roll back on failure, and re-sync with the server after success *or* failure.",
+          "code": [
+            "onError: (_error, _newTodo, onMutateResult) => {",
+            "  queryClient.setQueryData([\"todos\"], onMutateResult?.___);",
+            "},",
+            "___: () => queryClient.invalidateQueries({ queryKey: [\"todos\"] }),"
+          ],
+          "blanks": [
+            {
+              "id": "r1",
+              "accept": [
+                "previous"
+              ]
+            },
+            {
+              "id": "r2",
+              "accept": [
+                "onSettled"
+              ]
+            }
+          ],
+          "explanation": "`onError`'s third argument is what `onMutate` returned. `onSettled` runs on both paths, so the server's state replaces the guess whether the write worked or not; returning the promise keeps the mutation pending until that refetch is done."
+        },
+        {
+          "id": "ui-recipe",
+          "prompt": "The v5 UI-only recipe: show the todo being added, faded, while its save runs.",
+          "code": "{addTodo.___ && <li style={{ opacity: 0.5 }}>{addTodo.___}</li>}",
+          "blanks": [
+            {
+              "id": "u1",
+              "accept": [
+                "isPending"
+              ]
+            },
+            {
+              "id": "u2",
+              "accept": [
+                "variables"
+              ]
+            }
+          ],
+          "explanation": "`variables` is what you passed to `mutate`. Rendered only while `isPending`, the item disappears when the mutation settles — by which time the returned invalidation in `onSettled` has put the real todo in the list."
+        },
+        {
+          "id": "mutation-state",
+          "prompt": "Show pending adds in a component that didn't call `mutate`.",
+          "code": [
+            "const pendingTitles = ___({",
+            "  filters: { mutationKey: [\"addTodo\"], status: \"pending\" },",
+            "  select: (mutation) => mutation.state.variables as string,",
+            "});"
+          ],
+          "blanks": [
+            {
+              "id": "s1",
+              "accept": [
+                "useMutationState"
+              ]
+            }
+          ],
+          "explanation": "`useMutationState` reads mutations from the `MutationCache`, filtered like `isMutating` (here by `mutationKey` and status). It returns an array — one entry per matching mutation — because several adds can be pending at once."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-optimistic",
+      "snippets": [
+        {
+          "id": "late-refetch",
+          "code": [
+            "// [\"todos\"] holds [{ id: 1, done: false }].",
+            "queryClient.invalidateQueries({ queryKey: [\"todos\"] }); // GET starts: server says done: false",
+            "",
+            "toggle.mutate(1); // onMutate WITHOUT cancelQueries:",
+            "//   setQueryData([\"todos\"], (old) => old.map((t) => ({ ...t, done: true })))",
+            "",
+            "// The PATCH is still in flight. Now the GET answers with done: false.",
+            "console.log(queryClient.getQueryData([\"todos\"])[0].done);"
+          ],
+          "question": "What's logged? And what changes with `await queryClient.cancelQueries({ queryKey: ['todos'] })` at the top of `onMutate`?",
+          "answer": "false — the late GET overwrote the optimistic write; with cancelQueries, true",
+          "acceptable": [
+            "false, then true with cancel"
+          ],
+          "explanation": "The GET started before the click and carries the pre-click value; landing after the optimistic write, it replaces it and the box un-ticks. With `cancelQueries` first, that fetch is cancelled and its response ignored — the cache stays `done: true` until the mutation's own re-sync. (Both runs were made headlessly against v5.104, with a `queryFn` that ignores `signal`.)"
+        },
+        {
+          "id": "overlapping-rollback",
+          "code": [
+            "// Cache: [{ id: 1, done: false }, { id: 2, done: false }]",
+            "// onMutate snapshots the WHOLE list, then ticks one row; onError restores the snapshot.",
+            "",
+            "toggle.mutate(1); // PATCH 1 in flight",
+            "toggle.mutate(2); // PATCH 2 in flight",
+            "",
+            "// PATCH 1 now fails; PATCH 2 is still running.",
+            "console.log(JSON.stringify(queryClient.getQueryData([\"todos\"])));"
+          ],
+          "question": "What's logged after toggle 1's rollback?",
+          "answer": "[{\"id\":1,\"done\":false},{\"id\":2,\"done\":false}]",
+          "acceptable": [
+            "both done: false",
+            "both un-ticked"
+          ],
+          "explanation": "Toggle 1's snapshot was taken before toggle 2 changed anything, so restoring it erases todo 2's optimistic tick as well, although its save may still succeed. Roll back only the row this mutation touched. (Logged exactly this headlessly against v5.104.)"
+        },
+        {
+          "id": "is-mutating-count",
+          "code": [
+            "const toggle = useMutation({",
+            "  mutationKey: [\"todos\", \"toggle\"],",
+            "  mutationFn: patchTodo,",
+            "  onSettled: (_data, _error, id) =>",
+            "    console.log(id, queryClient.isMutating({ mutationKey: [\"todos\", \"toggle\"] })),",
+            "});",
+            "",
+            "toggle.mutate(1);",
+            "toggle.mutate(2);",
+            "// PATCH 1 settles first, then PATCH 2."
+          ],
+          "question": "What do the two `onSettled` calls log?",
+          "answer": "1 2, then 2 1",
+          "acceptable": [
+            "\"1 2\" then \"2 1\""
+          ],
+          "explanation": "While its own `onSettled` runs, a mutation is still pending, so it counts itself: the first settler sees both (2), the last sees only itself (1). That's why the guard against mid-sequence re-syncs is `=== 1`. (Measured headlessly against v5.104.)"
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-optimistic",
+      "challengeSlug": "optimistic-toggle"
+    }
+  ]
+}

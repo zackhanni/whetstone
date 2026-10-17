@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "optimistic-toggle",
+  "title": "Finish the optimistic toggle: cancel, roll back, re-sync",
+  "skills": ["tanstack-query", "optimistic-updates", "mutations"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "TodoChecklist.tsx",
+  "dependencies": { "@tanstack/react-query": "5.104.1" },
+  "acceptanceCriteria": [
+    "Clicking a box ticks it at once, before the server answers",
+    "A refetch that was already in flight when the user clicked doesn't undo the tick when it lands",
+    "A failed save un-ticks the box at once (without waiting for a refetch) and shows the error",
+    "After a save settles — succeeded **or** failed — the list is refetched, so other changes on the server show up"
+  ]
+}
