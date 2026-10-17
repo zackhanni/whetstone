@@ -13,7 +13,7 @@
     "An older response never overwrites a newer search's results, even when the request ignores its signal",
     "A superseded search is never reported as an error, even when the request rejects with its own error instead of an `AbortError`",
     "`cancel()` aborts the request in flight and returns to `status: \"idle\"` with no error, and stays idle even if that request still resolves",
-    "A search that takes longer than `timeoutMs` (default `TIMEOUT_MS`) has its request aborted, and ends with `status: \"error\"` and `error: \"Search timed out\"`",
+    "A search that takes longer than `timeoutMs` (default `TIMEOUT_MS`) has its request aborted, and ends with `status: \"error\"` and `error: \"Search timed out\"`, even when the request wraps the abort in its own error",
     "A real failure ends with `status: \"error\"` and the failure's own message"
   ]
 }

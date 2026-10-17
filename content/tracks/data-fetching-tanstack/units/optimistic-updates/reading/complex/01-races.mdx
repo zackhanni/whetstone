@@ -32,13 +32,16 @@ although its save is still running (and may succeed). The fix is a narrower roll
 
 ```ts
 onError: (_error, { id }, onMutateResult) => {
+  const previousTodo = onMutateResult?.previousTodo;
+  if (!previousTodo) return; // onMutate threw, or found no row: nothing of ours to undo
   queryClient.setQueryData<Todo[]>(key, (old) =>
-    old?.map((t) => (t.id === id ? onMutateResult!.previousTodo : t)),
+    old?.map((t) => (t.id === id ? previousTodo : t)),
   );
 },
 ```
 
-…with `onMutate` returning `{ previousTodo }` — just the row it changed.
+…with `onMutate` returning `{ previousTodo }` — just the row it changed. The guard matters:
+`onError` also runs when `onMutate` itself throws, and then its third argument is `undefined`.
 
 ## One mutation's re-sync lands mid-sequence
 
@@ -56,8 +59,8 @@ onSettled: () => {
 ```
 
 The `=== 1` is deliberate: inside `onSettled`, the mutation running it still counts as pending.
-Measured: with two toggles in flight, the first `onSettled` saw `isMutating()` = 2, the last saw
-1. This needs a `mutationKey` to filter on.
+Measured: with two toggles in flight, the first `onSettled` saw `isMutating()` = 2, and the last
+saw 1. This needs a `mutationKey` to filter on.
 
 ## Which recipe dodges which race
 

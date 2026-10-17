@@ -179,6 +179,7 @@ describe("Unit schema", () => {
     const message = "inline text can't contain a line break (it renders as one run-on line)";
     expect(issuesAfter((u) => (quizOf(u).questions[0].prompt = "Line one\nline two"))).toContain(message);
     expect(issuesAfter((u) => (u.objectives[0] = "Explain\nthis"))).toContain(message);
+    expect(issuesAfter((u) => (u.objectives[0] = "Explain\rthis"))).toContain(message);
   });
 
   it("rejects the v1 challenge `mode` field", () => {

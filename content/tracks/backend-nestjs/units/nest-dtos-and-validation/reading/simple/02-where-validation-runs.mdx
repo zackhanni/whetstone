@@ -39,9 +39,11 @@ controller, then route, then parameter, each one receiving what the previous one
 | Route | `@UsePipes(…)` on the method | one route's extra check |
 | Parameter | `@Param("id", ParseUUIDPipe)` | one argument |
 
-A narrower pipe adds to the global one; it never replaces it. So a route-level
-`ValidationPipe({ groups: ["admin"] })` runs *after* the global `ValidationPipe`, which has
-already validated (and, with `whitelist`, stripped) the body by its own rules.
+A narrower pipe adds to the global one; it never replaces it. For each handler argument, Nest
+runs the global, controller, route and parameter pipes in that order, and the first one that
+throws stops the rest. So a route-level `ValidationPipe({ groups: ["admin"] })` runs *after* the
+global `ValidationPipe`, which has already validated (and, with `whitelist`, stripped) the body
+by its own rules.
 
 The mistake worth avoiding is *not* registering it globally: a per-controller `@UsePipes` means
 the next controller someone adds is unvalidated by default. Make validation the default, and

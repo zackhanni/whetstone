@@ -38,7 +38,7 @@ Keys are matched as **prefixes, element by element from the start.** That's how
 | `todoKeys.all` | every list and every detail |
 | `todoKeys.lists()` | every list, any filters — no details |
 | `todoKeys.list({ status: "open", page: 1 })` | that list (and any longer key starting with it) |
-| `todoKeys.detail(5)` | todo 5 only |
+| `todoKeys.detail(5)` | todo 5 (and any longer key starting with it) — no other todo |
 
 `["todos"]` does **not** match `["user", "todos"]` (position 0 differs) or `["todos-archive"]`
 (strings aren't prefix-matched). Add `exact: true` when you mean only the key itself.

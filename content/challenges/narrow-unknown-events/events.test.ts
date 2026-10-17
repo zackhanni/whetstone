@@ -2,11 +2,24 @@ import { feedLine, parseEvent } from "./events";
 import type { AppEvent } from "./types";
 
 describe("parseEvent", () => {
-  it("accepts a valid signup, payment and cancel", () => {
-    expect(parseEvent({ kind: "signup", userId: "u1", email: "ada@example.com" }).ok).toBe(true);
-    expect(parseEvent({ kind: "payment", userId: "u1", amountCents: 1200 }).ok).toBe(true);
-    expect(parseEvent({ kind: "cancel", userId: "u1" }).ok).toBe(true);
-    expect(parseEvent({ kind: "cancel", userId: "u1", reason: "too expensive" }).ok).toBe(true);
+  it("accepts a valid signup, payment and cancel, with every field intact", () => {
+    // The whole result, not just `ok`: a parser that drops or changes a field must not pass.
+    expect(parseEvent({ kind: "signup", userId: "u1", email: "ada@example.com" })).toEqual({
+      ok: true,
+      event: { kind: "signup", userId: "u1", email: "ada@example.com" },
+    });
+    expect(parseEvent({ kind: "payment", userId: "u1", amountCents: 1200 })).toEqual({
+      ok: true,
+      event: { kind: "payment", userId: "u1", amountCents: 1200 },
+    });
+    expect(parseEvent({ kind: "cancel", userId: "u1" })).toEqual({
+      ok: true,
+      event: { kind: "cancel", userId: "u1" },
+    });
+    expect(parseEvent({ kind: "cancel", userId: "u1", reason: "too expensive" })).toEqual({
+      ok: true,
+      event: { kind: "cancel", userId: "u1", reason: "too expensive" },
+    });
   });
 
   it("rejects a null body instead of throwing", () => {

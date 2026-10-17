@@ -52,4 +52,10 @@ describe("sharedCacheDecision", () => {
     expect(sharedCacheDecision(get(), cc, 330)).toBe("serve-stale-and-refresh");
     expect(sharedCacheDecision(get(), cc, 400)).toBe("revalidate");
   });
+
+  it("never serves stale under must-revalidate, even inside the stale-while-revalidate window", () => {
+    const cc = res("max-age=60, stale-while-revalidate=300, must-revalidate");
+    expect(sharedCacheDecision(get(), cc, 30)).toBe("fresh");
+    expect(sharedCacheDecision(get(), cc, 120)).toBe("revalidate");
+  });
 });

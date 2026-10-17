@@ -3,8 +3,9 @@ id: invalid-date
 title: Invalid Date is a Date, and it fails quietly
 ---
 
-When the constructor can't make an instant, it doesn't throw. It returns a `Date` whose number
-is `NaN`, printed as `"Invalid Date"`:
+When the constructor can't make an instant out of a string or a number, it doesn't throw. It
+returns a `Date` whose number is `NaN`, printed as `"Invalid Date"`. (Only a value that can't be
+converted to a number at all throws: `new Date(1n)` and `new Date(Symbol())` are `TypeError`s.)
 
 ```js
 new Date("next tuesday");      // Invalid Date (unparseable)

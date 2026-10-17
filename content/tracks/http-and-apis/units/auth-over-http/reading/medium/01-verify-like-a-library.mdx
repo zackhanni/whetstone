@@ -13,25 +13,32 @@ and in Node as the global `crypto`) so nothing is hidden:
 ```ts
 const ACCEPTED_ALG = "HS256";
 
+// atob and JSON.parse throw on junk. A verifier answers null; it never throws.
+function orNull<T>(read: () => T): T | null {
+  try { return read(); } catch { return null; }
+}
+
 async function verifyAccessToken(token: string, secret: string, nowSeconds: number) {
   const [h, p, s, extra] = token.split(".");
   if (!h || !p || !s || extra !== undefined) return null;      // exactly three parts
 
   // 1. Pin the algorithm. The header is attacker-controlled: never let it choose.
-  const header = decodeSegment(h) as { alg?: string };
-  if (header.alg !== ACCEPTED_ALG) return null;
+  const header = orNull(() => decodeSegment(h)) as { alg?: string } | null;
+  if (!header || header.alg !== ACCEPTED_ALG) return null;
 
   // 2. Check the signature over the exact text "header.payload".
+  const signature = orNull(() => base64urlToBytes(s));
+  if (!signature) return null;
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
   );
   const signed = new TextEncoder().encode(`${h}.${p}`);
-  if (!(await crypto.subtle.verify("HMAC", key, base64urlToBytes(s), signed))) return null;
+  if (!(await crypto.subtle.verify("HMAC", key, signature, signed))) return null;
 
   // 3. Only now read the claims — and check exp, which is in SECONDS.
-  const claims = decodeSegment(p) as { sub?: string; exp?: number };
-  if (typeof claims.exp !== "number" || nowSeconds >= claims.exp) return null;
+  const claims = orNull(() => decodeSegment(p)) as { sub?: string; exp?: number } | null;
+  if (!claims || typeof claims.exp !== "number" || nowSeconds >= claims.exp) return null;
   return claims;
 }
 ```
@@ -39,10 +46,15 @@ async function verifyAccessToken(token: string, secret: string, nowSeconds: numb
 (`decodeSegment` is the helper from the previous example; `base64urlToBytes` is the same
 conversion without the JSON parse.) Run against the token from the curl unit: a fresh token
 returns its claims; the same token at its `exp` second, a copy with an edited payload, and a token
-whose header says `"alg":"none"` all return `null`.
+whose header says `"alg":"none"` all return `null` — and so do a segment that isn't base64url
+(`!!`) and a header that decodes to the JSON `null`.
 
 ## Why each line is there
 
+- **Junk in, `null` out.** The header arrives before anything is verified, so it's whatever the
+  sender typed. Let `atob` or `JSON.parse` throw there and a garbage token becomes a `500`
+  instead of a `401`. `!header` covers the other trap: a header that decodes to the JSON `null`,
+  where `header.alg` would throw a `TypeError`.
 - **Pinning `alg`.** RFC 8725 (JWT best practices) lists the classic attacks: libraries that
   accepted `"alg":"none"` and skipped the signature, and ones that let an attacker switch `RS256`
   to `HS256` so a *public* key became the HMAC secret. A verifier that runs whatever the header

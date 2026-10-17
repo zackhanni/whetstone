@@ -6,8 +6,8 @@ title: When Redis is down — fail open or fail closed, per use
 "What happens when Redis is unreachable?" has a different right answer for each thing you put in
 it, and the libraries have already made some of those choices for you. The cache behaviour below
 was checked on Nest 12.1 with `@nestjs/cache-manager` 12.0, cache-manager 7.2 and `@keyv/redis`
-6.1, pointed at a Redis URL with nothing listening; the rate limiter's with `@nestjs/throttler`
-6.7 and a storage whose `increment()` throws.
+6.1, pointed at a Redis URL with nothing listening; the rate-limiter behaviour was checked
+with `@nestjs/throttler` 6.7 and a storage whose `increment()` throws.
 
 ## The cache: reads fail open, writes don't
 

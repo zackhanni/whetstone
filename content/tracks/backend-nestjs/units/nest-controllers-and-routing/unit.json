@@ -189,10 +189,14 @@
             "app.enableVersioning({ type: VersioningType.___ });",
             "",
             "@Controller({ path: \"cats\", ___: \"2\" })",
-            "export class CatsV2Controller {}",
+            "export class CatsV2Controller {",
+            "  @Get() list() { return [\"Tom\"]; }",
+            "}",
             "",
             "@Controller({ path: \"health\", version: ___ })",
-            "export class HealthController {}"
+            "export class HealthController {",
+            "  @Get() check() { return { ok: true }; }",
+            "}"
           ],
           "blanks": [
             { "id": "d1", "accept": ["URI"] },

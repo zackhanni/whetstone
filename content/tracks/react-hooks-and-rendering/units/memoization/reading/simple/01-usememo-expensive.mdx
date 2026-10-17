@@ -32,4 +32,8 @@ The cache is a performance hint, not a promise. react.dev says React may throw i
 for a specific reason — when you edit the component's file in development, or when a
 component suspends during its first mount — and StrictMode calls the factory twice in
 development (keeping one result). So the factory must be pure, and your code must still be
-correct if it runs again. If you need a value created exactly once, use state or a ref.
+correct if it runs again. If you need a value that React won't throw away between renders, keep
+it in state (with a lazy initializer) or in a ref you fill on first use
+(`if (ref.current === null) ref.current = create()`). Neither promises the creation runs exactly
+once — StrictMode calls a `useState` initializer twice in development too, and
+`useRef(create())` calls `create()` on every render — so creation still has to be pure.
