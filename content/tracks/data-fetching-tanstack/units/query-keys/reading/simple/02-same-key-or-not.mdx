@@ -1,0 +1,43 @@
+---
+id: same-key-or-not
+title: Which keys are the same key
+---
+
+Keys are compared by their **hash**, not by reference, so you can build a fresh array on every
+render without creating a new entry. The hash is deterministic, with two rules worth knowing
+cold.
+
+**Object property order doesn't matter.** These three are one entry:
+
+```ts
+["todos", { status, page }]
+["todos", { page, status }]
+["todos", { page, status, other: undefined }] // undefined properties are dropped
+```
+
+**Array order does.** These three are three entries:
+
+```ts
+["todos", status, page]
+["todos", page, status]
+["todos", undefined, page, status]
+```
+
+And types count: `["todo", 5]` and `["todo", "5"]` are two entries, because the hash is built
+from the JSON — `5` and `"5"` serialise differently.
+
+That gives a simple house style:
+
+- **Array positions for the hierarchy** — the resource first, then the kind, then the
+  specifics: `["todos", "list", …]`, `["todos", "detail", 5]`. Order is meaningful there,
+  and that order is what prefix matching uses later.
+- **One object for named filters** — `{ status, page, sort }`. Order-free, self-describing,
+  and adding a filter doesn't shift anyone's positions.
+
+```ts
+// one entry per status/page combination, regardless of how the object is written
+useQuery({
+  queryKey: ["todos", "list", { status, page }],
+  queryFn: () => fetchTodos({ status, page }),
+});
+```
