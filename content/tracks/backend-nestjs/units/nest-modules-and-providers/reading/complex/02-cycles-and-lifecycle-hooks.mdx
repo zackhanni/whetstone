@@ -1,0 +1,46 @@
+---
+id: cycles-and-lifecycle-hooks
+title: Circular graphs, and where connection work goes
+---
+
+## Circular dependencies
+
+If `A` injects `B` and `B` injects `A`, Nest can't build either: when one class's constructor
+metadata is read, the other may not be defined yet. `forwardRef` defers the lookup, and the docs
+put it on **both** sides:
+
+```ts
+// orders.service.ts
+constructor(@Inject(forwardRef(() => BillingService)) private billing: BillingService) {}
+// billing.service.ts
+constructor(@Inject(forwardRef(() => OrdersService)) private orders: OrdersService) {}
+```
+
+Treat it as a smell, not a solution. A cycle almost always means a third responsibility is
+hiding inside one of the two classes — extract it into a module both can depend on. The same
+goes for two modules importing each other (`imports: [forwardRef(() => OtherModule)]`, again on
+both sides).
+
+## Lifecycle hooks
+
+Providers can implement `OnModuleInit` / `OnApplicationShutdown`. Do connection work there,
+not in the constructor: the constructor must stay cheap and synchronous, and Nest awaits an
+async `onModuleInit` before the app starts listening.
+
+Shutdown needs opting in. Without `app.enableShutdownHooks()`, a `SIGTERM` (what a deploy or a
+scale-down sends) kills the process mid-request and no shutdown hook runs. With it, Nest runs
+`app.close()`: `onModuleDestroy`, then `beforeApplicationShutdown`, then the HTTP server stops
+accepting connections and waits for in-flight requests, then `onApplicationShutdown`.
+
+<!--more-->
+
+Two consequences of that order. **Close the connection pool in `onApplicationShutdown`**, not
+`onModuleDestroy`: the destroy hook runs while requests are still in flight, and they would
+lose their database underneath them. And the server keeps listening until both earlier hooks
+have finished, so a request that arrives meanwhile — on a new connection or a kept-alive one —
+is still served by default, against providers that are tearing down. Nest 12 adds
+`return503OnClosing: true` (a `NestFactory.create` option) to answer those with 503 and
+`Connection: close` instead.
+
+(On the Express adapter, in-flight requests already finished under Nest 11 too — Node's
+`server.close()` waits for them.)

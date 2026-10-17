@@ -14,7 +14,7 @@
   "estimatedMinutes": 25,
   "objectives": [
     "Fix a 'Nest can't resolve dependencies' error with exports and imports, and say what @Global() costs",
-    "Predict instance sharing: one singleton for all consumers and requests, two from duplicate providers",
+    "Predict instance sharing: one singleton for all consumers, two from duplicate providers, and how far Scope.REQUEST spreads",
     "Inject an interface-typed dependency with a Symbol token and @Inject, and swap in a fake for tests",
     "Choose useFactory with inject for async setup, and keep connection work out of constructors"
   ],
@@ -22,7 +22,9 @@
     { "title": "NestJS docs: Modules", "url": "https://docs.nestjs.com/modules" },
     { "title": "NestJS docs: Custom providers", "url": "https://docs.nestjs.com/fundamentals/custom-providers" },
     { "title": "NestJS docs: Injection scopes", "url": "https://docs.nestjs.com/fundamentals/injection-scopes" },
-    { "title": "NestJS docs: Lifecycle events", "url": "https://docs.nestjs.com/fundamentals/lifecycle-events" }
+    { "title": "NestJS docs: Lifecycle events", "url": "https://docs.nestjs.com/fundamentals/lifecycle-events" },
+    { "title": "NestJS docs: Circular dependency", "url": "https://docs.nestjs.com/fundamentals/circular-dependency" },
+    { "title": "NestJS docs: Common errors", "url": "https://docs.nestjs.com/faq/common-errors" }
   ],
   "blocks": [
     {
@@ -120,7 +122,7 @@
             },
             {
               "id": "usevalue",
-              "text": "`{ provide: \"REDIS\", useValue: createClient(process.env.REDIS_URL) }`"
+              "text": "`{ provide: \"REDIS\", useValue: createClient({ url: process.env.REDIS_URL }) }`"
             },
             {
               "id": "constructor",
@@ -128,31 +130,31 @@
             }
           ],
           "answer": "factory",
-          "explanation": "Of the four forms, `useFactory` is the only one that can both await setup and depend on other providers (via the positional `inject` array). `useValue` would run the connect at module-load time, outside Nest's control and untestable; connecting in a constructor makes construction slow and un-awaitable. The other legitimate shape is a `useClass` provider that connects in `onModuleInit` — Nest awaits that hook — which is what you want when the connection has a lifecycle (reconnects, graceful shutdown) rather than being a one-shot value."
+          "explanation": "Of the four forms, `useFactory` is the only one that can both await setup and depend on other providers (via the positional `inject` array). `useValue` takes a value that already exists when the module file is evaluated: it can't receive `ConfigService` (so it can read `process.env` before `ConfigModule` has loaded `.env`), and nothing awaits a connection. With node-redis (v4 onward), `createClient()` doesn't connect at all, so the first command throws \"The client is closed\"; a client that connects in its constructor (ioredis does by default) would instead start connecting at import time, outside Nest's boot. Connecting in a consumer's constructor makes construction slow and un-awaitable. The other legitimate shape is a `useClass` provider that connects in `onModuleInit` — Nest awaits that hook — which is what you want when the connection has a lifecycle (reconnects, graceful shutdown) rather than being a one-shot value."
         },
         {
-          "id": "request-state",
-          "prompt": "A service stores `this.currentUser` at the start of each request and reads it later in the call. What's the failure mode?",
+          "id": "request-scope-bubbles",
+          "prompt": "`TenantContext` is `@Injectable({ scope: Scope.REQUEST })`. `OrdersService` injects it; `OrdersController` injects `OrdersService` and `PricingService` (which doesn't touch `TenantContext`). Which of these are created per request?",
           "options": [
             {
-              "id": "cross-request",
-              "text": "Providers are app-wide singletons, so concurrent requests overwrite each other's `currentUser`"
+              "id": "chain",
+              "text": "`TenantContext`, `OrdersService` and `OrdersController` — request scope bubbles up to everything that depends on it; `PricingService` stays a singleton"
             },
             {
-              "id": "gc",
-              "text": "The field is garbage collected between the await points"
+              "id": "only-tenant",
+              "text": "Only `TenantContext`; its consumers stay singletons and receive the current instance"
             },
             {
-              "id": "none",
-              "text": "None — Nest creates a provider per request by default"
+              "id": "everything",
+              "text": "All four — one request-scoped provider makes the whole module request-scoped"
             },
             {
-              "id": "types",
-              "text": "Only a typing problem, since the field must be optional"
+              "id": "boot-error",
+              "text": "None; Nest refuses to boot because a singleton can't inject a request-scoped provider"
             }
           ],
-          "answer": "cross-request",
-          "explanation": "`Scope.DEFAULT` is one instance for the whole application. Any \"current request\" field is shared mutable state across concurrent requests, and it fails intermittently under load — the worst kind of bug. Pass the value as an argument, or use `AsyncLocalStorage`; `Scope.REQUEST` works but spreads per-request instantiation up the whole injection chain."
+          "answer": "chain",
+          "explanation": "A singleton is built once, so it can't hold a per-request instance; Nest makes every provider on the path to a request-scoped one request-scoped too, controller included. Providers off that path are untouched, which is why `PricingService` stays one instance. That bubbling is the throughput cost of `Scope.REQUEST`: several objects rebuilt per request instead of one. When all you need is the current user or tenant, `AsyncLocalStorage` or an explicit argument keeps everything a singleton."
         },
         {
           "id": "global-tradeoff",
