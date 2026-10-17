@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "nest-cache-aside",
+  "title": "Make the product cache safe to run in production",
+  "skills": ["backend", "nestjs", "caching", "redis"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "runner": "in-browser",
+  "entry": "product-cache.ts",
+  "acceptanceCriteria": [
+    "A product stays cached for `PRODUCT_TTL_MS` (milliseconds) and is reloaded from the database after that",
+    "After `updatePrice`, the next read returns the new price — even when another read ran while the database write was in flight",
+    "Ten concurrent reads of an uncached product run **one** database load",
+    "A failed load isn't cached: the caller gets the error, and the next read tries the database again",
+    "With the cache down, reads are answered from the database and `updatePrice` still succeeds"
+  ]
+}
