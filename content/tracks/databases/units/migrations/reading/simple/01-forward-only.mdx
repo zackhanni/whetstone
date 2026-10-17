@@ -1,0 +1,52 @@
+---
+id: forward-only
+title: A migration is a versioned, forward-only change
+---
+
+The schema is code. A **migration** is one numbered change to it, kept in the repo and applied in
+order by a tool that records which ones have run:
+
+```text
+migrations/
+  0001_create_users.sql
+  0002_create_orders.sql
+  0003_add_orders_status.sql      ← new in this pull request
+```
+
+```sql
+-- 0003_add_orders_status.sql
+ALTER TABLE orders ADD COLUMN status text NOT NULL DEFAULT 'pending';
+```
+
+Every environment — your laptop, CI, staging, production — runs the same files in the same order,
+so they end up with the same schema. Three rules keep that true:
+
+- **Never edit a migration that has run anywhere shared.** Production already applied the old
+  version and will never run your edit. Fix it with a *new* migration.
+- **Ship the DDL with the code that needs it**, in the same pull request — a review that can't see
+  the schema change can't judge the code.
+- **Make each migration small** — one change, easy to reason about, quick to run.
+
+## Why "forward-only"
+
+Many tools let you write a *down* migration that undoes the *up*. For some changes it's honest:
+
+```sql
+-- up                                         -- down
+ALTER TABLE orders ADD COLUMN status text;    ALTER TABLE orders DROP COLUMN status;
+```
+
+For others it can't be:
+
+```sql
+-- up                                         -- down
+ALTER TABLE users DROP COLUMN phone;          ALTER TABLE users ADD COLUMN phone text;
+```
+
+The "down" brings back an empty column. The phone numbers are gone; only a backup has them. The
+same goes for a narrowed type, merged tables or rewritten values. A rollback script that runs
+cleanly in CI and restores nothing in production is worse than none, because it looks like a plan.
+
+So teams that run production databases mostly roll **forward**: when a migration turns out wrong,
+the fix is the next migration. What makes that safe isn't a down script — it's making each step
+small and **compatible with the code that's running**, which is the rest of this unit.

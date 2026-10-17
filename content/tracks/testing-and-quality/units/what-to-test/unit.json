@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 3,
+  "slug": "what-to-test",
+  "title": "What a test is for",
+  "skills": ["testing", "test-strategy", "coverage"],
+  "difficulty": "intro",
+  "estimatedMinutes": 20,
+  "objectives": [
+    "Explain what a test is for — confidence to change code — and judge a test by whether it fails when behaviour breaks, and only then",
+    "Rewrite an assertion on an implementation detail (private state, which setter ran) as an assertion on observable behaviour",
+    "Prioritise what to test — happy path, high-damage branches, boundaries, past bugs — and name what not to spend tests on",
+    "Compare the test pyramid and the testing trophy as answers to the same cost-versus-confidence trade-off",
+    "Spot a test that can't fail — one that checks its own mock, recomputes its expected value, or only adds coverage"
+  ],
+  "sources": [
+    { "title": "Testing Library: Guiding Principles", "url": "https://testing-library.com/docs/guiding-principles" },
+    { "title": "React Testing Library: Introduction", "url": "https://testing-library.com/docs/react-testing-library/intro/" },
+    { "title": "web.dev: Pyramid or Crab? Find a testing strategy that fits", "url": "https://web.dev/articles/ta-strategies" },
+    { "title": "web.dev: Defining test cases and priorities", "url": "https://web.dev/articles/ta-test-cases" },
+    { "title": "web.dev: Four common types of code coverage", "url": "https://web.dev/articles/ta-code-coverage" },
+    { "title": "Playwright docs: Best Practices", "url": "https://playwright.dev/docs/best-practices" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-what-to-test", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-what-to-test",
+      "questions": [
+        {
+          "id": "what-is-a-suite-for",
+          "prompt": "What is a test suite actually *for*?",
+          "options": [
+            { "id": "confidence", "text": "Letting you change code and know quickly whether you broke something you promised" },
+            { "id": "no-bugs", "text": "Proving the code has no bugs" },
+            { "id": "coverage", "text": "Reaching a coverage target so the code counts as tested" },
+            { "id": "docs", "text": "Recording how each function is implemented, line by line" }
+          ],
+          "answer": "confidence",
+          "explanation": "Tests are a tool for change: refactor, upgrade, fix — then run them and find out whether any promised behaviour broke. They can't prove the absence of bugs (they only check the cases someone wrote), coverage only measures which lines ran, and a test that records implementation line by line is exactly the kind that breaks on harmless refactors."
+        },
+        {
+          "id": "red-after-refactor",
+          "prompt": "You replace a cart's private array with a `Map`. Every caller-visible result is unchanged, but one test goes red: it asserted on `cart[\"lines\"]`. What does that red tell you?",
+          "options": [
+            { "id": "detail", "text": "The test was pinned to an implementation detail; rewrite it to assert through `count()`/`total()`" },
+            { "id": "broke", "text": "The refactor broke the cart; revert it" },
+            { "id": "normal", "text": "Nothing — updating tests after every refactor is the normal cost of testing" },
+            { "id": "private", "text": "Private fields should never change once a test depends on them" }
+          ],
+          "answer": "detail",
+          "explanation": "A red test should mean \"a promise broke\". Here nothing a caller can see changed, so the red is noise from a test that checked *how* the cart stores lines. Treating that as normal is how teams learn to stop trusting red. The fix is in the test: assert what callers observe, which still catches a real regression (duplicates not counted, wrong total)."
+        },
+        {
+          "id": "ui-behaviour-assertion",
+          "prompt": "A payment form shows \"Card declined\" when the API rejects the card. Which assertion tests behaviour rather than implementation?",
+          "options": [
+            { "id": "role-text", "text": "`expect(screen.getByRole(\"alert\").textContent).toBe(\"Card declined\")`" },
+            { "id": "set-error", "text": "`expect(setError).toHaveBeenCalledWith(\"declined\")`" },
+            { "id": "state", "text": "`expect(form.state.error).toBe(\"declined\")`" },
+            { "id": "render-count", "text": "`expect(renderCount).toBe(2)`" }
+          ],
+          "answer": "role-text",
+          "explanation": "The user sees an alert with that text; that's the promise. Which setter ran, what the state field is called and how many renders happened can all change in a refactor without the user noticing — tests on them break for no reason, and can stay green while the message never reaches the screen. Testing Library's principle: the more a test resembles how the software is used, the more confidence it gives."
+        },
+        {
+          "id": "where-detail-pays",
+          "prompt": "Checkout has a discount code feature and you have time for a handful of extra tests beyond the happy path. Where does boundary-by-boundary detail pay most?",
+          "options": [
+            { "id": "money", "text": "The total calculation: rounding, never below zero, the minimum-spend boundary" },
+            { "id": "tooltip", "text": "The wording of the \"What's a discount code?\" tooltip" },
+            { "id": "colour", "text": "The colour of the \"Applied\" badge" },
+            { "id": "logs", "text": "The exact format of the debug log line written when a code is applied" }
+          ],
+          "answer": "money",
+          "explanation": "Spend detail where a mistake does damage: money, permissions, data loss. A wrong total charges real customers the wrong amount; a tooltip typo doesn't. Within the money logic, the boundaries ($30.00 vs $29.99 for a $30 minimum) are where `<` vs `<=` bugs live."
+        },
+        {
+          "id": "not-worth-a-test",
+          "prompt": "Which of these is **not** worth a test of your own?",
+          "options": [
+            { "id": "react-rerenders", "text": "That React re-renders a component after `setState`" },
+            { "id": "never-negative", "text": "That a fixed-amount discount never takes the total below zero" },
+            { "id": "bug-212", "text": "That a 0-quantity line item no longer crashes checkout (it did last month)" },
+            { "id": "member-redirect", "text": "That a non-admin visiting `/admin` is redirected" }
+          ],
+          "answer": "react-rerenders",
+          "explanation": "Re-rendering on state change is React's guarantee, tested by React. Your tests should cover your rules (the non-negative total), bugs that already escaped (the regression test), and permissions (the redirect) — the places where *your* code decides the outcome."
+        },
+        {
+          "id": "pyramid-vs-trophy",
+          "prompt": "What do the test pyramid and the testing trophy actually disagree about?",
+          "options": [
+            { "id": "bulk", "text": "Where the bulk of the tests should sit — unit tests (pyramid) or integration tests (trophy)" },
+            { "id": "e2e", "text": "Whether end-to-end tests are worth having at all" },
+            { "id": "stack", "text": "Which one applies to backends and which to frontends" },
+            { "id": "units", "text": "Whether unit tests should exist — the trophy drops them" }
+          ],
+          "answer": "bulk",
+          "explanation": "Both shapes keep end-to-end tests few because they're the slowest and most expensive, and both have a unit layer. The trophy moves the bulk up to integration tests (several real modules together) and adds static analysis as the base. Neither is tied to frontend or backend; web.dev's summary is \"It depends\" — on your app."
+        },
+        {
+          "id": "tests-the-mock",
+          "prompt": "A test does `fetchUser.mockResolvedValue(ada)` and then asserts `expect(await fetchUser(1)).toEqual(ada)`. What has it verified?",
+          "options": [
+            { "id": "mock-only", "text": "Only that the mock returns what it was told to — none of your code ran" },
+            { "id": "fetch-works", "text": "That `fetchUser` fetches and parses a user correctly" },
+            { "id": "caller-works", "text": "That the code calling `fetchUser` handles the user correctly" },
+            { "id": "contract", "text": "That the API's response shape matches the `User` type" }
+          ],
+          "answer": "mock-only",
+          "explanation": "The assertion reads back the value the test put in. It can't fail unless the mocking library itself breaks. A useful test calls *your* function — the one that uses `fetchUser` — and asserts on what it does with that fake user."
+        },
+        {
+          "id": "full-coverage",
+          "prompt": "Coverage for `pricing.ts` is 100%. What does that tell you?",
+          "options": [
+            { "id": "lines-ran", "text": "Every line in it ran during some test — not that any test checked the result" },
+            { "id": "no-bugs", "text": "`pricing.ts` has no bugs left to find" },
+            { "id": "all-inputs", "text": "Every possible input to every function was tried" },
+            { "id": "asserted", "text": "Every line's result is checked by at least one assertion" }
+          ],
+          "answer": "lines-ran",
+          "explanation": "Coverage records execution, not verification. A test that calls `priceLabel(0); priceLabel(1999);` and asserts nothing reports 100% for `priceLabel` under Vitest 4. Coverage is useful for the opposite question — which code *no* test touches — and web.dev's coverage guide says 100% \"doesn't guarantee the absence of bugs\"."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-what-to-test",
+      "prompts": [
+        {
+          "id": "boundary-values",
+          "prompt": "The rule is \"orders of $50.00 or more ship free\" (amounts in cents). Pick the two inputs that would catch a `>` written where `>=` was meant, from both sides.",
+          "code": [
+            "it(\"ships free at exactly the threshold\", () => {",
+            "  expect(shippingCost(___)).toBe(0);",
+            "});",
+            "it(\"charges just below it\", () => {",
+            "  expect(shippingCost(___)).toBe(499);",
+            "});"
+          ],
+          "blanks": [
+            { "id": "at-threshold", "accept": ["5000", "5_000"] },
+            { "id": "below-threshold", "accept": ["4999", "4_999"] }
+          ],
+          "explanation": "5000 is the only input where `>=` and `>` disagree, so it's the one that catches the bug; 4999 pins the other side of the line. Inputs like 1000 and 10000 pass whichever comparison you wrote — they look like tests and catch nothing at the boundary."
+        },
+        {
+          "id": "public-surface",
+          "prompt": "Rewrite the implementation-detail test to go through the cart's public API: `add(item)`, `count(sku)`, `total()`.",
+          "code": [
+            "cart.add({ sku: \"tea\", priceCents: 450 });",
+            "cart.add({ sku: \"tea\", priceCents: 450 });",
+            "// was: expect(cart[\"lines\"][0].qty).toBe(2);",
+            "expect(cart.___(\"tea\")).toBe(2);",
+            "expect(cart.___()).toBe(900);"
+          ],
+          "blanks": [
+            { "id": "count", "accept": ["count"] },
+            { "id": "total", "accept": ["total"] }
+          ],
+          "explanation": "`count` and `total` are what callers rely on, so these assertions survive any change to how lines are stored, and still go red if duplicates stop being counted or the sum is wrong."
+        },
+        {
+          "id": "regression-first",
+          "prompt": "Bug #212: a line with quantity 0 crashes checkout. Before you touch the fix, what must this new test do against today's code?",
+          "code": [
+            "it(\"ignores a line with quantity 0 (bug #212)\", () => {",
+            "  // Run this BEFORE the fix. It must ___, or it isn't testing the bug.",
+            "  expect(() => checkoutTotal([{ sku: \"tea\", priceCents: 450, qty: 0 }])).not.toThrow();",
+            "});"
+          ],
+          "blanks": [{ "id": "fail", "accept": ["fail", "go red", "be red"] }],
+          "explanation": "A regression test proves itself by failing against the bug, for the reason the report describes. If it passes before the fix, it reproduces something else — and it will stay green if the bug ever comes back. Fail first, then fix, then watch it pass."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,80 @@
+---
+id: check-what-you-shipped
+title: Check what you actually shipped
+---
+
+Reviews catch `NEXT_PUBLIC_SECRET` in a diff. They miss the secret that arrives through a prop, a
+return value or a shared helper. Check the output, not the intent.
+
+**The client bundle.** `next build` writes the browser's JavaScript under `.next/static`, which
+Next.js serves at `/_next/static/` (the `output` docs describe it as the folder a CDN should
+serve). After a build, search it for **values**, not just names:
+
+```bash
+# a known prefix of a real secret
+grep -rl "sk_live_" .next/static
+```
+
+To search for every secret you have, read the values the way `next build` does. Parsing
+`.env.local` with `cut` and `sed` gets it wrong: `KEY='sk_live_…'` keeps its single quotes,
+`KEY=value # note` keeps its comment, and `$OTHER` isn't expanded. `@next/env` is the loader
+Next.js itself uses (`pnpm add -D @next/env`):
+
+```js
+// scripts/find-shipped-secrets.mjs: run after `next build`
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import nextEnv from "@next/env"; // CommonJS: a named import fails in plain Node
+
+// Variables already in the environment (CI secrets) win over the .env files, as in Next.js.
+const { combinedEnv, loadedEnvFiles } = nextEnv.loadEnvConfig(process.cwd());
+const fromFiles = loadedEnvFiles.flatMap((file) => Object.keys(file.env));
+const names = [...new Set(process.argv.length > 2 ? process.argv.slice(2) : fromFiles)].filter(
+  (name) => !name.startsWith("NEXT_PUBLIC_") && combinedEnv[name],
+);
+if (names.length === 0) throw new Error("No secret values to search for"); // fail closed
+
+let leaks = 0;
+for (const path of readdirSync(".next/static", { recursive: true })) {
+  const file = join(".next/static", path);
+  if (!statSync(file).isFile()) continue;
+  const text = readFileSync(file, "utf8");
+  for (const name of names) {
+    const value = combinedEnv[name];
+    // as written, and as it looks inside a JS string (a multiline key's newlines become \n)
+    if (text.includes(value) || text.includes(JSON.stringify(value).slice(1, -1))) {
+      console.log(`LEAK: ${name} in ${file}`); // the name, never the value
+      leaks++;
+    }
+  }
+}
+process.exitCode = leaks > 0 ? 1 : 0;
+```
+
+Searching by value matters because a leak doesn't keep the variable's name: once inlined or
+serialised, the bundle contains `"sk_live_…"`, not `PAYMENTS_SECRET_KEY`. The report names the
+variable and never prints the secret itself.
+
+**The HTML and RSC payload.** Props passed to Client Components ride in the page itself, not in
+`.next/static`. Fetch real pages from a preview deployment and search the response:
+
+```bash
+curl -s https://my-app-preview.example.com/account | grep -c "sk_live_"
+```
+
+**Server Action responses.** In the browser's Network panel, look at what an action returns after
+a save. A full database record is the leak from the medium tier.
+
+What these checks can't do: prove absence. A secret built into a response only under some
+condition (an admin page, an error path) won't show up in a happy-path crawl. They're a cheap net
+under the structural rules — `server-only` on every secret-touching module, `process.env` only in
+the Data Access Layer, minimal props and return values — not a replacement for them.
+
+<!--more-->
+
+Run the script in CI after `next build`, with the secrets available as environment variables
+rather than read from a file and their names passed as arguments
+(`node scripts/find-shipped-secrets.mjs PAYMENTS_SECRET_KEY DATABASE_URL`). It exits 1 on any
+match, which fails the job, and throws when none of the names has a value, so a job whose secrets
+never arrived can't pass silently. Put it next to a secret scanner on the repository: one checks
+what you commit, the other what you ship.

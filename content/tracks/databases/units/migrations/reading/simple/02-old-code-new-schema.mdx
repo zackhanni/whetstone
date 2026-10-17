@@ -1,0 +1,42 @@
+---
+id: old-code-new-schema
+title: Old code meets the new schema
+---
+
+A deploy isn't instant. The migration runs at one moment, the new code starts at another, and on
+any platform that rolls out gradually, **old and new versions of the app run at the same time**,
+against one database. A preview deploy or a background worker can run older code for hours.
+
+So the question for every schema change is: **does the code that's running right now still work
+after this migration?**
+
+Rename a column in one step:
+
+```sql
+ALTER TABLE users RENAME COLUMN fullname TO display_name;   -- instant, metadata only
+```
+
+The rename itself is fast — it changes only the catalogue. But every running copy of the old code
+still says `SELECT fullname …` and starts failing with `column "fullname" does not exist` the moment
+the migration commits, until the last old instance is gone. If you deploy the code first instead, the
+*new* code fails on `display_name` until the migration runs. There's no order that works, because
+the change isn't compatible with both versions.
+
+Compare a change that is:
+
+```sql
+ALTER TABLE users ADD COLUMN display_name text;   -- nullable, no default needed
+```
+
+Old code doesn't know the column exists and keeps working; new code can start using it. That's an
+**additive** change, and additive changes are the building blocks of zero-downtime migrations:
+
+| Safe while old code runs                   | Breaks old code                            |
+| ------------------------------------------ | ------------------------------------------ |
+| add a nullable column, or one with a default | rename or drop a column old code reads   |
+| add a table, an index, a view              | add `NOT NULL` with no default             |
+| widen a type (`varchar(50)` → `varchar(200)`) | narrow a type, change its meaning       |
+
+The breaking changes aren't forbidden. They're done in stages — **expand, migrate, contract** — so
+that every intermediate state works with every version of the code that might be running. The medium
+tier walks through one.

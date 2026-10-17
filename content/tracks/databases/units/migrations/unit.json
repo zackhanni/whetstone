@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 3,
+  "slug": "migrations",
+  "title": "Migrations: changing the schema under a running app",
+  "skills": ["databases", "migrations", "postgres", "locking"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Write forward-only migrations, and recognise the irreversible changes (drops, narrowed types, lossy rewrites) no down migration can undo",
+    "Sequence a breaking change as expand → migrate → contract, ordering each migration against the deploys of the code that reads and writes it",
+    "Predict which DDL rewrites or blocks a table — and how one waiting `ALTER TABLE` queues every query behind it — and bound it with `lock_timeout`",
+    "Add indexes and constraints to a live table with `CREATE INDEX CONCURRENTLY` and `NOT VALID` + `VALIDATE`, and backfill in committed batches"
+  ],
+  "sources": [
+    { "title": "PostgreSQL 18 docs: ALTER TABLE", "url": "https://www.postgresql.org/docs/18/sql-altertable.html" },
+    { "title": "PostgreSQL 18 docs: CREATE INDEX (building indexes concurrently)", "url": "https://www.postgresql.org/docs/18/sql-createindex.html" },
+    { "title": "PostgreSQL 18 docs: Explicit Locking (table-level lock modes)", "url": "https://www.postgresql.org/docs/18/explicit-locking.html" },
+    { "title": "PostgreSQL 18 docs: Client Connection Defaults (lock_timeout)", "url": "https://www.postgresql.org/docs/18/runtime-config-client.html" },
+    { "title": "PostgreSQL 18 docs: Transaction Management in PL/pgSQL", "url": "https://www.postgresql.org/docs/18/plpgsql-transactions.html" },
+    { "title": "PostgreSQL 11 release notes (fast ADD COLUMN with a default)", "url": "https://www.postgresql.org/docs/release/11.0/" },
+    { "title": "PostgreSQL 12 release notes (SET NOT NULL without a scan)", "url": "https://www.postgresql.org/docs/release/12.0/" },
+    { "title": "PostgreSQL 18 release notes (NOT VALID NOT NULL constraints)", "url": "https://www.postgresql.org/docs/18/release-18.html" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-migrations", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-migrations",
+      "questions": [
+        {
+          "id": "edit-applied-migration",
+          "prompt": "Migration `0007_add_index.sql` created an index on the wrong column. It has already run in staging and production. What do you do?",
+          "options": [
+            { "id": "new-migration", "text": "Add `0008` that drops the wrong index and creates the right one" },
+            { "id": "edit", "text": "Fix the column name in `0007` — it's the same change, just corrected" },
+            { "id": "down", "text": "Run 0007's down migration in production, then edit 0007 and re-run it" },
+            { "id": "manual", "text": "Fix it by hand in the production console and leave the files alone" }
+          ],
+          "answer": "new-migration",
+          "explanation": "The migration tool records 0007 as applied, so an edited 0007 never runs anywhere that already has it — staging and production keep the wrong index while fresh environments get the right one, and the schemas diverge (tools that checksum applied migrations refuse to run instead; either way, the fix is a new migration). Roll forward with a new migration. A hand fix in the console diverges production from every other environment just the same."
+        },
+        {
+          "id": "down-after-drop",
+          "prompt": "`0012` ran `ALTER TABLE users DROP COLUMN phone`. Its down migration is `ALTER TABLE users ADD COLUMN phone text`. A bug is found and you run the down migration in production. What do users' phone numbers look like?",
+          "options": [
+            { "id": "null", "text": "All `NULL` — the column is back, the data isn't; only a backup has it" },
+            { "id": "restored", "text": "Restored — PostgreSQL keeps dropped column data until `VACUUM`" },
+            { "id": "error", "text": "The down migration fails because the column already existed" },
+            { "id": "partial", "text": "Restored for rows not updated since the drop" }
+          ],
+          "answer": "null",
+          "explanation": "A down migration is just more DDL; it can rebuild the shape, not the data. `DROP COLUMN` makes the column invisible to SQL — the old bytes may sit on disk until rows are rewritten, but nothing can read them, and `ADD COLUMN phone` creates a brand-new, empty column rather than reviving the old one. That's why drops (and narrowing types, and lossy rewrites) go last in an expand/contract sequence, after the code that needed them is gone — and why teams roll forward instead of relying on down scripts."
+        },
+        {
+          "id": "rename-sequence",
+          "prompt": "Which sequence renames `users.fullname` to `display_name` with no errors while old and new app versions overlap?",
+          "options": [
+            { "id": "expand-contract", "text": "Add `display_name` → deploy code writing both → backfill → deploy code reading `display_name` → deploy code that stops using `fullname` → drop `fullname`" },
+            { "id": "rename-first", "text": "`RENAME COLUMN` → deploy code using `display_name`" },
+            { "id": "deploy-first", "text": "Deploy code using `display_name` → `RENAME COLUMN`" },
+            { "id": "drop-early", "text": "Add `display_name` → backfill → drop `fullname` → deploy code reading `display_name`" }
+          ],
+          "answer": "expand-contract",
+          "explanation": "Each step must work with every version of the code that can be running. Renaming first breaks old code instantly; deploying first breaks new code until the rename runs — no order works for a one-step rename. Dropping `fullname` before the reading code is deployed breaks the code still reading it. Expand/contract keeps both names valid until nothing uses the old one; the drop comes last because it's the only step you can't undo."
+        },
+        {
+          "id": "instant-alter-stalls",
+          "prompt": "A migration ran `ALTER TABLE orders ADD COLUMN note text` — a metadata-only change — yet the whole orders API stalled for four minutes. What most likely happened?",
+          "options": [
+            { "id": "lock-queue", "text": "The ALTER waited for `ACCESS EXCLUSIVE` behind a long-running transaction, and every new query on `orders` queued behind the waiting ALTER" },
+            { "id": "rewrite", "text": "Adding a nullable column rewrites the table" },
+            { "id": "index", "text": "PostgreSQL rebuilt every index on the table" },
+            { "id": "vacuum", "text": "The ALTER triggered a `VACUUM FULL`" }
+          ],
+          "answer": "lock-queue",
+          "explanation": "The change itself takes milliseconds once the lock is granted. But a long transaction (a report, an idle-in-transaction connection) held a lock that conflicts with `ACCESS EXCLUSIVE`, so the ALTER waited — and lock requests queue, so plain `SELECT`s that arrived after it waited behind it. Set `lock_timeout` on migrations so they give up and retry instead. A nullable column with no default needs no rewrite."
+        },
+        {
+          "id": "which-add-column-rewrites",
+          "prompt": "On PostgreSQL 18, which `ADD COLUMN` rewrites the entire table and its indexes?",
+          "options": [
+            { "id": "volatile", "text": "`ADD COLUMN public_id uuid NOT NULL DEFAULT gen_random_uuid()`" },
+            { "id": "constant", "text": "`ADD COLUMN status text NOT NULL DEFAULT 'pending'`" },
+            { "id": "now", "text": "`ADD COLUMN created_at timestamptz DEFAULT now()`" },
+            { "id": "nullable", "text": "`ADD COLUMN note text`" }
+          ],
+          "answer": "volatile",
+          "explanation": "Since PostgreSQL 11, a non-volatile default is evaluated once and stored in the table's metadata, so existing rows need no rewrite — that covers the constant and `now()` (stable, not volatile). `gen_random_uuid()` is volatile: each existing row needs its own value, so the table and its indexes are rewritten under `ACCESS EXCLUSIVE` (in the test, the table's storage file changed and all 1,000 rows got distinct ids). A plain nullable column needs nothing."
+        },
+        {
+          "id": "concurrently-in-transaction",
+          "prompt": "A migration file contains only `CREATE INDEX CONCURRENTLY orders_status_idx ON orders (status);` and fails with `25001: CREATE INDEX CONCURRENTLY cannot run inside a transaction block`. Why?",
+          "options": [
+            { "id": "tool-transaction", "text": "The migration tool wraps each migration in a transaction; this one has to run outside it" },
+            { "id": "syntax", "text": "`CONCURRENTLY` goes after the table name" },
+            { "id": "lock", "text": "Another migration is holding a lock on `orders`" },
+            { "id": "unique", "text": "Concurrent builds are only allowed for unique indexes" }
+          ],
+          "answer": "tool-transaction",
+          "explanation": "A concurrent build commits in several steps internally (register the invalid index, scan, scan again), so it can't be part of an outer transaction. Many migration tools open one per migration by default, so check for the tool's per-migration opt-out. The same applies to a backfill procedure that `COMMIT`s per batch (`2D000` inside a transaction)."
+        },
+        {
+          "id": "fk-on-big-table",
+          "prompt": "You need a foreign key from `events.user_id` (300 million rows) to `users(id)` without blocking writes for the length of a full table check. How?",
+          "options": [
+            { "id": "not-valid", "text": "`ADD CONSTRAINT … FOREIGN KEY … NOT VALID`, then `VALIDATE CONSTRAINT` in a later step" },
+            { "id": "plain", "text": "A plain `ADD CONSTRAINT … FOREIGN KEY` — foreign keys are checked lazily" },
+            { "id": "index-first", "text": "Create an index on `events.user_id` first; then adding the constraint doesn't scan" },
+            { "id": "trigger", "text": "Skip the constraint; enforce it in application code" }
+          ],
+          "answer": "not-valid",
+          "explanation": "`NOT VALID` adds the constraint without checking existing rows, and every new insert and update is checked from then on. `VALIDATE CONSTRAINT` checks the old rows under `SHARE UPDATE EXCLUSIVE`, which doesn't block reads or writes — the manual's reasoning is that other transactions are already enforcing it for the rows they write. A plain `ADD` checks every row up front, index or no index. Application-only enforcement misses every other writer."
+        },
+        {
+          "id": "one-big-update",
+          "prompt": "Why is `UPDATE users SET display_name = fullname` (50 million rows, one statement) a poor backfill on a live table?",
+          "options": [
+            { "id": "one-transaction", "text": "It's one transaction: every updated row stays locked until it commits, and a failure near the end rolls everything back" },
+            { "id": "table-lock", "text": "`UPDATE` takes an `ACCESS EXCLUSIVE` lock on the whole table" },
+            { "id": "wrong-result", "text": "It copies the wrong values for rows updated during the backfill" },
+            { "id": "nothing", "text": "Nothing — one statement is always faster than many" }
+          ],
+          "answer": "one-transaction",
+          "explanation": "Row locks are held to the end of the transaction, so users editing their profiles wait on the backfill, and nothing is durable until the very end. Batches by primary-key range, each committed, keep locks brief, make progress resumable, and with `AND display_name IS NULL` are safe to re-run. An `UPDATE` takes `ROW EXCLUSIVE` on the table (it doesn't block reads or other writers to *other* rows), so the table-lock option is wrong."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-migrations",
+      "prompts": [
+        {
+          "id": "lock-timeout",
+          "prompt": "Make the migration give up after 2 seconds of waiting for its lock, instead of queueing every query behind it.",
+          "code": [
+            "SET ___ = '2s';",
+            "ALTER TABLE orders ADD COLUMN note text;"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["lock_timeout"] }],
+          "explanation": "`lock_timeout` aborts a statement that waits longer than the limit for a lock (`55P03`). The migration fails fast, traffic flows again, and you retry once the long transaction is gone. `statement_timeout` would also count the time spent running, which is the wrong thing to limit for a rewrite you meant to do."
+        },
+        {
+          "id": "index-concurrently",
+          "prompt": "Build an index on a live table without blocking inserts and updates.",
+          "code": "CREATE INDEX ___ orders_status_idx ON orders (status);",
+          "blanks": [{ "id": "b1", "accept": ["CONCURRENTLY"] }],
+          "explanation": "A plain `CREATE INDEX` lets reads continue but blocks writes until it's done. `CONCURRENTLY` keeps writes flowing at the cost of two table scans — and it can't run inside a transaction block, and leaves an invalid index behind if it fails."
+        },
+        {
+          "id": "not-valid-validate",
+          "prompt": "Add a foreign key that's enforced for new writes immediately, then check the existing rows without blocking writes.",
+          "code": [
+            "ALTER TABLE orders ADD CONSTRAINT orders_customer_fk",
+            "  FOREIGN KEY (customer_id) REFERENCES customers (id) NOT ___;",
+            "",
+            "ALTER TABLE orders ___ CONSTRAINT orders_customer_fk;"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["VALID"] },
+            { "id": "c2", "accept": ["VALIDATE"] }
+          ],
+          "explanation": "`NOT VALID` skips the scan of existing rows; the constraint still applies to every subsequent insert and update. `VALIDATE CONSTRAINT` scans the old rows under `SHARE UPDATE EXCLUSIVE`, which doesn't block reads or writes."
+        },
+        {
+          "id": "idempotent-batch",
+          "prompt": "One batch of a re-runnable backfill: only this id range, and only rows not yet filled in.",
+          "code": [
+            "UPDATE users SET display_name = fullname",
+            "WHERE id > $1 AND id <= $2",
+            "  AND display_name ___;"
+          ],
+          "blanks": [{ "id": "d1", "accept": ["IS NULL"] }],
+          "explanation": "The key range keeps each transaction small; `display_name IS NULL` makes the batch safe to re-run after a crash and stops it overwriting values the new code has already written."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-migrations",
+      "snippets": [
+        {
+          "id": "default-now-backfills",
+          "code": [
+            "-- orders has 100,000 rows created over the past two years",
+            "ALTER TABLE orders ADD COLUMN created_at timestamptz DEFAULT now();",
+            "SELECT count(DISTINCT created_at) FROM orders;"
+          ],
+          "question": "What's the count?",
+          "answer": "1",
+          "acceptable": ["1", "one", "1 — every row got the migration's timestamp"],
+          "explanation": "`now()` isn't volatile, so PostgreSQL evaluates the default once, at the moment of the `ALTER`, and every existing row reads that one value (stored in the table's metadata — no rewrite). Two years of orders now claim to have been created during the deploy. A column whose meaning is historical needs `NULL` for the past or a real backfill; the default is for new rows."
+        },
+        {
+          "id": "select-queues-behind-alter",
+          "code": [
+            "A: BEGIN; SELECT count(*) FROM orders;          -- transaction left open",
+            "B: ALTER TABLE orders ADD COLUMN status text;    -- waits for A",
+            "C: SELECT total FROM orders WHERE id = 1;        -- a plain read",
+            "-- A commits 1.5 seconds later"
+          ],
+          "question": "When does C's `SELECT` return?",
+          "answer": "After A commits — about 1.5 s later, once B has run",
+          "acceptable": ["after A commits", "~1.5 s later", "it waits behind B"],
+          "explanation": "C's lock doesn't conflict with A's — two readers — but it conflicts with B's *pending* `ACCESS EXCLUSIVE` request, and it queues behind it. In the test run C finished after about 1.7 s. With `SET lock_timeout = '500ms'` on B, B gave up after 500 ms and C returned right after."
+        },
+        {
+          "id": "using-cast-truncates",
+          "code": [
+            "-- name text: 'a much longer name than twenty chars'",
+            "ALTER TABLE t ALTER COLUMN name TYPE varchar(20);                          -- A",
+            "ALTER TABLE t ALTER COLUMN name TYPE varchar(20) USING name::varchar(20);  -- B"
+          ],
+          "question": "What do A and B each do?",
+          "answer": "A fails (value too long for type character varying(20)); B succeeds and truncates the value to 'a much longer name t'",
+          "acceptable": ["A errors, B truncates", "A: error; B: silently cut to 20 characters"],
+          "explanation": "Without `USING`, the conversion is an assignment cast, which rejects over-long values. An explicit cast to `varchar(20)` truncates instead — so the 'fixed' migration succeeds and quietly loses data, with no down migration that can bring it back. Narrowing a type is on the irreversible list for a reason."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+---
+id: wait-for-the-condition
+title: Wait for the condition, never for the clock
+---
+
+Pages are asynchronous: content arrives after a request, a toast appears after a save. The flaky way
+to deal with that is to sleep:
+
+```ts
+await page.getByRole("button", { name: "Save" }).click();
+await page.waitForTimeout(1000);                       // ❌ guess how long it takes
+expect(await page.getByText("Saved").isVisible()).toBe(true);
+```
+
+Too short on a slow CI machine and it fails; too long and every test pays for it. Playwright's API
+reference marks `waitForTimeout` *"Discouraged"*: *"Tests that wait for time are inherently flaky.
+Use Locator actions and web assertions that wait automatically."*
+
+Two kinds of waiting are built in.
+
+**Actions wait for the element to be ready.** Before `click()`, Playwright checks that the locator
+resolves to one element that is visible, stable (not animating), receives events (not covered by
+something else) and enabled — and retries until it is, or the action times out.
+
+**Web-first assertions retry until they pass.** `expect(locator).toBeVisible()`,
+`toHaveText`, `toHaveURL`, `toHaveCount` re-check the page until the condition holds, for up to
+5 seconds by default:
+
+```ts
+await page.getByRole("button", { name: "Save" }).click();
+await expect(page.getByText("Saved")).toBeVisible();   // ✓ waits as long as it takes, no longer
+```
+
+The difference from the first version is where the value is read. `await locator.isVisible()`
+answers **once, now**, and hands `expect` a plain `true` or `false` — the docs: *"the test won't wait
+a single second"*. Checked: with a "Saved" message that appears after 800 ms, the `isVisible()` test
+fails at once with `Expected: true, Received: false`; the web-first assertion passes as soon as the
+text appears.
+
+Every Playwright call returns a promise, so every call needs `await` — including the web-first
+`expect`. The lint rule `@typescript-eslint/no-floating-promises`, which Playwright's best-practice
+guide recommends, catches a missing one.

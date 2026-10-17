@@ -1,0 +1,31 @@
+---
+id: where-each-kind-runs
+title: Where each kind runs
+---
+
+"Where does it run" decides both speed and what the test is able to see.
+
+- **Unit and integration tests** run in a **Node process** — with Vitest, the default
+  `environment: "node"`. No DOM, no browser. An integration test may also talk to a real database
+  started for the test run.
+- **Component tests** need a DOM. Most run in a **simulated DOM inside Node** — jsdom or happy-dom —
+  which is fast and good enough for "is this text on screen after I click". Some run in a **real
+  browser** (Vitest's Browser Mode, Playwright's component testing) when the simulation isn't
+  enough.
+- **End-to-end tests** run in a **real browser** (Chromium, Firefox, WebKit) driven by a tool like
+  Playwright, against the app running locally or on a preview deployment.
+- **Smoke tests** run against the **deployed URL** itself, right after a deploy.
+
+The simulated DOM is the one to understand, because it looks like a browser and isn't one. Vitest's
+docs say jsdom and happy-dom *"only simulate a browser environment and not an actual browser"*. They
+build the element tree and fire events, but they don't lay the page out:
+
+```ts
+// @vitest-environment happy-dom
+document.body.innerHTML = `<button style="width:200px">Pay</button>`;
+document.querySelector("button")!.getBoundingClientRect().width; // 0
+```
+
+No layout means no sizes, no positions, no "this button is covered by the cookie banner", no
+"this text overflows on a phone". If the bug is visual or positional, a simulated DOM can't see it —
+however many component tests you write.

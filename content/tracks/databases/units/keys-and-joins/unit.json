@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 3,
+  "slug": "keys-and-joins",
+  "title": "Keys & joins: how tables point at each other",
+  "skills": ["databases", "sql", "postgres", "constraints", "joins", "data-modeling"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Choose between a surrogate (identity or UUID) and a natural primary key, knowing a key must not change and an identity has gaps",
+    "Pick the `ON DELETE` action for each foreign key (`CASCADE`, `SET NULL`, `RESTRICT`, the default `NO ACTION`) and index the referencing column yourself",
+    "Model one-to-many with a foreign key, and many-to-many with a join table whose composite primary key blocks duplicate links",
+    "Predict what `INNER` and `LEFT JOIN` return, including `count(*)` on a null-filled row, a `WHERE` that undoes a `LEFT JOIN`, and fan-out inflating a `sum`",
+    "Spot `NOT IN` returning nothing because of a `NULL`, and rewrite it with `NOT EXISTS`"
+  ],
+  "sources": [
+    { "title": "PostgreSQL 18 docs: Constraints", "url": "https://www.postgresql.org/docs/18/ddl-constraints.html" },
+    { "title": "PostgreSQL 18 docs: Identity Columns", "url": "https://www.postgresql.org/docs/18/ddl-identity-columns.html" },
+    { "title": "PostgreSQL 18 docs: Table Expressions (joined tables)", "url": "https://www.postgresql.org/docs/18/queries-table-expressions.html" },
+    { "title": "PostgreSQL 18 docs: Subquery Expressions (EXISTS, IN, NOT IN)", "url": "https://www.postgresql.org/docs/18/functions-subquery.html" },
+    { "title": "PostgreSQL 18 docs: Aggregate Functions", "url": "https://www.postgresql.org/docs/18/functions-aggregate.html" },
+    { "title": "PostgreSQL 18 docs: Sequence Manipulation Functions", "url": "https://www.postgresql.org/docs/18/functions-sequence.html" },
+    { "title": "PostgreSQL 18 docs: UUID Functions", "url": "https://www.postgresql.org/docs/18/functions-uuid.html" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-keys-and-joins", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-keys-and-joins",
+      "questions": [
+        {
+          "id": "which-join-for-report",
+          "prompt": "The report is \"every customer, with their number of orders — zero included\". Which join from `customers` to `orders`?",
+          "options": [
+            { "id": "left", "text": "`customers LEFT JOIN orders` — every customer appears, with `NULL` order columns when there's no match" },
+            { "id": "inner", "text": "`customers JOIN orders` — a join already includes every row of both tables" },
+            { "id": "right", "text": "`customers RIGHT JOIN orders` — the orders side is the one that might be missing" },
+            { "id": "subquery-only", "text": "No join can do this; it needs two separate queries" }
+          ],
+          "answer": "left",
+          "explanation": "An inner join keeps only rows that found a partner, so a customer with no orders vanishes from the report — the bug nobody notices because the remaining numbers look right. `LEFT JOIN` keeps every row of the left table and fills the right side with `NULL`. `RIGHT JOIN` keeps every *order*, which is the opposite of what's asked (and every order has a customer anyway)."
+        },
+        {
+          "id": "email-as-primary-key",
+          "prompt": "`users.email` is required and unique. Why do most schemas still give `users` a separate `id` primary key and make `email` just `UNIQUE`?",
+          "options": [
+            { "id": "changes", "text": "Emails change, and every foreign key stores a copy of the key it points at — so a change is refused, or (with `ON UPDATE CASCADE`) rewrites every referencing row" },
+            { "id": "text-not-allowed", "text": "A `text` column can't be a primary key in PostgreSQL" },
+            { "id": "no-index", "text": "A primary key on `email` wouldn't get an index, so lookups by email would be slow" },
+            { "id": "unique-weaker", "text": "Because `UNIQUE` is stronger than `PRIMARY KEY`, so `email` gets the better guarantee" }
+          ],
+          "answer": "changes",
+          "explanation": "A natural key is fine as long as it never changes. Emails do, and the key's value is copied into `orders.user_id`, `sessions.user_id` and every other table that points at the user — by default PostgreSQL refuses the update while references exist. A meaningless surrogate never needs changing, and `UNIQUE` on `email` keeps the guarantee. Text primary keys are allowed and every primary key gets a unique B-tree index; `UNIQUE` plus `NOT NULL` is *functionally almost the same* as a primary key, not stronger."
+        },
+        {
+          "id": "assignee-delete-rule",
+          "prompt": "`tasks.assignee_id` references `users(id)`. When someone leaves and their user row is deleted, their tasks should stay on the board, unassigned. Which `ON DELETE` action?",
+          "options": [
+            { "id": "set-null", "text": "`ON DELETE SET NULL` (with `assignee_id` nullable)" },
+            { "id": "cascade", "text": "`ON DELETE CASCADE`" },
+            { "id": "default", "text": "Nothing — the default handles it" },
+            { "id": "restrict", "text": "`ON DELETE RESTRICT`" }
+          ],
+          "answer": "set-null",
+          "explanation": "Ask what should happen to the *child*. The task should survive with no owner, which is `SET NULL` — and the column must allow `NULL` for that to work. `CASCADE` would delete the person's tasks along with them: silent data loss. The default (`NO ACTION`) and `RESTRICT` both refuse to delete the user while any task still points at them, which is right for invoices but not here."
+        },
+        {
+          "id": "fk-index",
+          "prompt": "You add `orders.customer_id bigint REFERENCES customers (id)`. Which index does PostgreSQL create because of that line?",
+          "options": [
+            { "id": "none", "text": "None — `customers.id` is already indexed as its primary key, and the referencing column `orders.customer_id` gets no index unless you create one" },
+            { "id": "referencing", "text": "An index on `orders.customer_id`, so the constraint can be checked" },
+            { "id": "both", "text": "One on each side of the relationship" },
+            { "id": "unique", "text": "A unique index on `orders.customer_id`" }
+          ],
+          "answer": "none",
+          "explanation": "The referenced side must already be a primary key or unique (so it's indexed). The referencing side is left to you: the manual says a foreign key does not automatically create an index on the referencing columns. Without one, deleting a customer — or looking up a customer's orders — scans `orders`. A *unique* index there would be a bug: it would allow one order per customer."
+        },
+        {
+          "id": "many-to-many-model",
+          "prompt": "Students take many courses; courses have many students. How do you model it?",
+          "options": [
+            { "id": "join-table", "text": "An `enrollments` table with `student_id` and `course_id` foreign keys and `PRIMARY KEY (student_id, course_id)`" },
+            { "id": "array", "text": "A `course_ids bigint[]` column on `students`" },
+            { "id": "fk-on-student", "text": "A `course_id` foreign key on `students`" },
+            { "id": "both-fks", "text": "A `course_id` on `students` and a `student_id` on `courses`" }
+          ],
+          "answer": "join-table",
+          "explanation": "Neither side can hold the relationship: a single `course_id` on `students` means one course per student. An array can hold many ids, but PostgreSQL can't put a foreign key on array elements, so nothing stops it pointing at a deleted course, and \"who is in course 7?\" means searching every array. A join table gives one row per link, a real foreign key on each side, a place for link data (`enrolled_at`, `grade`), and the composite key blocks enrolling the same student twice."
+        },
+        {
+          "id": "surrogate-on-join-table",
+          "prompt": "`team_members` has `id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY`, plus `team_id` and `user_id` foreign keys — and no other constraint. What can go wrong?",
+          "options": [
+            { "id": "duplicate-links", "text": "The same user can be added to the same team twice; nothing makes `(team_id, user_id)` unique" },
+            { "id": "nothing", "text": "Nothing — the primary key already makes each row unique" },
+            { "id": "fk-fails", "text": "The foreign keys won't work, because a join table can't have its own `id`" },
+            { "id": "slow-insert", "text": "Inserts fail once the identity sequence passes the number of users" }
+          ],
+          "answer": "duplicate-links",
+          "explanation": "The surrogate `id` makes each *row* unique, but two rows `(id 1, team 7, user 3)` and `(id 2, team 7, user 3)` are different rows describing the same link — and the duplicate shows up as a doubled member in every count. Uniqueness has to be declared on the columns that define the link: `PRIMARY KEY (team_id, user_id)` or a `UNIQUE (team_id, user_id)` alongside the `id`."
+        },
+        {
+          "id": "where-undoes-left-join",
+          "prompt": "`FROM customers c LEFT JOIN orders o ON o.customer_id = c.id WHERE o.total > 20` — customers with no orders are missing from the result. Why?",
+          "options": [
+            { "id": "where-after-join", "text": "`WHERE` runs after the join; for a customer with no orders `o.total` is `NULL`, `NULL > 20` isn't true, so the row is filtered out" },
+            { "id": "left-join-bug", "text": "A `LEFT JOIN` only keeps unmatched rows when there's no `WHERE` clause at all" },
+            { "id": "planner", "text": "The planner drops unmatched rows from any `LEFT JOIN` that has a `WHERE` clause, whatever the clause filters" },
+            { "id": "needs-outer", "text": "It needs `LEFT OUTER JOIN`; plain `LEFT JOIN` is an inner join" }
+          ],
+          "answer": "where-after-join",
+          "explanation": "The manual: a restriction in `ON` is processed before the join, one in `WHERE` after it. The left join does add Linus with `NULL` order columns; then `WHERE o.total > 20` evaluates to `NULL` for him and throws the row away. Move the condition into the join (`ON o.customer_id = c.id AND o.total > 20`) to filter which orders *match* without filtering which customers *appear*. (`EXPLAIN` shows the planner noticing: with the filter in `WHERE` it plans a plain inner join, because the results are identical.) `LEFT JOIN` and `LEFT OUTER JOIN` are the same thing."
+        },
+        {
+          "id": "not-in-with-null",
+          "prompt": "`SELECT email FROM users WHERE id NOT IN (SELECT user_id FROM invites)` returns no rows at all, though most users were never invited. `invites` has one row whose `user_id` is `NULL`. What's the fix?",
+          "options": [
+            { "id": "not-exists", "text": "`WHERE NOT EXISTS (SELECT 1 FROM invites i WHERE i.user_id = u.id)`" },
+            { "id": "in", "text": "Swap `NOT IN` for `IN` and negate in the application" },
+            { "id": "distinct", "text": "`NOT IN (SELECT DISTINCT user_id FROM invites)`" },
+            { "id": "coalesce-left", "text": "`WHERE coalesce(id, 0) NOT IN (SELECT user_id FROM invites)`" }
+          ],
+          "answer": "not-exists",
+          "explanation": "`x NOT IN (1, NULL)` means `x <> 1 AND x <> NULL`; the second comparison is `NULL`, so the whole condition is never true and every row is filtered out. `NOT EXISTS` only asks whether the subquery returned a row, so a `NULL` can't poison it. `DISTINCT` keeps the `NULL`. Wrapping the *left* side in `coalesce` changes nothing — the `NULL` is on the right. (Adding `WHERE user_id IS NOT NULL` to the subquery also works, but `NOT EXISTS` is the habit that doesn't depend on remembering.)"
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-keys-and-joins",
+      "prompts": [
+        {
+          "id": "fk-with-cascade",
+          "prompt": "A membership means nothing without its team: point `team_id` at `teams` and delete memberships along with their team.",
+          "code": "team_id bigint NOT NULL ___ teams (id) ON DELETE ___,",
+          "blanks": [
+            { "id": "a1", "accept": ["REFERENCES"] },
+            { "id": "a2", "accept": ["CASCADE"] }
+          ],
+          "explanation": "`REFERENCES teams (id)` is the foreign key. `ON DELETE CASCADE` deletes referencing rows when the referenced row goes — right for a child that's meaningless alone, wrong for anything you'd want to keep (use `SET NULL` or `RESTRICT` there)."
+        },
+        {
+          "id": "join-table-key",
+          "prompt": "Make adding the same user to the same team twice an error.",
+          "code": [
+            "CREATE TABLE team_members (",
+            "  team_id bigint NOT NULL REFERENCES teams (id) ON DELETE CASCADE,",
+            "  user_id bigint NOT NULL REFERENCES users (id) ON DELETE CASCADE,",
+            "  ___ (team_id, user_id)",
+            ");",
+            "CREATE ___ ON team_members (user_id);"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["PRIMARY KEY", "UNIQUE"] },
+            { "id": "b2", "accept": ["INDEX"] }
+          ],
+          "explanation": "A composite `PRIMARY KEY (team_id, user_id)` (or `UNIQUE`) declares that the pair identifies the link, so a second identical pair fails with `23505`. Its index is ordered by `team_id` first, so it doesn't serve lookups by `user_id` — and PostgreSQL never indexes a foreign key's referencing column for you — hence the second index."
+        },
+        {
+          "id": "filter-in-on",
+          "prompt": "Every customer, paired with any order over 20 — customers without one still appear.",
+          "code": [
+            "SELECT c.name, o.total",
+            "FROM customers c",
+            "___ JOIN orders o ON o.customer_id = c.id ___ o.total > 20;"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["LEFT", "LEFT OUTER"] },
+            { "id": "c2", "accept": ["AND"] }
+          ],
+          "explanation": "The condition goes in `ON`, joined with `AND`, so it decides which orders match. Put it in `WHERE` instead and it runs after the join, where the null-filled rows fail it and the customers without a big order vanish."
+        },
+        {
+          "id": "count-and-coalesce",
+          "prompt": "Count each customer's orders and total spend so that a customer with no orders shows `0` and `0`, not `1` and `NULL`.",
+          "code": [
+            "SELECT c.name, count(___) AS orders, ___(sum(o.total), 0) AS spent",
+            "FROM customers c LEFT JOIN orders o ON o.customer_id = c.id",
+            "GROUP BY c.id, c.name;"
+          ],
+          "blanks": [
+            { "id": "d1", "accept": ["o.id", "o.customer_id", "o.total"] },
+            { "id": "d2", "accept": ["coalesce"] }
+          ],
+          "explanation": "`count(*)` counts rows, and the null-filled row the left join adds is a row — so it reports 1. `count(o.id)` counts non-null values: 0. `sum` over no values is `NULL`; `coalesce(…, 0)` turns that into 0. (`count(o.customer_id)` or `count(o.total)` work too: any column of `o` that is never `NULL` in a real row does.)"
+        },
+        {
+          "id": "not-exists",
+          "prompt": "Users with no invite, written so a `NULL` in `invites.user_id` can't empty the result.",
+          "code": [
+            "SELECT email FROM users u",
+            "WHERE ___ (SELECT 1 FROM invites i WHERE i.user_id = u.id);"
+          ],
+          "blanks": [{ "id": "e1", "accept": ["NOT EXISTS"] }],
+          "explanation": "`EXISTS` is true if the subquery returns any row and false if it returns none — it never inspects the values, so it has no three-valued-logic trap. `NOT IN` against a list containing `NULL` is never true."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-keys-and-joins",
+      "snippets": [
+        {
+          "id": "count-star-left-join",
+          "code": [
+            "-- customers: Ada, Grace, Linus. orders: Ada has 2, Grace 1, Linus none.",
+            "SELECT c.name, count(*) AS orders",
+            "FROM customers c",
+            "LEFT JOIN orders o ON o.customer_id = c.id",
+            "GROUP BY c.id, c.name;"
+          ],
+          "question": "What does the `orders` column say for Linus?",
+          "answer": "1",
+          "acceptable": ["1", "one", "1, not 0"],
+          "explanation": "The `LEFT JOIN` gives Linus one row with every `o.` column `NULL`, and `count(*)` counts rows. `count(o.id)` counts non-null values and would say 0. This is the most common off-by-one in reporting queries: every customer with no orders is reported as having one."
+        },
+        {
+          "id": "not-in-null-empties",
+          "code": [
+            "-- users: ids 1, 2, 3.  invites.user_id: 1, NULL",
+            "SELECT id FROM users",
+            "WHERE id NOT IN (SELECT user_id FROM invites);"
+          ],
+          "question": "Which ids come back?",
+          "answer": "None — zero rows",
+          "acceptable": ["none", "no rows", "0 rows", "empty", "nothing"],
+          "explanation": "For id 2: `2 <> 1` is true, `2 <> NULL` is `NULL`, and `true AND NULL` is `NULL` — not true, so `WHERE` drops it. The same happens to every id. Most people predict `2, 3`. `NOT EXISTS (SELECT 1 FROM invites i WHERE i.user_id = users.id)` returns `2, 3`."
+        },
+        {
+          "id": "fan-out-sum",
+          "code": [
+            "-- order 1 has 3 line items worth 25 in total,",
+            "-- and 2 payments of 15 each (30 paid).",
+            "SELECT sum(i.qty * i.price) AS item_total, sum(p.amount) AS paid",
+            "FROM orders o",
+            "JOIN order_items i ON i.order_id = o.id",
+            "JOIN payments p    ON p.order_id = o.id",
+            "WHERE o.id = 1;"
+          ],
+          "question": "What are `item_total` and `paid`?",
+          "answer": "item_total 50, paid 90",
+          "acceptable": ["50 and 90", "50, 90", "doubled and tripled: 50 and 90"],
+          "explanation": "The two joins produce one row per (item, payment) pair: 3 × 2 = 6 rows. Each item appears twice (25 → 50) and each payment three times (30 → 90). Aggregate each child in its own subquery (`GROUP BY order_id`) and join the one-row results. `sum(DISTINCT p.amount)` is not a fix: the two payments are both 15, so it would say 15."
+        },
+        {
+          "id": "identity-gap",
+          "code": [
+            "-- customers.id is GENERATED ALWAYS AS IDENTITY; the last id handed out was 3.",
+            "BEGIN;",
+            "INSERT INTO customers (name) VALUES ('Rolled back');",
+            "ROLLBACK;",
+            "INSERT INTO customers (name) VALUES ('Margaret') RETURNING id;"
+          ],
+          "question": "What id does Margaret get?",
+          "answer": "5",
+          "acceptable": ["5", "five"],
+          "explanation": "The rolled-back insert drew 4 from the identity's sequence, and the manual is explicit that a value from `nextval` is never reclaimed when the transaction aborts — so concurrent inserts never wait on each other. Failed inserts and `INSERT … ON CONFLICT` leave gaps too. Ids are unique, not consecutive: never count rows with `max(id)`, and never use a sequence for numbers that must be gap-free."
+        }
+      ]
+    }
+  ]
+}

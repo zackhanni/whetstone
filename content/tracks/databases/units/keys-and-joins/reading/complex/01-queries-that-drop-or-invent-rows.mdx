@@ -1,0 +1,84 @@
+---
+id: queries-that-drop-or-invent-rows
+title: Three join queries that run fine and return the wrong rows
+---
+
+None of these raise an error. Each returns a plausible-looking result that's wrong.
+
+## 1. A `WHERE` on the right table undoes the `LEFT JOIN`
+
+"Every customer, with any orders over 20":
+
+```sql
+-- Wrong: Linus disappears
+SELECT c.name, o.total
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+WHERE o.total > 20;
+
+-- Right: the filter decides which orders match, not which customers survive
+SELECT c.name, o.total
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id AND o.total > 20;
+```
+
+The PostgreSQL manual puts it exactly: a restriction in `ON` is processed *before* the join, a
+restriction in `WHERE` *after* it. After the join, Linus's row has `o.total = NULL`, and
+`NULL > 20` isn't true, so `WHERE` throws him out — the outer join has silently become an inner
+join. With inner joins the two placements are equivalent; with outer joins they aren't.
+
+## 2. `NOT IN` against a column that holds a `NULL`
+
+"Users who haven't been invited":
+
+```sql
+SELECT email FROM users
+WHERE id NOT IN (SELECT user_id FROM invites);   -- invites.user_id is nullable
+```
+
+One invite row with `user_id = NULL` (an invite sent to an email address that has no account yet)
+and this returns **zero rows**, for every user. `3 NOT IN (1, NULL)` means `3 <> 1 AND 3 <> NULL`.
+The second comparison is `NULL` (unknown), `true AND NULL` is `NULL`, and `WHERE` keeps only rows
+that are `true`. The manual says it directly: if there's no equal value and at least one `NULL`,
+`NOT IN` yields null, not true.
+
+```sql
+SELECT email FROM users u
+WHERE NOT EXISTS (SELECT 1 FROM invites i WHERE i.user_id = u.id);
+```
+
+`EXISTS` asks only "did the subquery return any rows?", so a `NULL` row can't poison it. Make
+`NOT EXISTS` the habit; `NOT IN` is safe only against a list you know can't contain `NULL`. (`IN`
+doesn't have this problem: a `NULL` just fails to match.)
+
+## 3. Joining two children multiplies both
+
+An order with 3 line items and 2 payments of 15:
+
+```sql
+SELECT o.id, sum(i.qty * i.price) AS item_total, sum(p.amount) AS paid
+FROM orders o
+JOIN order_items i ON i.order_id = o.id
+JOIN payments p    ON p.order_id = o.id
+GROUP BY o.id;
+-- item_total 50 (really 25), paid 90 (really 30)
+```
+
+The join produces one row per *(item, payment)* pair: 3 × 2 = 6 rows. Each item is counted twice
+and each payment three times. This is **fan-out**: a join to a "many" side repeats the row on the
+"one" side, and joining to two unrelated "many" sides multiplies them together. Aggregate each child
+on its own first, then join the one-row-per-order results:
+
+```sql
+SELECT o.id, i.item_total, p.paid
+FROM orders o
+LEFT JOIN (SELECT order_id, sum(qty * price) AS item_total
+           FROM order_items GROUP BY order_id) i ON i.order_id = o.id
+LEFT JOIN (SELECT order_id, sum(amount) AS paid
+           FROM payments GROUP BY order_id) p    ON p.order_id = o.id;
+-- item_total 25, paid 30
+```
+
+The tell for fan-out is a total that's a clean multiple of the real one. `count(DISTINCT …)` can
+paper over a doubled count, but there's no `DISTINCT` fix for a doubled `sum` — two equal payments
+are two payments.

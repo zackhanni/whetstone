@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 3,
+  "slug": "testing-and-quality",
+  "title": "Testing & Quality",
+  "description": "What a test is for and which kind to write, then the mechanics with Vitest 4 and Playwright 1.64: the anatomy of a test and the async mistakes that make one pass without checking anything, stubs, spies, mocks and fakes, designing code so it can be tested (including the real rule behind \"you can't use enums in tests\"), configuring Vitest, and end-to-end tests that don't flake.",
+  "units": [
+    "what-to-test",
+    "kinds-of-tests",
+    "test-anatomy",
+    "test-doubles",
+    "designing-for-testability",
+    "vitest-in-practice",
+    "playwright-e2e"
+  ]
+}

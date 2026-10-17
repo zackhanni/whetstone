@@ -1,0 +1,58 @@
+---
+id: check-where-the-request-came-from
+title: Check where the request came from — Sec-Fetch-Site, then Origin
+---
+
+The server can ask the browser where a request came from, because modern browsers say so in
+headers that page script **cannot set or change**.
+
+**`Sec-Fetch-Site`** (Fetch Metadata; in every major browser since March 2023, per MDN) describes
+the relationship between the page that started the request and your server:
+
+| Value | Meaning |
+| --- | --- |
+| `same-origin` | same scheme, host and port as you |
+| `same-site` | a sibling on the same registrable domain (`uploads.example.com` → `app.example.com`) |
+| `cross-site` | anywhere else |
+| `none` | the user did it directly: typed URL, bookmark |
+
+**`Origin`** carries the initiating page's scheme, host and port (never the path). Browsers send it
+on cross-origin requests and on same-origin requests other than `GET`/`HEAD` (MDN), so it's
+present on the state-changing requests you care about. Sandboxed frames, `data:` documents and a
+few other cases send the literal string `null`.
+
+OWASP's guidance turns these into a guard for **non-safe methods** (`POST`, `PUT`, `PATCH`,
+`DELETE`):
+
+```ts
+const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
+const TRUSTED = new Set(["https://app.example.com"]);
+
+function isAllowed(method: string, headers: Headers): boolean {
+  if (SAFE.has(method)) return true;                  // safe methods must not change state anyway
+
+  const site = headers.get("sec-fetch-site");
+  if (site) return site === "same-origin";            // add "same-site" only if you trust every subdomain
+
+  const origin = headers.get("origin");               // fallback for browsers without Fetch Metadata
+  if (origin) return TRUSTED.has(origin);             // exact match, not origin.startsWith(…)
+
+  return false;                                       // neither header: not evidence of same-origin
+}
+```
+
+The details that make it correct:
+
+- **Exact comparison.** `origin.startsWith("https://app.example.com")` also accepts
+  `https://app.example.com.evil.test` — a domain anyone can register.
+- **Fail closed.** OWASP: "Missing headers and Origin: null are not evidence of a same-origin
+  request." Reject, unless another defence (a valid token) passes.
+- **Know your own origin behind a proxy.** If you compare against the `Host` header, take
+  `X-Forwarded-Host` only from a proxy you trust. Configuring the expected origin is simpler.
+
+**When to add a token as well.** If the endpoint must serve browsers without these headers, or
+`same-site` traffic can't be trusted, OWASP's token patterns still apply: the **synchronizer token**
+(a random value stored in the session and embedded in each form) for stateful apps, or the
+**signed double-submit cookie** for stateless ones. JSON APIs can also require a custom header
+such as `X-CSRF-Token`: a cross-site page can't add one without a CORS preflight your server would
+refuse.

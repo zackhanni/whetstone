@@ -1,0 +1,44 @@
+---
+id: what-each-kind-misses
+title: The bug each kind passes right over
+---
+
+Five real bugs from the same avatar-upload feature. For each, the cheapest test that would have
+caught it — and why the cheaper ones stayed green.
+
+**1. `isAllowedImage` accepts `.gif` but rejects `.GIF`.** A unit test with both spellings catches
+it in milliseconds. Every higher level *could* catch it too, but only if someone happened to upload
+an uppercase file in that test.
+
+**2. The handler passes the size in kilobytes; the validator expects bytes.** Each function passes
+its own unit tests — `isAllowedImage(…, 6_000_000)` is right, and the handler's unit test, with the
+validator replaced by a double, checks that it "calls the validator". The bug lives in the *wiring*.
+An **integration test** with the real handler and the real validator uploads a 6 MB file and
+expects a rejection.
+
+**3. The API team renames `avatarUrl` to `avatar_url`.** The web app's tests replace the HTTP client
+with a double that returns `{ avatarUrl }` — the shape as it was when the test was written. They
+stay green; production shows a broken image. A double freezes the other side's API at the day you
+wrote it. A **contract test** checks the web app's expectations against the API's real behaviour on
+every change to either side.
+
+**4. On phones, the "Save" button sits under the sticky footer.** The component test renders the
+form in happy-dom, clicks "Save" and passes: the simulated DOM has no layout, so nothing is ever
+"under" anything. An **end-to-end test** at a phone viewport fails: Playwright waits for the button
+to receive the click, then times out with `<footer> intercepts pointer events` in its log.
+
+**5. A deploy ships without the storage bucket's environment variable.** Every test in CI passes,
+because CI has its own configuration. Uploads fail in production. A **smoke test** against the
+deployed URL, run right after the deploy, catches it in a minute instead of when users complain.
+
+## The pattern
+
+Each bug sits at a boundary that the cheaper tests replace:
+
+- unit tests replace the neighbours, so they miss wiring;
+- tests with a stubbed client replace the other team's API, so they miss its changes;
+- a simulated DOM replaces the browser, so it misses layout;
+- CI replaces production, so it misses deploy configuration.
+
+That's why a healthy suite has several kinds: not for redundancy, but because each one is blind
+exactly where the one below it substitutes something.

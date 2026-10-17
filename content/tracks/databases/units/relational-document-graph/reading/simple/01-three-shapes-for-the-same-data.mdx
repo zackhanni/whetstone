@@ -1,0 +1,56 @@
+---
+id: three-shapes-for-the-same-data
+title: Three shapes for the same data
+---
+
+A shop has customers, orders with line items, products, and customers who follow each other.
+Each data model stores that differently — and the difference is **which questions are one step
+and which are many**.
+
+## Relational: facts in tables, connected by keys
+
+```text
+customers(id, name)   orders(id, customer_id, placed_at)   order_items(order_id, sku, qty, unit_price)
+```
+
+Each fact lives once; foreign keys and constraints keep the pieces consistent; any question —
+"revenue per product per month", "customers who bought X but not Y" — is a query, including ones
+nobody planned for. The price: showing one order means joining three tables.
+
+## Document: the aggregate stored whole
+
+```json
+{ "_id": 1001, "customer": { "id": 7, "name": "Ada" }, "placedAt": "2026-03-10T09:15:00Z",
+  "items": [ { "sku": "PEN", "qty": 2, "unitPrice": 1.5 }, { "sku": "PAD", "qty": 1, "unitPrice": 4 } ] }
+```
+
+The order and its items are one document: one read to show it, one atomic write to change it — in
+MongoDB an operation on a single document is atomic. MongoDB's modelling guide sums up the rule:
+data that's accessed together should be stored together. The price: questions that cut *across*
+documents ("revenue per product") have to dig into every order, and the customer's name copied into
+every order goes stale when it changes.
+
+## Graph: relationships as first-class data
+
+```text
+(:Customer {name: "Ada"})-[:FOLLOWS]->(:Customer {name: "Grace"})-[:FOLLOWS]->(:Customer {name: "Linus"})
+```
+
+Neo4j stores nodes, relationships and properties; relationships are stored alongside the nodes
+rather than reconstructed by joins at query time. "Who is within three follows of Ada?" is a short
+pattern. The price: it's a specialised system for traversals, not a general-purpose store for
+everything else the shop needs.
+
+## The question that decides
+
+Not "which is modern" or "which is fast" — but **what will you read together, what must stay
+consistent across records, and how deep do your relationship questions go?**
+
+| Mostly…                                                          | Fits       |
+| ---------------------------------------------------------------- | ---------- |
+| Many entities, cross-cutting queries, integrity rules            | Relational |
+| Self-contained aggregates read and written whole                 | Document   |
+| Multi-hop traversals of unknown depth over many connections      | Graph      |
+
+Most applications are mostly the first row, which is why a relational database is the usual
+default — and PostgreSQL's `jsonb` covers a surprising amount of the second row inside it.

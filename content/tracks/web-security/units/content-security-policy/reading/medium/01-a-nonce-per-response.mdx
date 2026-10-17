@@ -1,0 +1,57 @@
+---
+id: a-nonce-per-response
+title: A nonce per response, line by line
+---
+
+A plain Node server that sends a nonce-based policy. Run it and request the page twice: the two
+responses carry different nonces.
+
+```js
+import { createServer } from "node:http";
+import { randomBytes } from "node:crypto";
+
+createServer((req, res) => {
+  const nonce = randomBytes(16).toString("base64"); // 128 bits, fresh for this response
+  const csp = [
+    `script-src 'nonce-${nonce}' 'strict-dynamic'`,
+    "object-src 'none'",
+    "base-uri 'none'",
+  ].join("; ");
+
+  res.setHeader("Content-Security-Policy", csp);
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.end(`<!doctype html><script nonce="${nonce}" src="/app.js"></script>`);
+}).listen(3000);
+```
+
+```text
+$ curl -si localhost:3000 | grep -i content-security-policy
+Content-Security-Policy: script-src 'nonce-bfiayeQQooD+DrlcufrbdA==' 'strict-dynamic'; object-src 'none'; base-uri 'none'
+$ curl -si localhost:3000 | grep -i content-security-policy
+Content-Security-Policy: script-src 'nonce-DFsSSeZaNYL/9GSWRxdKMg==' 'strict-dynamic'; object-src 'none'; base-uri 'none'
+```
+
+Why each piece is there:
+
+- **`randomBytes(16)` inside the handler.** The nonce is a per-response secret. Generated once at
+  start-up, it would be printed in every page anyone loads — including the attacker's — and they'd
+  simply put it on their injected script. 16 bytes is the spec's recommended 128-bit
+  minimum, from a cryptographically secure source (`Math.random()` is not one).
+- **The same nonce in the header and on our tag**, and only on tags *we* wrote. MDN warns against
+  templating that adds the nonce to every `<script>` in the output: an injected tag would get one
+  too.
+- **`'strict-dynamic'`.** `app.js` is trusted because its tag has the nonce. Scripts *it* adds with
+  `document.createElement("script")` inherit that trust, so a bundler's chunk loader or a tag
+  manager works without listing every host. The next reading covers the catch.
+- **`object-src 'none'`.** Plugin content (`<object>`, `<embed>`) is an old route around script
+  restrictions; nothing modern needs it.
+- **`base-uri 'none'`.** An injected `<base href="https://evil.example">` would make the relative
+  `/app.js` load from the attacker's host — *with* our valid nonce on the tag. The spec uses exactly
+  this example. `base-uri` closes it, and it has to be stated explicitly because it doesn't fall
+  back to `default-src`.
+
+This is a **strict CSP**. MDN's version is a nonce- or hash-based `script-src` plus
+`object-src 'none'` and `base-uri 'none'`; the CSP Level 3 draft's version is nonces or hashes with
+`'strict-dynamic'`, plus `base-uri 'self'` or `'none'`. Notice what both leave out: a list of
+allowed hosts. Host allow-lists are, in MDN's words, "hard to get right" and "can be very large and
+hard to maintain".

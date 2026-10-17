@@ -1,0 +1,43 @@
+---
+id: where-the-session-token-lives
+title: HttpOnly cookie or localStorage — decide by what an XSS can do
+---
+
+Where the browser keeps your session token decides which attack you have to worry about. The
+`auth-over-http` unit covers how each option *works*; this is the security trade-off.
+
+| | `HttpOnly; Secure; SameSite` cookie | Token in `localStorage`, sent as `Authorization: Bearer` |
+| --- | --- | --- |
+| Sent automatically by the browser? | yes, so CSRF is possible | no, so CSRF isn't |
+| Readable by page JavaScript? | no | yes |
+| What an XSS gets | the ability to act as the user **while the tab is open** | **the token itself**, usable from the attacker's own machine until it expires |
+
+The cookie column needs CSRF defences — `SameSite`, the origin check, and for older browsers a
+token. The `localStorage` column needs none, which is why it's tempting. But it converts every XSS
+from "act inside the victim's tab" into "take the credential home". OWASP's HTML5 cheat sheet is
+direct: "Do not store session identifiers in local storage as the data is always accessible by
+JavaScript", while cookies "can mitigate this risk using the httpOnly flag".
+
+Don't overstate `HttpOnly`, though. From the `xss` unit: a script running in your page can still
+call `fetch('/api/…')`, and the browser still attaches the cookie. OWASP's CSRF cheat sheet:
+"Cross-Site Scripting (XSS) can defeat all CSRF mitigation techniques!" — the script can read a
+CSRF token from the page, and its requests are same-origin, so `Sec-Fetch-Site` says
+`same-origin`. `HttpOnly` limits the *damage* (no stolen token, nothing to reuse later); only
+preventing XSS prevents the attack.
+
+A sound default for a browser app with its own backend:
+
+```http
+Set-Cookie: __Host-session=…; Path=/; Secure; HttpOnly; SameSite=Lax
+```
+
+- `HttpOnly` — script can't read it, so an XSS can't take it home.
+- `Secure` — only sent over HTTPS.
+- `SameSite=Lax`, **written out** — only Chromium applies it by default.
+- The `__Host-` prefix — MDN: the browser rejects the cookie unless it has `Secure`, `Path=/` and
+  **no** `Domain`, so a sibling subdomain can't set or overwrite it.
+- Plus the server-side origin check on every state-changing request, because `SameSite` doesn't
+  separate sibling subdomains.
+
+`SameSite=Strict` is stronger still, at the cost of users arriving from external links looking
+logged out on their first request.

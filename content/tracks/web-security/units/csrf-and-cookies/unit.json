@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 3,
+  "slug": "csrf-and-cookies",
+  "title": "CSRF, SameSite cookies and where the session lives",
+  "skills": ["security", "csrf", "cookies", "nextjs"],
+  "difficulty": "core",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Explain how CSRF works — the browser attaches cookies to a request another site starts — and why a bearer-token API isn't exposed the same way",
+    "Predict whether a cookie is sent cross-site under `SameSite=Strict`, `Lax` and `None`, and which browsers apply `Lax` when the attribute is missing",
+    "Write a server-side guard that rejects cross-site state-changing requests with `Sec-Fetch-Site`, an exact `Origin` fallback, and fail-closed handling of missing headers",
+    "Explain what Next.js Server Actions check (POST only, `Origin` vs host, `allowedOrigins`) and what they leave to you",
+    "Choose where the session token lives — `HttpOnly` cookie or `localStorage` — by what an XSS can do with each"
+  ],
+  "sources": [
+    { "title": "OWASP Cheat Sheet: Cross-Site Request Forgery Prevention", "url": "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html" },
+    { "title": "OWASP Cheat Sheet: HTML5 Security (Local Storage)", "url": "https://cheatsheetseries.owasp.org/cheatsheets/HTML5_Security_Cheat_Sheet.html" },
+    { "title": "MDN: Set-Cookie (SameSite, HttpOnly, cookie prefixes)", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie" },
+    { "title": "MDN: Site (glossary)", "url": "https://developer.mozilla.org/en-US/docs/Glossary/Site" },
+    { "title": "MDN: Sec-Fetch-Site", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Sec-Fetch-Site" },
+    { "title": "MDN: Origin header", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Origin" },
+    { "title": "MDN: Third-party cookies", "url": "https://developer.mozilla.org/en-US/docs/Web/Privacy/Guides/Third-party_cookies" },
+    { "title": "MDN browser-compat-data (SameSite Lax-by-default support)", "url": "https://github.com/mdn/browser-compat-data" },
+    { "title": "Next.js docs: Data Security (Server Actions, allowed origins)", "url": "https://nextjs.org/docs/app/guides/data-security" },
+    { "title": "Next.js docs: serverActions (allowedOrigins)", "url": "https://nextjs.org/docs/app/api-reference/config/next-config-js/serverActions" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-csrf", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-csrf",
+      "questions": [
+        {
+          "id": "write-only",
+          "prompt": "A page on `evil.example` mounts a CSRF attack on your cookie-authenticated app. What can it actually do?",
+          "options": [
+            { "id": "send-not-read", "text": "Make the victim's browser send a state-changing request that carries the victim's cookies — without being able to read the response" },
+            { "id": "read-data", "text": "Read the victim's data from your API's responses" },
+            { "id": "steal-cookie", "text": "Copy the victim's session cookie to its own server" },
+            { "id": "run-script", "text": "Run JavaScript inside your origin" }
+          ],
+          "answer": "send-not-read",
+          "explanation": "CSRF borrows the browser's habit of attaching cookies by destination. The attacker chooses the request, and the browser adds the credentials, but the same-origin policy still stops `evil.example` reading the response, and the cookie value never leaves the browser. That's why CSRF targets actions (transfer, change email, delete) rather than data. Running script inside your origin is XSS, a different and worse bug."
+        },
+        {
+          "id": "bearer-not-ambient",
+          "prompt": "Your SPA's API authenticates only with an `Authorization: Bearer …` header that your own JavaScript adds to each `fetch`. A cross-site page auto-submits a form to that API. What happens?",
+          "options": [
+            { "id": "unauthenticated", "text": "The request arrives without the header, so it's unauthenticated: the browser never adds that header on its own" },
+            { "id": "forwarded", "text": "The browser forwards the `Authorization` header like a cookie, so the forgery succeeds" },
+            { "id": "samesite", "text": "It succeeds unless the API's responses set `SameSite`" },
+            { "id": "cors", "text": "CORS blocks the form submission before it's sent" }
+          ],
+          "answer": "unauthenticated",
+          "explanation": "CSRF needs credentials the *browser* attaches automatically — cookies, or HTTP authentication the browser remembers. A bearer token your code adds isn't one, so a page on another site can't make it appear. (That's a property of the token's transport, covered in `auth-over-http`; the trade-off is the XSS exposure of wherever you keep the token.) `SameSite` is a cookie attribute and doesn't apply. CORS doesn't block sending a form at all; it governs reading responses."
+        },
+        {
+          "id": "default-not-universal",
+          "prompt": "Your session cookie is set without a `SameSite` attribute. Which statement is accurate?",
+          "options": [
+            { "id": "chromium-only", "text": "Chromium browsers treat it as `Lax`; Firefox (by default) and Safari don't, so for their users it rides cross-site requests — set it explicitly" },
+            { "id": "all-lax", "text": "Every major browser has defaulted to `Lax` since 2020, so it's protected everywhere" },
+            { "id": "all-strict", "text": "Browsers default to `Strict`, which is the safest choice" },
+            { "id": "rejected", "text": "Modern browsers reject a cookie without `SameSite`" }
+          ],
+          "answer": "chromium-only",
+          "explanation": "Chrome made `Lax` the default in Chrome 80 (2020), and Edge followed. MDN's compat data lists Firefox's Lax-by-default only behind a preference, and Safari not at all. An unlabelled cookie is therefore protected for some users and not others, and even in Chromium the default comes with a two-minute window in which cross-site `POST`s still carry it. Label it."
+        },
+        {
+          "id": "subdomain-same-site",
+          "prompt": "The app is on `https://app.example.com`, with a `SameSite=Strict` session cookie. User uploads are served from `https://uploads.example.com`. An uploaded HTML page auto-submits a form to the app. Is the cookie sent?",
+          "options": [
+            { "id": "yes-same-site", "text": "Yes. Both share the registrable domain `example.com`, so the request is same-site and `SameSite` doesn't restrict it" },
+            { "id": "no-strict", "text": "No. `Strict` blocks every request from a different host" },
+            { "id": "no-origin", "text": "No. The two have different origins, and `SameSite` compares origins" },
+            { "id": "only-get", "text": "Only if the form uses `GET`" }
+          ],
+          "answer": "yes-same-site",
+          "explanation": "For `SameSite`, a site is the scheme plus the registrable domain, so sibling subdomains are the same site even though they're different origins. `Strict` only withholds the cookie on cross-*site* requests. This is the gap a server-side check closes: the browser reports `Sec-Fetch-Site: same-site`, and a guard that accepts only `same-origin` rejects it."
+        },
+        {
+          "id": "missing-headers",
+          "prompt": "A `POST` to a cookie-authenticated endpoint arrives with neither `Sec-Fetch-Site` nor `Origin`. What does OWASP's CSRF cheat sheet say to do?",
+          "options": [
+            { "id": "reject", "text": "Reject it unless another defence, such as a valid CSRF token, passes: missing headers aren't evidence of a same-origin request" },
+            { "id": "allow-curl", "text": "Allow it: every modern browser sends `Origin` on a `POST`, so it must be `curl`, which can't carry the victim's cookies" },
+            { "id": "check-referer", "text": "Allow it if the `User-Agent` looks like a real browser" },
+            { "id": "allow-get", "text": "Treat it as a `GET` and let it through" }
+          ],
+          "answer": "reject",
+          "explanation": "OWASP: \"Missing headers and Origin: null are not evidence of a same-origin request\" — fail closed unless something else proves the request is genuine. The \"must be curl\" reasoning is real: it's the trade-off Next.js makes for Server Actions, which let a request with no `Origin` through with a warning. But it's a judgment about which clients exist, and OWASP's default is stricter. `User-Agent` is set by whoever sends the request, and a method label changes nothing about what the handler does."
+        },
+        {
+          "id": "server-actions-check",
+          "prompt": "What does Next.js 16 do on its own to protect Server Actions from CSRF?",
+          "options": [
+            { "id": "post-and-origin", "text": "Accepts them only as `POST`, and aborts the action when the `Origin` header's host doesn't match `Host`/`X-Forwarded-Host` (or an `allowedOrigins` entry)" },
+            { "id": "token", "text": "Embeds a hidden CSRF token in every form that uses an action" },
+            { "id": "strict-cookies", "text": "Forces `SameSite=Strict` on every cookie the app sets" },
+            { "id": "secret-ids", "text": "Nothing is needed: action IDs are encrypted, so another site can't call an action" }
+          ],
+          "answer": "post-and-origin",
+          "explanation": "The data security guide describes both: actions can only be invoked with `POST`, and \"Server Actions in Next.js also compare the Origin header to the Host header (or X-Forwarded-Host). If these don't match, the request will be aborted.\" There's no token, and Next.js doesn't rewrite your cookie attributes. Action IDs are non-deterministic, but an attacker can read them from your page like any other markup, and the guide still says to treat actions as reachable via direct POST."
+        },
+        {
+          "id": "route-handler-gap",
+          "prompt": "Which of these gets no origin check from Next.js, even though it accepts cookie-authenticated `POST`s?",
+          "options": [
+            { "id": "route-handler", "text": "A `POST` function exported from `app/api/transfer/route.ts`" },
+            { "id": "form-action", "text": "A Server Action passed to `<form action={transfer}>`" },
+            { "id": "use-action-state", "text": "A Server Action called through `useActionState`" },
+            { "id": "client-import", "text": "A Server Action imported into a Client Component and called from an event handler" }
+          ],
+          "answer": "route-handler",
+          "explanation": "The origin comparison is part of how Next.js handles Server Actions, however they're invoked: form, `useActionState` or a direct call from client code. A Route Handler is your own HTTP endpoint, and Next.js documents no such check for it. If it authenticates with cookies, add the `Sec-Fetch-Site`/`Origin` guard yourself."
+        },
+        {
+          "id": "token-storage",
+          "prompt": "You're choosing between an `HttpOnly` session cookie and a token in `localStorage` sent as a bearer header. Which comparison is accurate?",
+          "options": [
+            { "id": "tradeoff", "text": "`localStorage` removes CSRF but lets any XSS read the token and use it elsewhere until it expires; the `HttpOnly` cookie needs CSRF defences, and an XSS can act through it only while the tab is open" },
+            { "id": "httponly-immune", "text": "An `HttpOnly` cookie makes the app immune to XSS" },
+            { "id": "ls-isolated", "text": "`localStorage` is encrypted per origin, so injected script can't read it" },
+            { "id": "equal", "text": "They're equivalent: an XSS can steal either one" }
+          ],
+          "answer": "tradeoff",
+          "explanation": "OWASP's HTML5 cheat sheet: \"Do not store session identifiers in local storage as the data is always accessible by JavaScript.\" An `HttpOnly` cookie can't be read by script, so it can't be exfiltrated. But it's not XSS immunity: the injected script can still call your API, and the browser attaches the cookie. `localStorage` isn't encrypted or shielded from scripts on the same origin. The cookie trades XSS token theft for CSRF exposure, and CSRF has cheap, reliable defences."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-csrf",
+      "prompts": [
+        {
+          "id": "session-cookie",
+          "prompt": "Set a session cookie the browser will only accept with `Secure`, `Path=/` and no `Domain`; hide it from page script; and say explicitly that cross-site POSTs mustn't carry it.",
+          "code": "Set-Cookie: ___session=abc123; Path=/; Secure; ___; SameSite=___",
+          "blanks": [
+            { "id": "k1", "accept": ["__Host-"] },
+            { "id": "k2", "accept": ["HttpOnly"] },
+            { "id": "k3", "accept": ["Lax", "Strict"] }
+          ],
+          "explanation": "The `__Host-` prefix makes the browser reject the cookie unless it's `Secure`, has `Path=/` and has no `Domain` (MDN), which locks it to this exact host. `HttpOnly` keeps `document.cookie` (and so an XSS) from reading it. `SameSite=Lax` withholds it from cross-site `POST`s, and `Strict` from all cross-site requests. Write it out, because only Chromium applies `Lax` by default."
+        },
+        {
+          "id": "guard-shape",
+          "prompt": "Finish the check for a state-changing request: trust Fetch Metadata first, fall back to an exact `Origin` match, and fail closed.",
+          "code": [
+            "const TRUSTED_ORIGINS = [\"https://app.example.com\"];",
+            "const site = req.headers[\"___\"];",
+            "if (site !== undefined) return site === \"___\";",
+            "const origin = req.headers[\"origin\"];",
+            "if (origin !== undefined) return TRUSTED_ORIGINS.___(origin);",
+            "return false;"
+          ],
+          "blanks": [
+            { "id": "g1", "accept": ["sec-fetch-site"] },
+            { "id": "g2", "accept": ["same-origin"] },
+            { "id": "g3", "accept": ["includes"] }
+          ],
+          "explanation": "`Sec-Fetch-Site` is set by the browser and can't be changed by page script; accepting only `same-origin` excludes sibling subdomains (`same-site`). For browsers without it, `Origin` must equal a trusted origin exactly: `includes` on an array of full origins, never `startsWith`. With neither header there's no evidence, so the request is refused."
+        },
+        {
+          "id": "allowed-origins",
+          "prompt": "Your Next.js 16 app sits behind a proxy whose public host is `my-proxy.com`, and the proxy doesn't forward that host. Let Server Actions accept requests from it and its subdomains.",
+          "code": [
+            "module.exports = {",
+            "  experimental: {",
+            "    serverActions: {",
+            "      ___: [\"my-proxy.com\", \"*.my-proxy.com\"],",
+            "    },",
+            "  },",
+            "};"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["allowedOrigins"] }],
+          "explanation": "`allowedOrigins` lists extra hosts whose `Origin` may invoke actions. Entries match the origin's host (plus port if present), and `*` covers exactly one label, so the bare `my-proxy.com` needs its own entry. If the proxy forwards the public host in `X-Forwarded-Host`, no entry is needed at all."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-csrf",
+      "snippets": [
+        {
+          "id": "starts-with-origin",
+          "code": [
+            "const trusted = \"https://app.example.com\";",
+            "const origins = [",
+            "  \"https://app.example.com\",",
+            "  \"https://app.example.com.evil.test\",",
+            "  \"https://app.example.com:8443\",",
+            "  \"null\",",
+            "];",
+            "console.log(origins.filter((o) => o.startsWith(trusted)).length);"
+          ],
+          "question": "How many origins does the prefix check accept?",
+          "answer": "3",
+          "acceptable": ["three"],
+          "explanation": "`startsWith` accepts the real origin, and also `app.example.com.evil.test` (a domain anyone can register) and the same host on another port, which is a different origin that may be a different service. Only `\"null\"` fails. An origin is an exact triple of scheme, host and port, so compare the whole string: `origin === trusted`, or an array's `includes(origin)` against a list of full origins. (Not `trusted.includes(origin)` on a single string: that's a substring test, and it accepts `https://app.example.co`.)"
+        },
+        {
+          "id": "allowed-origins-wildcard",
+          "code": [
+            "// Next.js 16.2's own matcher for serverActions.allowedOrigins",
+            "import { isCsrfOriginAllowed } from \"next/dist/server/app-render/csrf-protection.js\";",
+            "",
+            "const allowed = [\"*.my-proxy.com\"];",
+            "console.log(isCsrfOriginAllowed(\"app.my-proxy.com\", allowed));",
+            "console.log(isCsrfOriginAllowed(\"my-proxy.com\", allowed));",
+            "console.log(isCsrfOriginAllowed(\"eu.app.my-proxy.com\", allowed));"
+          ],
+          "question": "What three booleans are printed?",
+          "answer": "true, false, false",
+          "acceptable": ["true false false"],
+          "explanation": "`*` matches exactly one non-empty label, so `*.my-proxy.com` matches `app.my-proxy.com` but neither the bare `my-proxy.com` (no label to match) nor `eu.app.my-proxy.com` (two labels). That's why the docs list `my-proxy.com` and `*.my-proxy.com` as two entries, and why `**.my-proxy.com` exists for deeper subdomains. (This imports an internal Next.js module to show the behaviour; in an app you only write the config.)"
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-csrf", "challengeSlug": "csrf-request-guard" }
+  ]
+}

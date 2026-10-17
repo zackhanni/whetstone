@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "slug": "optimistic-stock-reservation",
+  "title": "Make a stock reservation safe under concurrent writers",
+  "skills": ["databases", "transactions", "locking"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "reserve-stock.ts",
+  "acceptanceCriteria": [
+    "With no other writer, the stock drops by `quantity` and the function resolves to the row as stored (new version included)",
+    "Reserving exactly the remaining stock succeeds (2 of 2 leaves 0)",
+    "Short stock at the first read rejects with `OutOfStockError` without attempting a write",
+    "A versioned write that changed 0 rows is never reported as success",
+    "After another writer commits first, it re-reads and retries, so both writes count (10 → 7 by them → 5 by you)",
+    "Stock is re-checked on every attempt: if the other writer left too little, it rejects with `OutOfStockError` and writes nothing",
+    "It gives up with `ConflictError` after exactly `maxAttempts` conflicting writes"
+  ]
+}

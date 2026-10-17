@@ -1,0 +1,86 @@
+---
+id: composite-column-order
+title: Composite indexes — the column order is the design
+---
+
+A multicolumn index on `(a, b)` is sorted by `a`, and by `b` only *within* each value of `a` —
+like a phone book sorted by surname, then first name. That one fact gives you the rules.
+
+The PostgreSQL manual states it precisely: **equality conditions on the leading columns, plus a
+range condition on the first column without an equality, limit how much of the index is read.**
+Conditions on later columns are checked inside the index (saving trips to the table), but they
+don't necessarily shrink the slice — only PostgreSQL 18's skip scan, below, sometimes can.
+
+## Equality first, then the range
+
+The query: one customer's orders in a three-month window, on a 200,000-row table (PostgreSQL 18,
+`EXPLAIN ANALYZE`, trimmed):
+
+```text
+WHERE customer_id = 42 AND created_at >= '2025-01-01' AND created_at < '2025-04-01'
+
+-- index on (created_at, customer_id)
+ Index Scan using orders_created_customer_idx on orders (actual time=0.833..4.499 rows=13.00 loops=1)
+   Index Cond: ((created_at >= …) AND (created_at < …) AND (customer_id = 42))
+   Buffers: shared hit=28 read=495
+
+-- index on (customer_id, created_at)
+ Bitmap Heap Scan on orders (actual time=0.033..0.050 rows=13.00 loops=1)
+   Buffers: shared hit=13 read=3
+   ->  Bitmap Index Scan on orders_customer_created_idx
+         Index Cond: ((customer_id = 42) AND (created_at >= …) AND (created_at < …))
+```
+
+Same 13 rows. With the range column first, the scan walks *every* order in those three months
+(about 129,000 index entries) and checks `customer_id` on each: 523 pages and 4.5 ms. With the
+equality column first, it jumps to customer 42 and reads only that customer's dates: 16 pages and
+0.05 ms.
+
+## The index can supply the ORDER BY
+
+"The newest 20 open orders":
+
+```sql
+CREATE INDEX orders_status_created_idx ON orders (status, created_at);
+
+SELECT * FROM orders WHERE status = 'open' ORDER BY created_at DESC LIMIT 20;
+```
+
+```text
+ Limit  (actual time=0.196..0.217 rows=20.00 loops=1)
+   ->  Index Scan Backward using orders_status_created_idx on orders
+         Index Cond: (status = 'open'::text)
+```
+
+Within `status = 'open'` the entries are already in `created_at` order, so PostgreSQL reads the
+last 20 backwards and stops. No `Sort` node; without the index the plan was a sequential scan of
+all 200,000 rows feeding a sort.
+
+## Leftmost prefix
+
+An index on `(customer_id, created_at)` serves `customer_id = ?`, and `customer_id = ? AND
+created_at …`. It is a poor fit for `created_at` alone: the dates are scattered across every
+customer's section of the index, so the planner will usually prefer another plan.
+
+**PostgreSQL 18 softens this rule with skip scan.** When the leading column has only a few
+distinct values, the planner can run one index search per value. With an index on
+`(status, created_at)` (two statuses), a query on `created_at` alone used it:
+
+```text
+ Bitmap Index Scan on orders_status_created_idx (actual time=0.141..0.142 rows=1440.00 loops=1)
+   Index Cond: ((created_at >= …) AND (created_at < …))
+   Index Searches: 5
+```
+
+`Index Searches` (new in PostgreSQL 18's `EXPLAIN ANALYZE` output) shows the skipping: several
+small searches instead of one scan of the whole index.
+
+With thousands of distinct leading values, skip scan doesn't pay and you're back to the rule. Don't
+design around skip scan; design so your hot queries have their equality columns leading.
+
+## The recipe
+
+1. Columns compared with `=` first (all of them).
+2. Then **one** range or sort column.
+3. Stop. The manual's advice: multicolumn indexes should be used sparingly, and more than three
+   columns is rarely helpful.

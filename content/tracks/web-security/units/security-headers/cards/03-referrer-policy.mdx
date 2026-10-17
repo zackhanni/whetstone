@@ -1,0 +1,23 @@
+---
+id: referrer-policy
+title: Referrer-Policy — how much of your URL leaves with each request
+---
+
+```http
+Referrer-Policy: strict-origin-when-cross-origin
+```
+
+Controls the `Referer` header browsers send when a page links to or loads from somewhere else.
+URLs carry more than you think: a reset token in a query string, an internal document ID in a path.
+
+`strict-origin-when-cross-origin` is the browser default when no valid policy is set (MDN), and
+OWASP's recommended value — set it explicitly rather than relying on the default:
+
+| Destination | What's sent |
+| --- | --- |
+| same origin | full URL, including path and query |
+| another origin, HTTPS → HTTPS | the origin only |
+| HTTPS → HTTP | nothing |
+
+For pages whose URLs themselves are secret, such as a password-reset link, use `no-referrer`.
+Avoid `unsafe-url`, which sends the full URL everywhere, even to plain-HTTP sites.

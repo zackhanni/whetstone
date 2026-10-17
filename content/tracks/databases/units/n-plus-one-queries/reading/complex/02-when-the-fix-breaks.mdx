@@ -1,0 +1,73 @@
+---
+id: when-the-fix-breaks
+title: When the N+1 fix breaks — LIMIT over a join, giant batches, nested results
+---
+
+## `LIMIT` counts joined rows, not parents
+
+"The 50 newest orders, with their items" as one join:
+
+```sql
+SELECT o.id, i.sku, i.qty
+FROM orders o
+JOIN order_items i ON i.order_id = o.id
+ORDER BY o.id DESC
+LIMIT 50;
+```
+
+With four items per order this returns 50 rows covering **13** orders — and the 13th is cut off
+after two of its items. `LIMIT` applies to the joined result, where each order appears once per
+item (the fan-out from the keys-and-joins unit). Page the parent first, then join:
+
+```sql
+SELECT o.id, i.sku, i.qty
+FROM (SELECT id FROM orders ORDER BY id DESC LIMIT 50) o
+JOIN order_items i ON i.order_id = o.id
+ORDER BY o.id DESC, i.sku;                    -- 200 rows, exactly 50 orders
+```
+
+or fetch the 50 orders, then their items with one `WHERE order_id = ANY($1)` batch. Keep the outer
+`ORDER BY`: the inner one only picks *which* 50 orders. Without a final sort the order "will depend
+on the scan and join plan types and the order on disk" (PostgreSQL docs); in a PostgreSQL 14 run
+with no index on `order_items.order_id`, a hash join returned the oldest of the 50 first.
+
+## Nested results in one round trip
+
+When the client wants a tree (orders, each with an `items` array), PostgreSQL can build it:
+
+```sql
+SELECT o.id, o.total,
+       (SELECT json_agg(json_build_object('sku', i.sku, 'qty', i.qty) ORDER BY i.sku)
+        FROM order_items i WHERE i.order_id = o.id) AS items
+FROM orders o
+ORDER BY o.id DESC
+LIMIT 50;
+```
+
+One query, one row per order, `LIMIT` counts orders. The correlated subquery runs per order *inside*
+the database — with an index on `order_items.order_id`, each run is an index lookup with no network
+round trip. (Supabase's nested
+`select('id, total, order_items(sku, qty)')` asks PostgREST for the same shape.) Note
+`json_agg` over no rows is `NULL`, not `[]` — `coalesce(…, '[]')` if the client expects an array.
+
+## Batches that are too big
+
+`WHERE id = ANY($1)` with 50,000 ids is still one query, but a large one: the whole list is sent,
+parsed and probed. Through PostgREST it's worse — supabase-js puts `.in('id', ids)` into the URL's
+query string, and HTTP only recommends that servers accept URIs of at least 8,000 octets (RFC 9110),
+so a long list can be rejected before PostgREST ever sees it. Chunk big batches (a few hundred ids
+per query), or move the work into SQL so the ids never leave the database: a join, or
+`WHERE customer_id IN (SELECT id FROM customers WHERE …)`.
+
+## Batched, but over-fetched
+
+The batch query is often written once and reused everywhere, so it grows to `SELECT *` "just in
+case". Every caller then pays for wide rows it never reads — `jsonb` blobs, long text. Select the
+columns the page shows; the query count isn't the only cost.
+
+<!--more-->
+
+**Choosing between a join and a batch.** A join is one round trip and lets the database pick the
+plan, but repeats the parent's columns on every child row and makes `LIMIT` subtle. Two queries
+(parents, then children by `ANY`) keep each result narrow and each `LIMIT` honest, at the cost of one
+extra round trip. Both are fine; N+1 isn't.

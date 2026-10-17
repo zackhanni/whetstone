@@ -1,0 +1,27 @@
+---
+id: a01-broken-access-control
+title: A01 Broken Access Control
+---
+
+Users acting outside their permissions: opening another user's record by changing an id (IDOR),
+calling a write endpoint the UI merely hides, editing a token or hidden field. Since 2025 this
+category also covers **SSRF** — a server-side `fetch(userSuppliedUrl)` that can reach internal
+services.
+
+```ts
+// app/api/invoices/[id]/route.ts
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const session = await auth();
+  if (!session) return new Response(null, { status: 401 });
+
+  // ❌ db.invoice.findUnique({ where: { id } }) returns anyone's invoice
+  const invoice = await db.invoice.findFirst({ where: { id, ownerId: session.userId } });
+  if (!invoice) return new Response(null, { status: 404 });
+  return Response.json(invoice);
+}
+```
+
+OWASP's fixes: enforce access control in trusted server-side code, deny by default, and check
+**ownership** on every record a request touches. Logging in proves who someone is, not what they
+may open.

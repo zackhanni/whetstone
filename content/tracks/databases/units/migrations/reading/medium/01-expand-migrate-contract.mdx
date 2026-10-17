@@ -1,0 +1,74 @@
+---
+id: expand-migrate-contract
+title: Expand, migrate, contract — a zero-downtime rename, step by step
+---
+
+Goal: rename `users.fullname` to `users.display_name`, with the app serving traffic the whole time.
+Five steps, each one compatible with every version of the code that can be running while it
+happens. Each line is a separate deploy or migration.
+
+## 1. Expand — migration
+
+```sql
+ALTER TABLE users ADD COLUMN display_name text;   -- nullable: old code is unaffected
+```
+
+## 2. Write both — deploy
+
+```ts
+await db.query(
+  "UPDATE users SET fullname = $1, display_name = $1 WHERE id = $2",
+  [name, userId],
+);
+// reads still use fullname
+```
+
+Inserts set both columns too. From now on every write keeps the new column current; rows nobody
+has touched since still have `display_name = NULL`.
+
+## 3. Migrate the old rows — backfill
+
+```sql
+UPDATE users SET display_name = fullname
+WHERE display_name IS NULL AND id > $1 AND id <= $2;     -- in batches; next example
+```
+
+The `IS NULL` makes it safe to re-run and safe to race with step 2's writes: a row the app already
+wrote is skipped.
+
+## 4. Read the new column — deploy
+
+```ts
+const { rows } = await db.query("SELECT display_name FROM users WHERE id = $1", [userId]);
+```
+
+Keep writing both for now: if this deploy is rolled back, the previous version reads `fullname`,
+and it must still be correct.
+
+If the new column should be required, add that now, without a long lock (the complex tier):
+`ADD CONSTRAINT … CHECK (display_name IS NOT NULL) NOT VALID`, then `VALIDATE`, then
+`SET NOT NULL`.
+
+## 5. Contract — deploy, then migration
+
+If `fullname` is `NOT NULL`, first `ALTER TABLE users ALTER COLUMN fullname DROP NOT NULL` —
+otherwise the inserts from the next deploy, which no longer set it, fail. Then deploy code that no
+longer mentions `fullname` at all. Then, once no running instance, worker or cron job uses the old
+version:
+
+```sql
+ALTER TABLE users DROP COLUMN fullname;
+```
+
+This is the only irreversible step, and it's last on purpose: until it runs, every earlier step can
+be undone by deploying the previous code. Many teams leave a gap of days before contracting.
+
+## The same shape fits most breaking changes
+
+- **Change a type** (`int` → `bigint`, or `text` → `timestamptz`): add the new column, write both,
+  backfill, switch reads, drop the old.
+- **Split a table**: create the new table, write both, backfill, switch reads, stop writing the old.
+- **Add a required column**: add it nullable or with a default, backfill, then constrain.
+
+What makes it work is the ordering rule: **schema changes that add things go before the code that
+uses them; schema changes that remove things go after the last code that used them is gone.**

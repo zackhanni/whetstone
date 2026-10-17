@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 3,
+  "slug": "playwright-e2e",
+  "title": "Playwright end-to-end tests that don't flake",
+  "skills": ["testing", "e2e-testing", "playwright"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Write locators in Playwright's recommended order — `getByRole` with an accessible name first, `getByTestId` as the fallback — and fix a strict-mode violation",
+    "Replace `waitForTimeout` and `expect(await locator.isVisible())` with auto-waiting actions and web-first assertions",
+    "Configure `webServer`, and explain how `reuseExistingServer` can run the suite against a different app already on the port",
+    "Diagnose flake — clicking before hydration, shared state, non-retrying assertions — and debug it with retries, traces and `--repeat-each`",
+    "Reuse a signed-in state with a setup project and `storageState`, and share setup through fixtures"
+  ],
+  "sources": [
+    { "title": "Playwright docs: Locators", "url": "https://playwright.dev/docs/locators" },
+    { "title": "Playwright docs: Auto-waiting (actionability)", "url": "https://playwright.dev/docs/actionability" },
+    { "title": "Playwright docs: Assertions", "url": "https://playwright.dev/docs/test-assertions" },
+    { "title": "Playwright docs: Page API (waitForTimeout)", "url": "https://playwright.dev/docs/api/class-page" },
+    { "title": "Playwright docs: Web server", "url": "https://playwright.dev/docs/test-webserver" },
+    { "title": "Playwright docs: Authentication", "url": "https://playwright.dev/docs/auth" },
+    { "title": "Playwright docs: Fixtures", "url": "https://playwright.dev/docs/test-fixtures" },
+    { "title": "Playwright docs: Retries", "url": "https://playwright.dev/docs/test-retries" },
+    { "title": "Playwright docs: Trace viewer", "url": "https://playwright.dev/docs/trace-viewer-intro" },
+    { "title": "Playwright docs: Best Practices", "url": "https://playwright.dev/docs/best-practices" },
+    { "title": "Next.js docs: Local development (next dev compiles on demand)", "url": "https://nextjs.org/docs/app/guides/local-development" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-playwright", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-playwright",
+      "questions": [
+        {
+          "id": "first-choice-locator",
+          "prompt": "Which locator does Playwright recommend for a row's \"Delete\" button?",
+          "options": [
+            { "id": "role", "text": "`page.getByRole(\"button\", { name: \"Delete\" })`" },
+            { "id": "css", "text": "`page.locator(\".btn-danger\")`" },
+            { "id": "xpath", "text": "`page.locator(\"//tr[3]/td[4]/button\")`" },
+            { "id": "testid", "text": "`page.getByTestId(\"delete-button\")`" }
+          ],
+          "answer": "role",
+          "explanation": "`getByRole` is first in Playwright's list because it matches how users and assistive technology see the page — a button named \"Delete\". A class is styling and an XPath is document structure; both change without the user noticing, which the docs call non-resilient. `getByTestId` works, but it's the fallback for when nothing a user can see identifies the element."
+        },
+        {
+          "id": "strict-mode",
+          "prompt": "`page.getByRole(\"button\", { name: \"Save\" }).click()` throws `strict mode violation … resolved to 2 elements`. What's the best fix?",
+          "options": [
+            { "id": "scope", "text": "Scope the locator to the region that matters, e.g. `page.getByRole(\"dialog\").getByRole(\"button\", { name: \"Save\" })`" },
+            { "id": "first", "text": "Add `.first()`" },
+            { "id": "force", "text": "Pass `{ force: true }` to `click()`" },
+            { "id": "wait", "text": "Add `waitForTimeout(500)` so one of them disappears" }
+          ],
+          "answer": "scope",
+          "explanation": "Strictness is Playwright refusing to guess which button you meant. Narrowing to the dialog (or giving the buttons distinct accessible names) says which one a user would press. `.first()` silences the error by picking by DOM order, which changes with layout. `force` only skips actionability checks, and sleeping doesn't make the locator unambiguous."
+        },
+        {
+          "id": "isvisible-snapshot",
+          "prompt": "\"Saved\" appears 800 ms after clicking Save. `expect(await page.getByText(\"Saved\").isVisible()).toBe(true)` fails immediately. Why?",
+          "options": [
+            { "id": "once", "text": "`isVisible()` answers once, right now, and hands `expect` a plain boolean; use `await expect(locator).toBeVisible()`, which retries" },
+            { "id": "timeout", "text": "The default 5 s assertion timeout is too short" },
+            { "id": "await", "text": "`isVisible()` must not be awaited" },
+            { "id": "hidden", "text": "`getByText` can't find text inside a toast" }
+          ],
+          "answer": "once",
+          "explanation": "Only web-first assertions (`expect(locator).toBeVisible()`, `toHaveText`, …) re-check the page until the condition holds. `isVisible()` is a one-off read; by the time `expect` sees `false`, there's nothing left to retry. The 5 s default would be plenty — it just never applied to a boolean."
+        },
+        {
+          "id": "why-not-sleep",
+          "prompt": "A suite uses `await page.waitForTimeout(1000)` before its assertions and currently passes. What's wrong with it?",
+          "options": [
+            { "id": "race", "text": "It's a race against machine speed — too short on a slow CI run, wasted time everywhere else; wait for the condition instead" },
+            { "id": "nothing", "text": "Nothing, as long as it passes" },
+            { "id": "removed", "text": "`waitForTimeout` was removed in Playwright 1.6x" },
+            { "id": "parallel", "text": "It blocks every parallel worker for a second" }
+          ],
+          "answer": "race",
+          "explanation": "Playwright marks `waitForTimeout` Discouraged: tests that wait for time are inherently flaky. A fixed sleep guesses how long something takes; a web-first assertion waits exactly as long as needed and fails with a useful message if it never happens. It still exists, and it only pauses its own test."
+        },
+        {
+          "id": "wrong-app",
+          "prompt": "Locally, `reuseExistingServer: true` and `url: \"http://localhost:3000\"`. A trace shows a page from a *different* project. What happened?",
+          "options": [
+            { "id": "reused", "text": "Another project's dev server was already on :3000; Playwright saw the URL answer and reused it without checking which app it was" },
+            { "id": "cache", "text": "The browser served a cached page from an earlier run" },
+            { "id": "baseurl", "text": "`baseURL` was ignored because `webServer` was set" },
+            { "id": "ci", "text": "`reuseExistingServer` only works in CI" }
+          ],
+          "answer": "reused",
+          "explanation": "\"Available\" means the URL answered with an accepted status (2xx, 3xx, 400–403) — nothing checks identity. Your command never ran. Give each project its own port, use a readiness URL only your app serves (e.g. `/api/health`, which another app would 404, so Playwright tries to start yours and fails loudly on the busy port), and keep `reuseExistingServer: !process.env.CI`."
+        },
+        {
+          "id": "pre-hydration-click",
+          "prompt": "Under `next dev`, a test fills the \"New todo\" field and clicks Add right after `goto`. The URL becomes `/todos?title=Buy+milk` and no todo is added. Why?",
+          "options": [
+            { "id": "hydration", "text": "The click landed before React hydrated, so the browser submitted the plain HTML form as a GET instead of running `onSubmit`" },
+            { "id": "not-visible", "text": "Playwright clicked before the button was visible" },
+            { "id": "server", "text": "The server rejected the POST and redirected" },
+            { "id": "strict", "text": "The locator matched two buttons and Playwright clicked the wrong one" }
+          ],
+          "answer": "hydration",
+          "explanation": "The server-rendered button is visible, enabled and stable before any JavaScript runs, so Playwright's actionability checks pass. Until hydration attaches the handler that calls `preventDefault()`, the form does what HTML forms do: GET its URL with the fields as a query string. Wait for a hydration signal (or test a production build, where hydration is quicker) before interacting."
+        },
+        {
+          "id": "auth-file",
+          "prompt": "Why should `playwright/.auth/user.json` be git-ignored?",
+          "options": [
+            { "id": "secret", "text": "It holds a live session — cookies and headers that could impersonate the test account" },
+            { "id": "large", "text": "It's too large to commit" },
+            { "id": "regen", "text": "Playwright refuses to read a committed state file" },
+            { "id": "binary", "text": "It's a binary file that breaks diffs" }
+          ],
+          "answer": "secret",
+          "explanation": "`storageState` writes cookies and local storage to disk — a working login. Playwright's docs strongly discourage committing it to any repository, public or private. The setup project rewrites it before each run anyway, so nothing is lost by ignoring it."
+        },
+        {
+          "id": "flaky-label",
+          "prompt": "With `retries: 2`, a test fails, then passes on retry, and the report marks it **flaky**. What should you do?",
+          "options": [
+            { "id": "investigate", "text": "Treat it as a bug: open the retry's trace, and reproduce with `--repeat-each`" },
+            { "id": "ignore", "text": "Nothing — it passed in the end" },
+            { "id": "more-retries", "text": "Raise `retries` to 5 so it passes more reliably" },
+            { "id": "sleep", "text": "Add a `waitForTimeout` before the failing step" }
+          ],
+          "answer": "investigate",
+          "explanation": "Playwright reports \"flaky\" separately from passed precisely so it isn't mistaken for green: something in the test or the app is nondeterministic. `trace: \"on-first-retry\"` captures what differed, and `--repeat-each=20` makes a 1-in-20 failure show up locally. More retries and sleeps hide the race; they don't remove it."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-playwright",
+      "prompts": [
+        {
+          "id": "role-and-web-first",
+          "prompt": "Click the button by role and name, then assert with a web-first assertion that waits for the list.",
+          "code": [
+            "await page.___(\"button\", { name: \"Add\" }).click();",
+            "___ expect(page.getByRole(\"listitem\")).toHaveText([\"Buy milk\"]);"
+          ],
+          "blanks": [
+            { "id": "get-by-role", "accept": ["getByRole"] },
+            { "id": "await", "accept": ["await"] }
+          ],
+          "explanation": "`getByRole` plus the accessible name is the recommended first choice. Web-first assertions are async and retry until they pass, so they must be awaited — without `await`, the test can finish before the check runs."
+        },
+        {
+          "id": "reuse-locally",
+          "prompt": "Reuse an already-running dev server locally, but always start a fresh one in CI.",
+          "code": [
+            "webServer: {",
+            "  command: \"pnpm dev\",",
+            "  url: \"http://localhost:3002/api/health\",",
+            "  reuseExistingServer: ___,",
+            "},"
+          ],
+          "blanks": [{ "id": "not-ci", "accept": ["!process.env.CI", "!process.env[\"CI\"]"] }],
+          "explanation": "That's the value Playwright's docs recommend. In CI nothing should already be listening, so an occupied port fails loudly instead of being reused. The `/api/health` readiness URL adds a second guard: another app on the port would answer it with a 404."
+        },
+        {
+          "id": "trace-on-retry",
+          "prompt": "Record a trace only when a failed test is retried.",
+          "code": "use: { trace: \"___\" },",
+          "blanks": [{ "id": "trace", "accept": ["on-first-retry"] }],
+          "explanation": "Passing runs stay cheap, and every failure that gets retried leaves a trace — DOM snapshots per action, console and network — that you open with `npx playwright show-report` or `npx playwright show-trace`."
+        },
+        {
+          "id": "setup-project",
+          "prompt": "Save the signed-in state in the setup test, and make the browser project wait for setup.",
+          "code": [
+            "// auth.setup.ts",
+            "await page.context().___({ path: \"playwright/.auth/user.json\" });",
+            "",
+            "// playwright.config.ts",
+            "{ name: \"chromium\", use: { storageState: \"playwright/.auth/user.json\" }, ___: [\"setup\"] }"
+          ],
+          "blanks": [
+            { "id": "storage-state", "accept": ["storageState"] },
+            { "id": "dependencies", "accept": ["dependencies"] }
+          ],
+          "explanation": "`context().storageState({ path })` writes cookies and local storage to a file; the project's `use.storageState` loads it into every test's fresh context. `dependencies` makes the setup project run first."
+        },
+        {
+          "id": "custom-fixture",
+          "prompt": "Define a fixture that opens the todo page; the test runs where the fixture hands control over.",
+          "code": [
+            "export const test = base.___<{ todoPage: TodoPage }>({",
+            "  todoPage: async ({ page }, use) => {",
+            "    await page.goto(\"/todos\");",
+            "    await ___(new TodoPage(page));",
+            "  },",
+            "});"
+          ],
+          "blanks": [
+            { "id": "extend", "accept": ["extend"] },
+            { "id": "use", "accept": ["use"] }
+          ],
+          "explanation": "`test.extend` returns a new `test` with the fixture available by name. Code before `use(...)` is setup, code after it is teardown — and it runs even when the test fails, and only for tests that ask for `todoPage`."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-playwright",
+      "snippets": [
+        {
+          "id": "reused-other-app",
+          "code": [
+            "// playwright.config.ts",
+            "webServer: { command: \"PORT=4610 node my-app.mjs\", url: \"http://localhost:4610\", reuseExistingServer: true }",
+            "",
+            "// heading.spec.ts — my-app's <h1> is \"My Todos\"",
+            "await page.goto(\"/\");",
+            "await expect(page.getByRole(\"heading\", { level: 1 })).toHaveText(\"My Todos\");",
+            "",
+            "// Before the run, another project's server is already listening on :4610,",
+            "// serving <h1>Some Other Project</h1>."
+          ],
+          "question": "What happens when you run the test?",
+          "answer": "It fails: Expected \"My Todos\", Received \"Some Other Project\"",
+          "acceptable": ["it fails against the other app", "fails, received Some Other Project"],
+          "explanation": "Playwright saw the URL answer, reused the server, and never ran `my-app.mjs` — the test ran against the other project. A heading check made it visible; a status-only check would have passed. With `reuseExistingServer: false` the run stops before any test with \"http://localhost:4610 is already used\"."
+        },
+        {
+          "id": "pre-hydration-url",
+          "code": [
+            "// /todos is server-rendered:",
+            "// <form><label>New todo <input name=\"title\"></label><button>Add</button></form>",
+            "// The onSubmit handler (preventDefault + add item) attaches only after hydration,",
+            "// which takes ~1.5 s here.",
+            "",
+            "await page.goto(\"/todos\");",
+            "await page.getByLabel(\"New todo\").fill(\"Buy milk\");",
+            "await page.getByRole(\"button\", { name: \"Add\" }).click();",
+            "console.log(page.url());"
+          ],
+          "question": "What URL is printed (baseURL `http://localhost:4610`)?",
+          "answer": "http://localhost:4610/todos?title=Buy+milk",
+          "acceptable": ["/todos?title=Buy+milk", "the page reloaded with ?title=Buy+milk"],
+          "explanation": "Playwright's checks passed — the button was visible, enabled and stable in the server HTML — so it clicked at once. No handler existed yet, so the browser submitted the form natively: a GET with the field in the query string, and a full page load instead of a new todo. Waiting for a hydration signal first keeps the URL at `/todos`."
+        },
+        {
+          "id": "isvisible-vs-tobevisible",
+          "code": [
+            "// \"Saved\" appears 800 ms after page load.",
+            "",
+            "test(\"C\", async ({ page }) => {",
+            "  await page.goto(\"/\");",
+            "  expect(await page.getByText(\"Saved\").isVisible()).toBe(true);",
+            "});",
+            "",
+            "test(\"D\", async ({ page }) => {",
+            "  await page.goto(\"/\");",
+            "  await expect(page.getByText(\"Saved\")).toBeVisible();",
+            "});"
+          ],
+          "question": "Which test passes?",
+          "answer": "D passes; C fails at once with Expected: true, Received: false",
+          "acceptable": ["D", "only D", "D passes, C fails"],
+          "explanation": "C reads visibility once, immediately after load, before the text exists. D's web-first assertion re-checks until the text appears (within the 5 s default) and passes after about 800 ms."
+        }
+      ]
+    }
+  ]
+}

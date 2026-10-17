@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "slug": "testable-resend-cooldown",
+  "title": "Make the resend-code cooldown testable",
+  "skills": ["testing", "testability", "react"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "ResendButton.tsx",
+  "acceptanceCriteria": [
+    "`resendLabel(now, lastSentAt)` is exported and counts down from the `now` it is given, not the real clock",
+    "Exactly 60 s after a send, the label is \"Resend code\"",
+    "The seconds left round up, so the label never says \"Resend in 0s\"",
+    "`createCodeSender({ now, send })` sends the first code at once, refuses inside the cooldown without sending (returning the seconds to wait, rounded up), and sends again once 60 s have passed on the injected clock",
+    "Two requests in quick succession — a double click — send only one code",
+    "If `send` fails, the request rejects with that error and doesn't start the cooldown, so the user can ask again at once",
+    "Two senders keep separate cooldowns"
+  ]
+}

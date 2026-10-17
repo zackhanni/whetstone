@@ -1,0 +1,54 @@
+---
+id: one-fact-one-place
+title: One fact, one place — what duplication costs
+---
+
+A spreadsheet-shaped `orders` table, with the customer's email copied onto every order:
+
+| order_id | customer_id | customer_email | total |
+| -------- | ----------- | -------------- | ----- |
+| 1        | 7           | ada@old.io     | 30.00 |
+| 2        | 7           | ada@old.io     | 12.50 |
+| 3        | 8           | grace@x.io     | 99.00 |
+
+It looks harmless, and reading it is easy. Writing to it is where it breaks — in three ways,
+traditionally called **anomalies**:
+
+- **Update anomaly.** Ada changes her email. The account page updates the row for her latest
+  order. Now the database holds two emails for customer 7 and no way to tell which is current:
+
+  ```sql
+  UPDATE orders SET customer_email = 'ada@new.io' WHERE order_id = 2;
+  SELECT DISTINCT customer_email FROM orders WHERE customer_id = 7;
+  -- ada@new.io
+  -- ada@old.io
+  ```
+
+- **Insert anomaly.** A customer signs up but hasn't ordered. There's nowhere to store their
+  email without inventing an order.
+- **Delete anomaly.** Grace cancels her only order and you delete the row. Her email is gone
+  with it.
+
+All three have one cause: a fact about the *customer* is stored in a table about *orders*, once
+per order. The fix is to give each fact one home and point at it:
+
+```sql
+CREATE TABLE customers (
+  id    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email text NOT NULL UNIQUE
+);
+
+CREATE TABLE orders (
+  id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  customer_id bigint NOT NULL REFERENCES customers (id),
+  total       numeric(10,2) NOT NULL
+);
+```
+
+Now an email change is one `UPDATE` of one row, a customer can exist with no orders, and deleting
+an order can't lose a customer. Reading the email next to an order costs a join — that's the
+trade normalization makes: **a little more work to read, so that a write can't make the data
+contradict itself.**
+
+That's the whole idea behind the normal forms you'll meet next: they're rules for spotting a
+fact that's stored in more than one place.

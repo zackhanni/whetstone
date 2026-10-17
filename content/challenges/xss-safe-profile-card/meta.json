@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 3,
+  "slug": "xss-safe-profile-card",
+  "title": "Make the profile card safe to render",
+  "skills": ["security", "xss", "react"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "ProfileCard.tsx",
+  "acceptanceCriteria": [
+    "Markup in `bio` is shown as text: no element is created from it",
+    "A `\"` in `name` or `avatarUrl` can't add an attribute to the avatar `<img>`; `alt` and `src` hold the raw strings",
+    "`website` becomes a link only when it parses as an absolute `http:` or `https:` URL; anything else (any casing or padding of `javascript:`, even a tab inside the word, `data:`, `vbscript:`, or a bare `ann.dev`) is shown as plain text",
+    "A valid `http` or `https` website still links to that URL"
+  ]
+}

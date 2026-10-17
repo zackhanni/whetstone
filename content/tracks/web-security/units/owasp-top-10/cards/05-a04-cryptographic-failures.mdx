@@ -1,0 +1,24 @@
+---
+id: a04-cryptographic-failures
+title: A04 Cryptographic Failures
+---
+
+Sensitive data unprotected in transit or at rest, weak or deprecated algorithms (MD5, SHA-1),
+keys committed to repositories, and randomness that isn't cryptographically secure.
+
+```ts
+import { randomBytes, scrypt } from "node:crypto";
+import { promisify } from "node:util";
+
+const resetToken = randomBytes(32).toString("base64url");   // not Math.random()
+const salt = randomBytes(16);
+const hash = await promisify(scrypt)(password, salt, 64);   // not sha256(password)
+```
+
+Two classic Node mistakes: a reset token from `Math.random()` (predictable, not a CSPRNG), and a
+password stored as a fast hash, which is cheap to brute-force. OWASP names slow, salted, adaptive
+functions for passwords: Argon2, yescrypt, scrypt, PBKDF2-HMAC-SHA-512 (bcrypt only for legacy
+systems).
+
+In transit: TLS 1.2 or later everywhere, enforced with HSTS. Keys belong in a secrets manager or
+the platform's environment, never in the repository.

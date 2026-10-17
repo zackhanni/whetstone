@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 3,
+  "slug": "web-security",
+  "title": "Web Security",
+  "description": "The attacks a web app actually meets and the defences that stop them: XSS and what React does and doesn't escape, Content-Security-Policy with nonces, CSRF with SameSite cookies and origin checks, keeping secrets out of the client bundle and out of git, the security headers worth sending, and the OWASP Top 10 (2025) as reference cards.",
+  "units": [
+    "xss",
+    "content-security-policy",
+    "csrf-and-cookies",
+    "secrets-and-config",
+    "security-headers",
+    "owasp-top-10"
+  ]
+}

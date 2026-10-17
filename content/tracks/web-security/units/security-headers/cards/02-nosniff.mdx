@@ -1,0 +1,21 @@
+---
+id: nosniff
+title: X-Content-Type-Options — no MIME sniffing
+---
+
+```http
+X-Content-Type-Options: nosniff
+```
+
+Tells the browser to believe your `Content-Type` instead of guessing from the bytes. Without it, a
+user-uploaded file served as `text/plain` that happens to contain HTML could be rendered as a page
+on your origin.
+
+With `nosniff`:
+
+- a response loaded as a **script** is blocked unless its type is a JavaScript MIME type, and one
+  loaded as a **stylesheet** unless it's `text/css`;
+- other responses, navigations included, use the declared `Content-Type` as-is.
+
+It's the only valid value, and it has a precondition: every resource must be served with the right
+`Content-Type`, or your own scripts and styles get blocked.

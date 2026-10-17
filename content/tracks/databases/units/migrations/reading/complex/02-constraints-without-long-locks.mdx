@@ -1,0 +1,77 @@
+---
+id: constraints-without-long-locks
+title: Adding constraints without long locks, and the changes you can't take back
+---
+
+Adding a constraint to a populated table means checking every existing row. Done in one step, that
+check runs under a lock that blocks writes. The pattern for each kind is the same: **start enforcing
+for new writes now, check the old rows separately, under a weaker lock.**
+
+## Foreign keys and `CHECK`: `NOT VALID`, then `VALIDATE`
+
+```sql
+ALTER TABLE orders
+  ADD CONSTRAINT orders_customer_fk FOREIGN KEY (customer_id) REFERENCES customers (id) NOT VALID;
+-- fast: skips the scan; every insert and update from now on is checked
+
+ALTER TABLE orders VALIDATE CONSTRAINT orders_customer_fk;
+-- scans the existing rows under SHARE UPDATE EXCLUSIVE: reads and writes continue
+```
+
+The manual's reasoning: validation doesn't need to lock out writers, because they're already
+enforcing the constraint on the rows they touch — only the pre-existing rows need checking. If
+`VALIDATE` finds a bad row it fails, the constraint stays `NOT VALID`, and you fix the data and run
+it again.
+
+## `NOT NULL` on an existing column
+
+`ALTER COLUMN … SET NOT NULL` normally scans the whole table under `ACCESS EXCLUSIVE`. Two ways
+around it:
+
+```sql
+-- PostgreSQL 12+: prove it with a validated CHECK first; SET NOT NULL then skips the scan
+ALTER TABLE users ADD CONSTRAINT display_name_present CHECK (display_name IS NOT NULL) NOT VALID;
+ALTER TABLE users VALIDATE CONSTRAINT display_name_present;
+ALTER TABLE users ALTER COLUMN display_name SET NOT NULL;
+ALTER TABLE users DROP CONSTRAINT display_name_present;
+
+-- PostgreSQL 18: NOT NULL constraints can themselves be NOT VALID
+ALTER TABLE users ADD CONSTRAINT display_name_not_null NOT NULL display_name NOT VALID;
+ALTER TABLE users VALIDATE CONSTRAINT display_name_not_null;
+```
+
+Both were run on PostgreSQL 18; in the second form, an insert with a `NULL` failed immediately after
+the `NOT VALID` step, before validation.
+
+## Unique constraints: build the index concurrently, then attach it
+
+```sql
+CREATE UNIQUE INDEX CONCURRENTLY users_email_key ON users (email);
+ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE USING INDEX users_email_key;
+```
+
+The slow part — building the index — happens without blocking writes; attaching it as a constraint
+is a catalogue change. (If duplicates exist, the concurrent build fails and leaves an invalid index
+to drop; clean the data first.)
+
+The quick steps in this file still take strong locks for a moment: adding a `NOT VALID` foreign key
+locks both tables against writes (`SHARE ROW EXCLUSIVE`), and `ADD CONSTRAINT … USING INDEX` takes
+`ACCESS EXCLUSIVE`. Brief — but they queue like any other lock (the previous example), so run them
+with `lock_timeout` set too.
+
+## The irreversible list
+
+Some steps have no undo except restoring a backup. Make them the **last** step of an expand/contract
+sequence, after the code that needed the old shape is gone, and never in the same deploy as the code
+change:
+
+- `DROP COLUMN`, `DROP TABLE` — the data is gone.
+- Narrowing a type. Sometimes the migration fails (`text` → `varchar(20)` with a longer value:
+  `value too long`; `bigint` → `int` with a value at or above 2³¹: `integer out of range`). Sometimes it silently
+  loses data: `numeric(10,2)` → `numeric(10,0)` rounded 9.99 to 10, and `USING name::varchar(20)`
+  truncated instead of failing (both tested on PostgreSQL 18).
+- Data rewrites that lose information: lower-casing emails, merging duplicate accounts, collapsing
+  statuses. Keep the original in a column or table until you're sure.
+- Anything that changes meaning in place — reusing a column or an enum value for something new.
+  Readers that still hold the old meaning keep running and silently misread it. Add a new name
+  instead.

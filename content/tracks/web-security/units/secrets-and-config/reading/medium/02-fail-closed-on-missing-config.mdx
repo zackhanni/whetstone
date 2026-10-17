@@ -1,0 +1,80 @@
+---
+id: fail-closed-on-missing-config
+title: A missing secret must stop the app, not open it
+---
+
+The most dangerous secret is the one that isn't set. Code written against a value that "is always
+there" quietly changes meaning when it's `undefined`. Both snippets below were run in Node 24.
+
+**Comparing against an unset key.**
+
+```js
+const API_KEY = process.env.API_KEY; // forgot to set it on the new server
+
+function isAuthorized(headers) {
+  return headers["x-api-key"] === API_KEY;
+}
+
+isAuthorized({});                        // true  — undefined === undefined
+isAuthorized({ "x-api-key": "guess" });  // false
+```
+
+A request with **no** key header is authorised, because both sides are `undefined`.
+
+**Defaulting a signing secret to `""`.**
+
+```js
+import { createHmac } from "node:crypto";
+
+const secret = process.env.WEBHOOK_SECRET ?? "";             // "fixes" a startup crash
+const sign = (body) => createHmac("sha256", secret).update(body).digest("hex");
+
+const forged = createHmac("sha256", "").update('{"paid":true}').digest("hex");
+sign('{"paid":true}') === forged;                            // true
+```
+
+`createHmac("sha256", undefined)` throws `ERR_INVALID_ARG_TYPE`, which is the right outcome. The
+`?? ""` turned that crash into an HMAC with an empty key, and anyone can compute that one. Every
+webhook "verifies".
+
+The fix is to check required configuration **once, at startup, and refuse to run** without it:
+
+```ts
+// lib/config.ts
+import "server-only";
+
+function required(name: string): string {
+  const value = process.env[name]; // server-only: a dynamic lookup is fine here
+  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
+
+export const config = {
+  apiKey: required("API_KEY"),
+  webhookSecret: required("WEBHOOK_SECRET"),
+};
+```
+
+A module runs when something first imports it. If only a route imports `lib/config.ts`, the check
+runs on that route's first request: on Next.js 16.2.9, `next start` came up, served the other pages
+and answered that route with a 500. Closed, but not at startup. To check before any request, import
+it from `instrumentation.ts`, whose `register()` Next.js runs once and finishes "before the server
+is ready to handle requests":
+
+```ts
+// instrumentation.ts
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") await import("./lib/config");
+}
+```
+
+Now a deploy with a missing secret fails loudly at boot instead of serving traffic with a hole in
+it: `next start` logs "Failed to prepare server" with the missing name and answers every request,
+static pages included, with a 500. Two notes:
+
+- `process.env[name]` is fine **on the server**. The same helper would never work for
+  `NEXT_PUBLIC_` values, which are only inlined when written literally.
+- `!value` also rejects `""`, which is what an empty line in a `.env` file gives you.
+
+OWASP's Top 10:2025 lists "Not Failing Securely ('Failing Open')" under A10, Mishandling of
+Exceptional Conditions. These two snippets are that weakness in its smallest form.

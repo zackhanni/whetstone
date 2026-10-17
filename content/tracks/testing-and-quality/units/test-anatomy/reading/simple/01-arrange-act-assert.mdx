@@ -1,0 +1,69 @@
+---
+id: arrange-act-assert
+title: Three steps — arrange, act, assert
+---
+
+Almost every good test has the same three steps, in order:
+
+1. **Arrange** — build the inputs and the world the code runs in.
+2. **Act** — call the one thing you're testing.
+3. **Assert** — check what came out.
+
+```ts
+// cart.test.ts — Vitest 4
+import { describe, expect, it } from "vitest";
+import { Cart } from "./cart";
+
+describe("Cart", () => {
+  it("counts the same item twice", () => {
+    // Arrange
+    const cart = new Cart();
+    const tea = { sku: "tea", priceCents: 450 };
+
+    // Act
+    cart.add(tea);
+    cart.add(tea);
+
+    // Assert
+    expect(cart.count("tea")).toBe(2);
+    expect(cart.total()).toBe(900);
+  });
+});
+```
+
+The pieces:
+
+- **`it(name, fn)`** declares one test. `test` is the same function under another name — Vitest
+  calls `it` *"just an alias"*. Pick one per codebase.
+- **`describe(name, fn)`** groups tests and prefixes their names in the report:
+  `Cart > counts the same item twice`. Keep nesting shallow.
+- **`expect(actual).matcher(expected)`** throws when the check fails; a test fails when something
+  in it throws. A test with no failing `expect` passes — even one with no `expect` at all.
+- **The imports are explicit.** Vitest doesn't put `describe`/`it`/`expect` on the global scope
+  unless you turn on `globals: true` (the vitest-in-practice unit covers that).
+
+Name tests as a sentence about behaviour — "counts the same item twice", not "test add 2". When it
+fails, the report reads like the broken promise.
+
+Node has the same shape built in, with no dependency: `node:test` plus `node:assert`.
+
+```ts
+// cart.test.ts — node:test, Node 24
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { Cart } from "./cart.ts";
+
+describe("Cart", () => {
+  it("counts the same item twice", () => {
+    const cart = new Cart();
+    const tea = { sku: "tea", priceCents: 450 };
+    cart.add(tea);
+    cart.add(tea);
+    assert.equal(cart.count("tea"), 2);
+  });
+});
+```
+
+Run it with `node --test`. Different assertion style, same three steps. Node 24 runs the `.ts` file
+by stripping its types, and unlike Vitest it needs the extension: `"./cart"` fails with
+`ERR_MODULE_NOT_FOUND`.

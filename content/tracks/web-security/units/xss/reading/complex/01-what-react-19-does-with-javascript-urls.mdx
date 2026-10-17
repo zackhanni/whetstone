@@ -1,0 +1,51 @@
+---
+id: what-react-19-does-with-javascript-urls
+title: What React 19 actually does with a javascript: URL
+---
+
+`<a href={user.website}>` with `javascript:fetch('/api/me')…` used to be a working XSS in React.
+What happens now depends on the React version:
+
+- **React 16.9 – 18:** the URL is rendered as given. React 16.9 added a development-only warning
+  ("A future version of React will block javascript: URLs…"); production builds said nothing and
+  the payload ran on click.
+- **React 19:** the React 19 upgrade guide lists "Error for javascript URLs in `src` and `href`"
+  as a breaking change. In practice React replaces the value. Rendering
+  `<a href=" JavaScript:alert(1)">` with React 19.2 — client or server, development or production
+  build — produces:
+
+```html
+<a href="javascript:throw new Error('React has blocked a javascript: URL as a security precaution.')">x</a>
+```
+
+A click throws that error in the console instead of running the attacker's code. The check is a
+case-insensitive pattern that tolerates leading control characters and tabs or newlines inside the
+word, so the usual obfuscations are caught. The same replacement applied to `src` on an
+`iframe` and to a form's `action` in the same test run.
+
+What it does **not** cover:
+
+- **Other schemes.** `data:text/html,…` and `vbscript:…` are rendered unchanged. React's job is to
+  stop the one scheme that runs script on click in every browser, not to decide which URLs your
+  app accepts. OWASP's cheat sheet says it directly: React 19's blocking "does not replace
+  application-specific URL validation".
+- **Your own navigation code.** `window.location.href = next` or `window.open(next)` with a
+  user-controlled value never passes through React's attribute code, so a `?next=javascript:…`
+  parameter is a DOM-based XSS that React 19 does nothing about. (In Next.js 16.2's source, the
+  App Router's `router.push` / `router.replace` throw on a `javascript:` URL themselves — a
+  framework check, not React's, and it doesn't cover `window.location`.)
+- **Anything inside `dangerouslySetInnerHTML`.** React sets that string as `innerHTML`; a
+  `javascript:` link inside it is not inspected.
+- **Older React.** A library or micro-frontend still on React 18 is still exposed.
+
+So the allow-list from the medium reading stays. React 19's blocking is a backstop that turns a
+missed check from "account takeover" into "a broken link" — and a link that renders as a
+throwing `javascript:` URL is also a bad user experience, which is one more reason to decide in
+your own code whether a value becomes a link at all.
+
+<!--more-->
+
+The replacement string comes from React DOM's `sanitizeURL`, which tests the value against
+`/^[\u0000-\u001F ]*j[\r\n\t]*a[\r\n\t]*v[\r\n\t]*a[\r\n\t]*s[\r\n\t]*c[\r\n\t]*r[\r\n\t]*i[\r\n\t]*p[\r\n\t]*t[\r\n\t]*:/i`
+in React 19.2's production client and server builds. It's an implementation detail — the
+documented contract is only the changelog line — so don't build on the exact error text.

@@ -1,0 +1,68 @@
+---
+id: module-state-and-internal-calls
+title: Module state and same-module calls resist tests
+---
+
+## State that lives in the module
+
+```ts
+// rate-limit.ts
+const hits = new Map<string, number>(); // created once, when the module is first imported
+
+export function allow(ip: string): boolean {
+  const count = (hits.get(ip) ?? 0) + 1;
+  hits.set(ip, count);
+  return count <= 5;
+}
+```
+
+A module is evaluated once per test file, so `hits` is shared by every test in that file. A test
+that sends five requests from `1.2.3.4` leaves the limit used up for the next one — the same leak as
+a shared fixture, but hidden behind an import, where `beforeEach` can't reach it.
+
+Make the state belong to an instance instead:
+
+```ts
+export function createRateLimiter(limit = 5) {
+  const hits = new Map<string, number>();
+  return {
+    allow(ip: string): boolean {
+      const count = (hits.get(ip) ?? 0) + 1;
+      hits.set(ip, count);
+      return count <= limit;
+    },
+  };
+}
+
+// app startup: one shared limiter, on purpose
+export const limiter = createRateLimiter();
+```
+
+Each test calls `createRateLimiter()` and gets a fresh one; the app still has exactly one. (When you
+can't change the shape, exporting a `reset()` for tests to call in `beforeEach` is the fallback.)
+
+## A call inside the same module can't be mocked
+
+```ts
+// clock.ts
+export function now() { return Date.now(); }
+export function stamp() { return `at ${now()}`; }
+```
+
+```ts
+vi.mock("./clock", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./clock")>()),
+  now: () => 42,
+}));
+
+expect(now()).toBe(42);           // ✓ the test's import is the mock
+expect(stamp()).toBe("at 42");    // ✗ the real Date.now() — stamp called the real now
+```
+
+`vi.mock` replaces what *importers* of the module see. `stamp` doesn't import `now`; it calls the
+local function directly, and no mock can get between them. Vitest's docs: *"it is not possible to mock
+calls to methods that are called inside other methods of the same file"*, and *"we do not plan to
+implement a workaround"* — they suggest refactoring or dependency injection.
+
+Either move `now` to its own module (then `stamp` imports it and the mock applies), or — better —
+pass it in: `stamp(now = Date.now)`. The second needs no mock at all.

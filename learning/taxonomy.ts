@@ -304,6 +304,45 @@ export const TAXONOMY: TagNode[] = [
   { slug: "status-codes", label: "Status Codes", parents: ["http"] },
   { slug: "regex", label: "Regular Expressions", parents: ["javascript"] },
   { slug: "terminal", label: "Terminal", parents: ["tooling"] },
+
+  // ── web-security ──
+  { slug: "xss", label: "XSS", parents: ["security"] },
+  { slug: "csp", label: "Content-Security-Policy", parents: ["security", "http"] },
+  { slug: "csrf", label: "CSRF", parents: ["security"] },
+  { slug: "cookies", label: "Cookies", parents: ["http", "security"] },
+  { slug: "secrets", label: "Secrets & Config", parents: ["security"] },
+  { slug: "security-headers", label: "Security Headers", parents: ["security", "http"] },
+  { slug: "owasp", label: "OWASP Top 10", parents: ["security"] },
+
+  // ── databases ──
+  { slug: "databases", label: "Databases", parents: [] },
+  { slug: "sql", label: "SQL", parents: ["databases"] },
+  { slug: "postgres", label: "PostgreSQL", parents: ["databases"] },
+  { slug: "data-modeling", label: "Data Modeling", parents: ["databases"] },
+  { slug: "constraints", label: "Keys & Constraints", parents: ["data-modeling", "sql"] },
+  { slug: "joins", label: "Joins", parents: ["sql"] },
+  { slug: "normalization", label: "Normalization", parents: ["data-modeling"] },
+  { slug: "query-performance", label: "Query Performance", parents: ["databases"] },
+  { slug: "indexes", label: "Indexes", parents: ["query-performance"] },
+  { slug: "n-plus-one", label: "N+1 Queries", parents: ["query-performance"] },
+  { slug: "pagination", label: "Pagination", parents: ["query-performance"] },
+  { slug: "transactions", label: "Transactions", parents: ["databases"] },
+  { slug: "locking", label: "Locking & Concurrency", parents: ["transactions"] },
+  { slug: "migrations", label: "Migrations", parents: ["databases"] },
+  { slug: "jsonb", label: "jsonb", parents: ["postgres", "data-modeling"] },
+  { slug: "document-databases", label: "Document Databases", parents: ["data-modeling"] },
+  { slug: "graph-databases", label: "Graph Databases", parents: ["data-modeling"] },
+
+  // ── testing-and-quality ──
+  { slug: "testing", label: "Testing", parents: [] },
+  { slug: "test-strategy", label: "Test Strategy", parents: ["testing"] },
+  { slug: "assertions", label: "Assertions & Matchers", parents: ["testing"] },
+  { slug: "test-doubles", label: "Test Doubles", parents: ["testing"] },
+  { slug: "testability", label: "Testability", parents: ["testing", "architecture"] },
+  { slug: "vitest", label: "Vitest", parents: ["testing"] },
+  { slug: "coverage", label: "Code Coverage", parents: ["testing"] },
+  { slug: "e2e-testing", label: "End-to-End Testing", parents: ["testing"] },
+  { slug: "playwright", label: "Playwright", parents: ["e2e-testing"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

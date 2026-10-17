@@ -1,0 +1,86 @@
+---
+id: to-third-normal-form
+title: From one wide table to third normal form, step by step
+---
+
+An import from a shop's old system:
+
+| order_id | ordered_at | customer_id | customer_email | items          |
+| -------- | ---------- | ----------- | -------------- | -------------- |
+| 1001     | 2026-03-10 | 7           | ada@x.io       | PEN x2, PAD x1 |
+| 1002     | 2026-03-11 | 7           | ada@x.io       | PEN x5         |
+
+The first three normal forms are three questions you ask of every column. In working terms:
+**one value per cell; every column about the whole key; and nothing but the key.**
+
+## 1NF — one value per cell, no repeating groups
+
+`items` packs a list into one cell. You can't put a foreign key on "PEN", you can't index "how
+many pads were sold", and `LIKE '%PEN%'` also matches `PENCIL`. The same smell appears as numbered
+columns — `sku_1, qty_1, sku_2, qty_2` — which cap the list at however many columns someone
+guessed. Give each item its own row; the key becomes `(order_id, sku)`:
+
+| order_id | sku | qty | product_name | ordered_at | customer_id | customer_email |
+| -------- | --- | --- | ------------ | ---------- | ----------- | -------------- |
+| 1001     | PEN | 2   | Gel pen      | 2026-03-10 | 7           | ada@x.io       |
+| 1001     | PAD | 1   | A5 pad       | 2026-03-10 | 7           | ada@x.io       |
+| 1002     | PEN | 5   | Gel pen      | 2026-03-11 | 7           | ada@x.io       |
+
+## 2NF — every non-key column depends on the *whole* key
+
+This only bites when the key has more than one column. Go column by column and ask "to know
+this, do I need the whole `(order_id, sku)`, or only part of it?"
+
+- `qty` — needs both: how many of *this* product on *this* order. Stays.
+- `product_name` — needs only `sku`. It's repeated on every line that sells a pen → `products`.
+- `ordered_at`, `customer_id`, `customer_email` — need only `order_id`, and are repeated on every
+  line of the order → `orders`.
+
+## 3NF — and *nothing but* the key
+
+Now look inside `orders(id, ordered_at, customer_id, customer_email)`. `customer_email` doesn't
+depend on the order at all; it depends on `customer_id`, which isn't the key. That's the
+customer's fact stored once per order — exactly the update anomaly from the simple tier.
+Move it to `customers`.
+
+## The result
+
+```sql
+CREATE TABLE customers (
+  id    bigint PRIMARY KEY,
+  email text NOT NULL UNIQUE
+);
+
+CREATE TABLE products (
+  sku  text PRIMARY KEY,
+  name text NOT NULL
+);
+
+CREATE TABLE orders (
+  id          bigint PRIMARY KEY,
+  ordered_at  timestamptz NOT NULL,
+  customer_id bigint NOT NULL REFERENCES customers (id)
+);
+
+CREATE TABLE order_items (
+  order_id bigint NOT NULL REFERENCES orders (id) ON DELETE CASCADE,
+  sku      text   NOT NULL REFERENCES products (sku),
+  qty      int    NOT NULL CHECK (qty > 0),
+  PRIMARY KEY (order_id, sku)
+);
+```
+
+Every fact now lives in one place: an email in `customers`, a product name in `products`, when an
+order was placed in `orders`, and how many of what in `order_items`. The original wide table is
+one query away — a join across the four tables — and can be a view if a report wants that shape.
+
+Microsoft's normalization guide makes the practical point worth keeping: third normal form is
+the level most applications need, and if you break one of the first three rules on purpose, make
+sure the application anticipates the redundant data that follows.
+
+<!--more-->
+
+**Where's the price?** The import had none, but a real order line needs one — and it's not
+`products.price`. The price *on this order* is a fact about the line (what the customer was
+charged), and it must not change when the catalogue price does. Storing `unit_price` on
+`order_items` looks like duplication and isn't; the complex tier covers that distinction.

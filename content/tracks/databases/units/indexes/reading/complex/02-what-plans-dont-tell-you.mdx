@@ -1,0 +1,81 @@
+---
+id: what-plans-dont-tell-you
+title: EXPLAIN ANALYZE side effects, index-only scans, and indexes nobody uses
+---
+
+## `EXPLAIN ANALYZE` runs the statement — all of it
+
+```text
+EXPLAIN ANALYZE DELETE FROM sessions WHERE expires_at < now() - interval '30 days';
+ Delete on sessions (actual rows=0.00 loops=1)
+   ->  Seq Scan on sessions (actual rows=281.00 loops=1)
+
+SELECT count(*) FROM sessions;   -- 719: the 281 rows really are gone
+```
+
+`EXPLAIN` alone only plans. `ANALYZE` executes, discards a `SELECT`'s output, and keeps every
+other side effect. To measure a write without making it, use the manual's recipe:
+
+```sql
+BEGIN;
+EXPLAIN ANALYZE DELETE FROM sessions WHERE expires_at < now() - interval '30 days';
+ROLLBACK;
+```
+
+(A `SELECT` that calls a function with side effects — `nextval()`, an audit insert — has them
+too.)
+
+## Index-only scans depend on `VACUUM`
+
+An **Index Only Scan** answers from the index without reading the table — if every column the
+query needs is in the index. `INCLUDE` adds payload columns that aren't part of the search key:
+
+```sql
+CREATE INDEX orders_customer_total_idx ON orders (customer_id) INCLUDE (total);
+SELECT sum(total) FROM orders WHERE customer_id = 42;
+```
+
+On a freshly loaded table this planned as a Bitmap Heap Scan. After `VACUUM orders`, the same
+query became `Index Only Scan … Heap Fetches: 0`. Then, after updating those 20 rows:
+
+```text
+ Index Only Scan using orders_customer_total_idx on orders (actual rows=20.00 loops=1)
+   Heap Fetches: 40
+```
+
+Why: the index doesn't know whether a row version is visible to your transaction. PostgreSQL keeps
+a **visibility map** — one bit per table page meaning "everything here is visible to everyone".
+When the bit is set, the index-only scan trusts the index; when it isn't, it must visit the table
+anyway. `VACUUM` sets the bits and writes clear them. So index-only scans shine on tables that
+change slowly, and `Heap Fetches` in `EXPLAIN ANALYZE` tells you how "only" yours really was. Ask
+for `total, note` and it's a normal scan again: `note` isn't in the index.
+
+## Indexes cost writes, so find the ones nobody uses
+
+Every index is updated by writes, and an index on a frequently updated column also blocks the
+**HOT** (heap-only tuple) shortcut: an update that changes no indexed column, with room on the same
+page, needs no new index entries at all. Index a `last_seen_at` column that changes on every
+request, and every one of those updates now writes to every index on the table.
+
+`pg_stat_user_indexes.idx_scan` counts scans of each index since statistics were last reset:
+
+```sql
+SELECT indexrelname, idx_scan
+FROM pg_stat_user_indexes
+WHERE relname = 'orders'
+ORDER BY idx_scan;
+```
+
+An index with `idx_scan = 0` after weeks of production traffic is a write cost with no read
+benefit. Check before dropping: indexes that back a `PRIMARY KEY` or `UNIQUE` constraint enforce
+correctness even if no query ever scans them; the counters start again from zero after a crash or a
+restore from backup; and if read replicas serve queries, look at their `pg_stat_user_indexes` too
+before calling an index unused.
+
+<!--more-->
+
+**`EXPLAIN` on a parameterized query.** An ORM or a driver sends `WHERE customer_id = $1`.
+`EXPLAIN SELECT … WHERE customer_id = 42` shows the plan for 42, which may not be the plan used
+for every value: PostgreSQL can switch a prepared statement to a generic plan after several
+executions. When a query is fast in `psql` and slow from the app, prepare it with a parameter and
+`EXPLAIN EXECUTE` it a few times.

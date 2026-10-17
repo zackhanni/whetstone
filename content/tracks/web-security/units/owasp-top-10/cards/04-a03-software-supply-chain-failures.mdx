@@ -1,0 +1,21 @@
+---
+id: a03-software-supply-chain-failures
+title: A03 Software Supply Chain Failures
+---
+
+Compromises in how your software is built, fetched or updated: a malicious package version, a
+hijacked maintainer account, an unreviewed CI change. OWASP's example from 2025 is the
+**Shai-Hulud** npm worm: malicious versions ran a post-install script that harvested secrets and
+used the npm tokens it found to publish more poisoned packages. It "reached over 500 package
+versions before being disrupted".
+
+```bash
+# CI: install exactly what the reviewed lockfile says, and fail if it's out of date
+pnpm install --frozen-lockfile
+```
+
+In a Node project: commit the lockfile and install from it; review new dependencies and remove
+unused ones; know your transitive tree (an SBOM). Install scripts are the worm's way in: pnpm 10
+and npm 12 run a dependency's install scripts only once you allow that package (npm 11 and earlier
+run them unless you pass `--ignore-scripts`). Keep publish tokens and CI secrets scoped to the job
+that needs them.

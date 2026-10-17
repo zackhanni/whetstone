@@ -1,0 +1,65 @@
+---
+id: nonces-in-nextjs
+title: Nonces in Next.js 16 cost you static rendering
+---
+
+Next.js 16's CSP guide generates the nonce in `proxy.ts` (the file Next 16 uses for what earlier
+versions called middleware) and sets the policy on both the request and the response:
+
+```ts
+// proxy.ts — abridged from the Next.js 16 CSP guide
+export function proxy(request: NextRequest) {
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const isDev = process.env.NODE_ENV === "development";
+  const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ""}; style-src 'self' 'nonce-${nonce}'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests;`;
+
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set("Content-Security-Policy", csp);
+  return response;
+}
+```
+
+The guide's nonce is a version 4 UUID: 122 random bits, since 6 of its 128 are fixed version and
+variant bits. Base64-encoding its 36-character text makes the nonce longer, not harder to guess.
+That is still unguessable in practice, but it is under the 128 random bits the spec recommends;
+`Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64")` gives the full 128.
+
+During rendering, Next.js parses the request's `Content-Security-Policy` header, pulls out the
+`'nonce-…'` value and puts it on its own framework scripts, page bundles and inline scripts
+automatically. Your code reads it only for third-party tags, with
+`(await headers()).get("x-nonce")` passed to `<Script nonce={…}>`.
+
+**The cost.** A nonce has to be new on every response, so the HTML has to be rendered per request.
+The guide is explicit: "you must use dynamic rendering to add nonces". Static pages are generated
+at build time, "when no request or response headers exist—so no nonce can be injected". With a
+nonce-based CSP:
+
+- static optimisation and ISR are off for those pages, and each request renders on the server;
+- the pages can't be cached at a CDN without extra configuration;
+- Partial Prerendering is incompatible, because the static shell has no nonce;
+- pages may need `await connection()` to opt into dynamic rendering explicitly.
+
+**The alternatives the guide offers:**
+
+| Approach | Keeps static rendering? | Blocks injected inline script? |
+| --- | --- | --- |
+| Nonce via `proxy.ts` | no — every page is dynamic | yes |
+| Static header in `next.config` with `script-src 'self' 'unsafe-inline'` | yes | **no** |
+| `experimental.sri` (build-time hashes as `integrity` attributes) + a static policy without `'unsafe-inline'` | yes | yes, per the guide — but it "cannot handle dynamically generated scripts" |
+
+The `'unsafe-inline'` policy isn't worthless: `object-src`, `base-uri`, `form-action`,
+`frame-ancestors` and the host restrictions still apply. It just doesn't do the job CSP is best
+known for. SRI is the static-friendly strict option, but it is **experimental** and App Router
+only — the guide warns it "may change or be removed".
+
+<!--more-->
+
+Two details from the same guide. The proxy's `matcher` should skip static assets and prefetch
+requests (the `next-router-prefetch` and `purpose: prefetch` headers), which don't need the
+policy. And `'unsafe-eval'` is a development-only addition —
+"Neither React nor Next.js use `eval` in production by default" — so a production policy that
+still contains it has kept a hole for no reason.

@@ -1,0 +1,69 @@
+---
+id: jsonb-the-middle-ground
+title: jsonb — a document column inside PostgreSQL
+---
+
+Products whose attributes differ by category — a pen has `color`, a laptop has `ram_gb` — don't
+want 200 mostly-empty columns. Keep the stable facts as columns and the varying ones in a `jsonb`
+column:
+
+```sql
+CREATE TABLE products (
+  id    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sku   text NOT NULL UNIQUE,
+  price numeric(10,2) NOT NULL,
+  attrs jsonb NOT NULL DEFAULT '{}'
+);
+-- attrs examples: {"color": "red", "qty": 9, "tags": ["sale", "outdoor"]}
+```
+
+Use `jsonb`, not `json`: the PostgreSQL manual recommends `jsonb` for most applications. `json`
+keeps the exact input text and re-parses it on every use; `jsonb` stores a decomposed binary form
+that's faster to process — and normalises it: key order isn't kept, and of duplicate keys only the
+last survives (`'{"b": 1, "a": 2, "a": 3}'::jsonb` is `{"a": 3, "b": 1}`).
+
+## Reading it: `->` returns jsonb, `->>` returns text
+
+```sql
+SELECT id FROM products WHERE attrs->>'color' = 'red';       -- text vs text: works
+SELECT id FROM products WHERE attrs->'color' = 'red';        -- ERROR: invalid input syntax for type json
+SELECT id FROM products WHERE attrs->'color' = '"red"';      -- jsonb vs jsonb: works
+```
+
+`->>` hands you text, so numbers compare as strings unless you cast:
+
+```sql
+SELECT id FROM products WHERE attrs->>'qty' > '9';           -- no rows: '10' and '100' sort before '9'
+SELECT id FROM products WHERE (attrs->>'qty')::int > 9;      -- 10 and 100, as intended
+```
+
+## Indexing it
+
+```sql
+CREATE INDEX products_attrs_gin ON products USING GIN (attrs);
+SELECT id FROM products WHERE attrs @> '{"color": "red"}';             -- uses the GIN index
+SELECT id FROM products WHERE attrs @> '{"tags": ["sale"]}';           -- arrays too
+```
+
+A GIN index on the whole column serves the containment operator `@>` and the key-exists operators
+(`?`, `?|`, `?&`). It does **not** serve `(attrs->>'qty')::int > 9` — tested on PostgreSQL 18, that
+was a sequential scan until an expression index on exactly that expression:
+
+```sql
+CREATE INDEX products_qty_idx ON products (((attrs->>'qty')::int));
+```
+
+`@>` is "contains", not "equals": `{"color": "red"}` matches any object that *has* that pair, and
+array order doesn't matter (`[1,2,3] @> [3,1]` is true).
+
+## What you give up
+
+- **No foreign keys into JSON.** `attrs->>'supplier_id'` can't reference `suppliers(id)`; a foreign
+  key needs a real column.
+- **No per-key types or `NOT NULL`.** Anything can be in there unless you add `CHECK` constraints.
+- **Whole-row writes.** Changing one key writes a new version of the whole row and, as the manual
+  warns, locks the whole row — keep documents small, and don't put independently updated data in one
+  document.
+
+The working rule: **columns for what you filter, join, constrain or update often; `jsonb` for the
+rest.** If a key gets queried everywhere, promote it to a column.

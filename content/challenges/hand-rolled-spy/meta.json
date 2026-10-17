@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "hand-rolled-spy",
+  "title": "Build `fn()` and `spyOn()` by hand",
+  "skills": ["testing", "test-doubles"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "spy.ts",
+  "acceptanceCriteria": [
+    "A spy returns whatever its implementation returns",
+    "`.calls` holds every call's arguments, oldest first",
+    "`spyOn` still runs the original method, with the `this` it was called on — including a method spied on a class prototype",
+    "`restore()` puts the original method back on the object",
+    "Used as doubles for `checkout()`, a stub's answer reaches the code and the spy records the one receipt sent"
+  ]
+}

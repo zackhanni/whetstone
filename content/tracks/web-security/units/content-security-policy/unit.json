@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 3,
+  "slug": "content-security-policy",
+  "title": "Content-Security-Policy: the browser-enforced second line",
+  "skills": ["security", "csp", "xss", "nextjs"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Read a CSP header directive by directive, including which directives fall back to `default-src` and which don't",
+    "Predict which scripts a policy blocks: `'unsafe-inline'` is ignored once a nonce or hash is present, and `'strict-dynamic'` switches off host lists",
+    "Generate a nonce that is fresh and unguessable on every response, and build a strict policy around it",
+    "Roll a policy out with `Content-Security-Policy-Report-Only` and `report-to`, and test it in the mode it will run in",
+    "Choose between nonces (dynamic rendering), a static `'unsafe-inline'` policy and SRI hashes in a Next.js 16 app"
+  ],
+  "sources": [
+    { "title": "MDN: Content Security Policy (CSP) guide", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CSP" },
+    { "title": "MDN: Content-Security-Policy header", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy" },
+    { "title": "MDN: CSP default-src", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/default-src" },
+    { "title": "MDN: CSP frame-ancestors", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/frame-ancestors" },
+    { "title": "W3C: Content Security Policy Level 3", "url": "https://www.w3.org/TR/CSP3/" },
+    { "title": "OWASP Cheat Sheet: Content Security Policy", "url": "https://cheatsheetseries.owasp.org/cheatsheets/Content_Security_Policy_Cheat_Sheet.html" },
+    { "title": "Next.js docs: Content Security Policy", "url": "https://nextjs.org/docs/app/guides/content-security-policy" },
+    { "title": "Next.js docs: proxy.js (formerly middleware)", "url": "https://nextjs.org/docs/app/api-reference/file-conventions/proxy" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-csp", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-csp",
+      "questions": [
+        {
+          "id": "second-line",
+          "prompt": "Which statement about Content-Security-Policy is accurate?",
+          "options": [
+            { "id": "browser-refuses", "text": "It tells the browser what the page may load and run; an injected payload is still in the HTML, but the browser won't execute what the policy doesn't allow" },
+            { "id": "sanitises", "text": "It strips disallowed scripts out of the HTML before the response leaves the server" },
+            { "id": "replaces-escaping", "text": "With a strict CSP in place, output escaping and sanitising become optional" },
+            { "id": "blocks-requests", "text": "It stops malicious requests from reaching your server" }
+          ],
+          "answer": "browser-refuses",
+          "explanation": "CSP is a response header the browser enforces; your server sends the same HTML either way. MDN calls it \"a backup in case the other defenses fail\", and OWASP says CSP \"should not be relied upon as the only defensive mechanism against XSS\" — escaping and sanitising stay the first line. It says nothing about requests arriving at your server: that's what authentication, CSRF defences and rate limits are for."
+        },
+        {
+          "id": "no-fallback",
+          "prompt": "The policy is `default-src 'none'; script-src 'self'; style-src 'self'`. Which of these is still unrestricted?",
+          "options": [
+            { "id": "framing", "text": "Other sites putting the page in an `<iframe>` — `frame-ancestors` (like `base-uri` and `form-action`) doesn't fall back to `default-src`" },
+            { "id": "images", "text": "Images from other hosts — only scripts and styles are listed" },
+            { "id": "fetch", "text": "`fetch()` calls to other APIs — `connect-src` isn't listed" },
+            { "id": "object", "text": "`<object>` and `<embed>` — `object-src` isn't listed" }
+          ],
+          "answer": "framing",
+          "explanation": "`default-src` is the fallback for the *fetch* directives only, so the missing `img-src`, `connect-src` and `object-src` all become `'none'`. `frame-ancestors`, `base-uri` and `form-action` aren't fetch directives and don't fall back at all; MDN's `frame-ancestors` page notes that even `default-src 'none'` \"still allows the resource to be embedded by anyone\". State them explicitly."
+        },
+        {
+          "id": "nonce-once",
+          "prompt": "To save work, a teammate generates the CSP nonce once when the server starts and reuses it for every response. What's wrong with that?",
+          "options": [
+            { "id": "readable", "text": "The nonce is printed in every page, so an attacker loads any page, copies it, and puts it on their injected script" },
+            { "id": "browser-rejects", "text": "Browsers remember nonces and reject one they've already seen in an earlier response" },
+            { "id": "fine", "text": "Nothing — the nonce only has to be secret from other sites, and other sites can't read your pages" },
+            { "id": "caching", "text": "Only that CDN caching stops working" }
+          ],
+          "answer": "readable",
+          "explanation": "A nonce is a secret that is *sent to the reader* in the HTML, so it protects only if it can't be known in advance. The CSP spec: the server \"MUST generate a unique value each time it transmits a policy\", and it should carry 128+ bits from a secure random source. Anyone, attacker included, can load your page and read a fixed nonce. Browsers don't track nonces across responses, so nothing else would catch it, and caching is a side effect, not the problem."
+        },
+        {
+          "id": "nonce-every-tag",
+          "prompt": "To make the policy \"just work\", a post-processing step adds the response's nonce to every `<script>` tag in the outgoing HTML. Why does that defeat CSP?",
+          "options": [
+            { "id": "injected-too", "text": "An injected `<script>` in the HTML gets the nonce too, so the browser runs it" },
+            { "id": "one-per-tag", "text": "Each tag needs its own unique nonce, and they'd all share one" },
+            { "id": "first-only", "text": "Browsers honour a nonce only on the first script that uses it" },
+            { "id": "hash-required", "text": "External scripts need hashes, not nonces" }
+          ],
+          "answer": "injected-too",
+          "explanation": "The nonce works because only *your* code knows to put it on *your* tags. A step that stamps every `<script>` in the output can't tell yours from an attacker's stored payload. MDN and OWASP both warn against exactly this. One nonce per response for all of your own tags is normal, and nonces work on external `<script src>` tags too."
+        },
+        {
+          "id": "report-first",
+          "prompt": "You're adding a strict CSP to a production app that has a tag manager and a payment widget. What's the safe first step?",
+          "options": [
+            { "id": "report-only", "text": "Send it as `Content-Security-Policy-Report-Only` with `report-to`, fix or allow what the reports show, then move it to the enforcing header" },
+            { "id": "meta", "text": "Put it in a `<meta http-equiv>` tag first, since that only reports" },
+            { "id": "enforce-and-wait", "text": "Enforce it right away and add origins as users report broken pages" },
+            { "id": "staging-only", "text": "Enforce it only in production and keep development policy-free so local work isn't blocked" }
+          ],
+          "answer": "report-only",
+          "explanation": "Report-Only evaluates the policy and sends violations to your endpoint without blocking anything, and it can run beside an existing enforced policy. A `<meta>` tag can't deliver Report-Only at all (nor `report-uri`, `frame-ancestors` or `sandbox`). Enforcing blind breaks checkout for real users. A production-only policy is the classic way to ship a broken one: nothing is blocked where you test."
+        },
+        {
+          "id": "prod-only-policy",
+          "prompt": "Your app sets CSP only `if (process.env.NODE_ENV === \"production\")`. Every page works under `next dev`. What's the likely outcome?",
+          "options": [
+            { "id": "first-break-in-prod", "text": "Violations (a new inline script, a missing third-party origin) first appear for real users, because nothing was ever blocked where you tested" },
+            { "id": "dev-ignores", "text": "Nothing: Next.js ignores CSP headers in development anyway" },
+            { "id": "needs-eval", "text": "Production breaks because the production build needs `'unsafe-eval'` and the policy omits it" },
+            { "id": "safer", "text": "It's the recommended pattern, since development needs a looser policy" }
+          ],
+          "answer": "first-break-in-prod",
+          "explanation": "A policy that exists only in production can only fail in production. Run it in development too, adding only what development genuinely needs: the Next.js guide adds `'unsafe-eval'` in development because React uses `eval` for debugging, and says \"Neither React nor Next.js use `eval` in production by default\". Then check a local production build with the policy on. The browser enforces whatever header it receives, in any mode."
+        },
+        {
+          "id": "next-nonce-cost",
+          "prompt": "In a Next.js 16 app you add a nonce-based CSP in `proxy.ts`. What happens to pages that used to be statically generated?",
+          "options": [
+            { "id": "dynamic", "text": "They have to render per request: static optimisation and ISR are off, CDN caching needs extra configuration, and Partial Prerendering is incompatible" },
+            { "id": "edge-rewrite", "text": "Nothing changes: the CDN rewrites a fresh nonce into the cached HTML" },
+            { "id": "build-nonce", "text": "Next.js generates one nonce per page at build time and reuses it" },
+            { "id": "skipped", "text": "Next.js applies the nonce to dynamic pages only; static pages keep working under the policy without one" }
+          ],
+          "answer": "dynamic",
+          "explanation": "The guide: \"you must use dynamic rendering to add nonces\", because static pages are generated at build time \"when no request or response headers exist—so no nonce can be injected\". A nonce baked in at build time would be reused, which defeats it. A static page served under a nonce policy has scripts with no nonce, and the guide warns such pages \"may encounter runtime errors\". Nothing in the CDN rewrites HTML for you."
+        },
+        {
+          "id": "static-and-strict",
+          "prompt": "A Next.js 16 marketing site must stay statically generated and CDN-cached, and security won't accept `'unsafe-inline'` in `script-src`. Which approach in the Next.js CSP guide fits?",
+          "options": [
+            { "id": "sri", "text": "`experimental.sri` (build-time `integrity` hashes) with a static policy, accepting that the feature is experimental and App Router only" },
+            { "id": "proxy-nonce", "text": "A nonce generated in `proxy.ts`" },
+            { "id": "config-unsafe-inline", "text": "A static header from `next.config` with `script-src 'self' 'unsafe-inline'`" },
+            { "id": "meta-nonce", "text": "A `<meta>` CSP tag in the root layout with a nonce generated when the layout renders" }
+          ],
+          "answer": "sri",
+          "explanation": "Nonces need per-request rendering, which the site can't have. The `next.config` header keeps static rendering but is exactly the `'unsafe-inline'` that's ruled out. A nonce rendered into a statically generated layout is created once at build time and served to everyone. The guide's static-friendly strict option is Subresource Integrity, with the caveats it states: experimental, App Router only, and it \"cannot handle dynamically generated scripts\"."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-csp",
+      "prompts": [
+        {
+          "id": "strict-policy",
+          "prompt": "Write the nonce-based strict policy: trust propagates from nonced scripts, plugins are off, and `<base>` is locked.",
+          "code": "Content-Security-Policy: script-src 'nonce-{RANDOM}' '___'; object-src '___'; base-uri 'none'",
+          "blanks": [
+            { "id": "p1", "accept": ["strict-dynamic"] },
+            { "id": "p2", "accept": ["none"] }
+          ],
+          "explanation": "This is OWASP's sample strict policy. `'strict-dynamic'` lets scripts that a nonced script creates run without listing their hosts (and makes browsers ignore host lists and `'unsafe-inline'`). `object-src 'none'` turns off `<object>`/`<embed>`. `base-uri 'none'` stops an injected `<base>` from re-pointing relative script URLs, and must be written out because it doesn't fall back to `default-src`."
+        },
+        {
+          "id": "node-nonce",
+          "prompt": "Generate a 128-bit nonce for this response in Node, base64-encoded for the header.",
+          "code": [
+            "import { randomBytes } from \"node:crypto\";",
+            "",
+            "const nonce = ___(16).toString(\"___\");"
+          ],
+          "blanks": [
+            { "id": "n1", "accept": ["randomBytes"] },
+            { "id": "n2", "accept": ["base64", "base64url"] }
+          ],
+          "explanation": "16 random bytes from a cryptographically secure source meets the spec's recommended 128-bit minimum; the `'nonce-…'` grammar expects base64 (its URL-safe `-`/`_` variant is allowed too). Generate it inside the request handler, never at module scope. `Math.random()` is not a secure source."
+        },
+        {
+          "id": "report-only",
+          "prompt": "Trial a policy without enforcing it, sending violation reports to a named endpoint.",
+          "code": [
+            "Reporting-Endpoints: csp-endpoint=\"https://example.com/csp-reports\"",
+            "Content-Security-Policy-___: script-src 'nonce-R' 'strict-dynamic'; ___ csp-endpoint"
+          ],
+          "blanks": [
+            { "id": "r1", "accept": ["Report-Only"] },
+            { "id": "r2", "accept": ["report-to"] }
+          ],
+          "explanation": "`Content-Security-Policy-Report-Only` evaluates the policy and reports violations without blocking. `report-to` names an endpoint declared in `Reporting-Endpoints`. MDN suggests also declaring the deprecated `report-uri` until `report-to` is supported everywhere."
+        },
+        {
+          "id": "next-read-nonce",
+          "prompt": "In a Next.js 16 Server Component, read the nonce that `proxy.ts` put on the request, for a third-party script.",
+          "code": [
+            "const nonce = (await headers()).get(\"___\");",
+            "return <Script src=\"https://www.googletagmanager.com/gtag/js\" strategy=\"afterInteractive\" nonce={nonce} />;"
+          ],
+          "blanks": [{ "id": "x1", "accept": ["x-nonce"] }],
+          "explanation": "The guide's proxy copies the nonce into a custom `x-nonce` request header. Next.js applies the nonce to its own scripts automatically (it parses the request's CSP header), so you read it yourself only for tags you add, such as a third-party `<Script>`."
+        },
+        {
+          "id": "next-connection",
+          "prompt": "A Next.js 16 page reads no request data, but it must render per request so a fresh nonce can be applied. Opt it into dynamic rendering.",
+          "code": [
+            "import { connection } from \"next/server\";",
+            "",
+            "export default async function Page() {",
+            "  await ___();",
+            "  // …",
+            "}"
+          ],
+          "blanks": [{ "id": "c1", "accept": ["connection"] }],
+          "explanation": "`await connection()` waits for an incoming request, so the page can't be prerendered at build time. The CSP guide uses it for exactly this. Without it a page that touches no request-time API could be generated statically, with no nonce on its scripts."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-csp",
+      "snippets": [
+        {
+          "id": "replaces-not-merges",
+          "code": [
+            "Content-Security-Policy: default-src 'self'; script-src https://js.stripe.com",
+            "",
+            "<script src=\"/app.js\"></script>                     <!-- same origin -->",
+            "<script src=\"https://js.stripe.com/v3/\"></script>"
+          ],
+          "question": "Which of the two scripts does the browser load?",
+          "answer": "Only Stripe's; /app.js is blocked",
+          "acceptable": ["just js.stripe.com", "Stripe yes, /app.js no"],
+          "explanation": "`default-src` is a fallback that applies only when a directive is *absent*. Once `script-src` exists it alone governs scripts (MDN: \"If there are other directives specified, `default-src` does not influence them\"), and it lists only Stripe. Your own bundle needs `'self'` in `script-src` too. This is the most common self-inflicted CSP outage."
+        },
+        {
+          "id": "unsafe-inline-ignored",
+          "code": [
+            "Content-Security-Policy: script-src 'self' 'unsafe-inline' 'nonce-R'",
+            "",
+            "<script nonce=\"R\">boot()</script>",
+            "<script>steal()</script>                 <!-- injected by an attacker -->",
+            "<button onclick=\"buy()\">Buy</button>    <!-- clicked -->"
+          ],
+          "question": "Which of `boot()`, `steal()` and `buy()` run?",
+          "answer": "Only boot()",
+          "acceptable": ["boot only", "boot runs; steal and buy are blocked"],
+          "explanation": "Because the directive contains a nonce, browsers ignore `'unsafe-inline'` in it (MDN; the CSP spec's \"allows all inline behavior\" check returns \"Does Not Allow\" when a nonce or hash is present). So inline script needs the nonce: `boot()` has it, the injected `steal()` doesn't. The `onclick` attribute is blocked too: nonces only apply to `<script>` elements, \"not to attributes\". Move handlers into JavaScript (`addEventListener`, React's `onClick`)."
+        },
+        {
+          "id": "strict-dynamic-hosts",
+          "code": [
+            "Content-Security-Policy: script-src 'nonce-R' 'strict-dynamic' https://js.stripe.com",
+            "",
+            "<script src=\"https://js.stripe.com/v3/\"></script>   <!-- no nonce -->",
+            "<script nonce=\"R\" src=\"/loader.js\"></script>",
+            "",
+            "// inside /loader.js:",
+            "const s = document.createElement(\"script\");",
+            "s.src = \"https://cdn.example.net/widget.js\";",
+            "document.head.append(s);"
+          ],
+          "question": "In a browser that supports `'strict-dynamic'`, which of Stripe's script, `loader.js` and `widget.js` run?",
+          "answer": "loader.js and widget.js; Stripe's tag is blocked",
+          "acceptable": ["loader and widget, not stripe", "Stripe blocked, the other two run"],
+          "explanation": "With `'strict-dynamic'` the spec says host sources (and `'self'`, scheme sources and `'unsafe-inline'`) are ignored for scripts, so listing `https://js.stripe.com` allows nothing and the nonce-less Stripe tag is blocked. `loader.js` runs because of its nonce, and trust propagates: a script it creates with `createElement` is not \"parser-inserted\", so `widget.js` loads from any host. Give the Stripe tag the nonce, or load it from a trusted script."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-csp", "challengeSlug": "csp-header-builder" }
+  ]
+}

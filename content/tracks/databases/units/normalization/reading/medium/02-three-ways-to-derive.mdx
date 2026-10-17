@@ -1,0 +1,76 @@
+---
+id: three-ways-to-derive
+title: Three ways to derive a value instead of storing it
+---
+
+Once you've decided a value should be computed, PostgreSQL gives you three places to put the
+computation. They differ in what the expression can see.
+
+## 1. In the query
+
+```sql
+SELECT id, amount, paid_at IS NOT NULL AS is_paid FROM invoices;
+```
+
+Simplest, and enough when one or two queries need it. The risk is that each query re-derives it
+slightly differently.
+
+## 2. A generated column — when the value comes from the same row
+
+```sql
+CREATE TABLE order_items (
+  order_id   bigint NOT NULL REFERENCES orders (id),
+  sku        text   NOT NULL REFERENCES products (sku),
+  quantity   int    NOT NULL CHECK (quantity > 0),
+  unit_price numeric(10,2) NOT NULL,
+  line_total numeric(12,2) GENERATED ALWAYS AS (quantity * unit_price),
+  PRIMARY KEY (order_id, sku)
+);
+```
+
+`line_total` looks like a column to every reader but can't disagree with `quantity` and
+`unit_price`: you can't write it (`INSERT` with a value fails with "cannot insert a non-DEFAULT
+value into column"), and changing `quantity` changes it.
+
+- **Virtual by default since PostgreSQL 18.** With no keyword, the value is computed when it's
+  *read* and takes no storage. Add `STORED` to compute it when the row is *written* instead.
+  Before PostgreSQL 18, only `STORED` existed and the keyword was required — copy a PG 17 schema
+  and you'll see it everywhere.
+- **Only the current row.** The expression must use immutable functions and can't contain a
+  subquery or look at any other row. `orders.total` as a generated sum over `order_items` is
+  impossible.
+- **Indexing.** PostgreSQL 18 refuses to index a virtual generated column ("indexes on virtual
+  generated columns are not supported"). Make it `STORED` if you need to search or sort by it
+  through an index.
+
+## 3. A view — when the value spans rows or tables
+
+```sql
+CREATE VIEW order_totals AS
+SELECT order_id,
+       sum(quantity * unit_price) AS total,
+       count(*)                   AS line_count
+FROM order_items
+GROUP BY order_id;
+
+SELECT o.id, o.ordered_at, t.total
+FROM orders o
+JOIN order_totals t ON t.order_id = o.id;
+```
+
+A view is a stored query: it holds no data, and every read runs the aggregation. That gives the
+definition of "order total" one home, and every reader gets the same answer.
+
+## When you can't delete the duplicate yet
+
+Sometimes the duplicate column has readers you can't change today (a BI tool reads `is_paid`). Then
+at least make disagreement impossible to *write*:
+
+```sql
+ALTER TABLE invoices
+  ADD CONSTRAINT is_paid_matches_paid_at CHECK (is_paid = (paid_at IS NOT NULL));
+```
+
+That's a stopgap — every writer still has to set both columns correctly, now with an error when
+they don't. A generated `is_paid` (`GENERATED ALWAYS AS (paid_at IS NOT NULL)`) keeps the column
+name for those readers and removes the second write entirely.

@@ -1,0 +1,49 @@
+---
+id: what-server-actions-check
+title: What Next.js Server Actions check for you — and what they don't
+---
+
+A Server Action can be the `action` of a plain `<form>`, which is exactly the shape of a CSRF
+attack. (How actions work is the Next.js track's subject; this is about their CSRF protection.)
+Next.js 16 adds two protections of its own:
+
+1. **POST only.** "Server Actions use the `POST` method, and only this HTTP method is allowed to
+   invoke them." A forged link or `<img>` can't trigger one, and `SameSite=Lax` cookies aren't
+   sent with a cross-site `POST`.
+2. **An origin check.** Next.js compares the host in the request's `Origin` header with the app's
+   own host, taken from `X-Forwarded-Host` or `Host`. If they differ, the action is aborted —
+   "Server Actions can only be invoked on the same host as the page that hosts it."
+
+Behind a reverse proxy that forwards its *own* host instead of the public one, legitimate requests
+fail that comparison. That's what `allowedOrigins` is for:
+
+```js
+// next.config.js
+module.exports = {
+  experimental: {
+    serverActions: {
+      allowedOrigins: ["my-proxy.com", "*.my-proxy.com"],
+    },
+  },
+};
+```
+
+Entries match the `Origin`'s **host** (hostname plus port if present). `*` stands for exactly one
+label and `**` for one or more, so `*.my-proxy.com` does not cover the bare `my-proxy.com` — hence
+two entries. Add the host users see in the address bar, not the internal one.
+
+The edges worth knowing:
+
+- **A request with no `Origin` header is allowed** (with a logged warning). The docs don't say
+  so; Next.js 16.2's Server Actions handler does, and its comment gives the reasoning: such a request is either
+  hand-crafted (`curl` has no victim's cookies) or from a browser too old to protect. That's a
+  deliberate trade-off — stricter than nothing, looser than OWASP's "fail closed".
+- **It only covers Server Actions.** A `POST` handler in `app/api/…/route.ts` that trusts the
+  session cookie gets no origin check from Next.js. Give it one yourself (the previous reading),
+  or don't authenticate it with cookies.
+- **It is not authorisation.** The data security guide: "you should still treat Server Actions as
+  reachable via direct POST requests and verify authentication and authorization inside each
+  one." The origin check stops another *site* driving the user's browser; it does nothing about a
+  logged-in user calling the action directly with someone else's record id.
+- **Don't rely on `proxy.ts` for it.** Actions are POSTs to the page that uses them, so a matcher
+  that skips that path skips the action too — the proxy reference warns about exactly this.

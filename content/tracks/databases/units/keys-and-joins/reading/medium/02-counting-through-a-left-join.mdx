@@ -1,0 +1,71 @@
+---
+id: counting-through-a-left-join
+title: Counting through a LEFT JOIN, line by line
+---
+
+The report: every customer, how many orders they've placed, and what they've spent — including
+customers who have spent nothing. Same data as before (Ada has two orders, Grace one, Linus none).
+
+```sql
+SELECT c.name,
+       count(o.id)               AS orders,
+       coalesce(sum(o.total), 0) AS spent
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+GROUP BY c.id, c.name
+ORDER BY c.name;
+```
+
+| name  | orders | spent |
+| ----- | ------ | ----- |
+| Ada   | 2      | 42.50 |
+| Grace | 1      | 99.00 |
+| Linus | 0      | 0     |
+
+Every choice in it is load-bearing:
+
+- **`LEFT JOIN`, because the report says "every customer".** An inner join would drop Linus,
+  and a report of "all customers" that quietly omits the ones with zero orders is wrong in the
+  way nobody notices.
+- **`count(o.id)`, not `count(*)`.** Linus's row exists — it's the row the left join added, with
+  every `o.` column `NULL`. `count(*)` counts rows, so it reports Linus as having **1** order.
+  `count(o.id)` counts non-null values of `o.id`, which gives 0.
+- **`coalesce(sum(o.total), 0)`.** Most aggregates skip `NULL` inputs, and the general-purpose
+  aggregates other than `count` return `NULL` when nothing is left to aggregate — `sum` of nothing is `NULL`, not 0.
+  `coalesce` turns it into a number your API won't have to special-case.
+- **`GROUP BY c.id, c.name`, not just `c.name`.** Names aren't unique. Add a second customer
+  called Ada, with one order, and `GROUP BY c.name` merges both into one row with three orders. Group by the key;
+  carry the name along for display.
+
+**Through a join table.** A many-to-many relationship takes two joins — one to the link table,
+one to the far side:
+
+```sql
+SELECT t.name AS team, u.email, m.role
+FROM teams t
+JOIN team_members m ON m.team_id = t.id
+JOIN users u        ON u.id = m.user_id
+ORDER BY t.name, u.email;
+```
+
+| team | email      | role   |
+| ---- | ---------- | ------ |
+| core | ada@x.io   | owner  |
+| core | grace@x.io | member |
+| web  | ada@x.io   | member |
+
+Ada appears twice because she's in two teams — one output row per *link*, which is exactly what
+"members of each team" means.
+
+**Who has never ordered?** The left join plus a null check is the classic *anti-join*:
+
+```sql
+SELECT c.name
+FROM customers c
+LEFT JOIN orders o ON o.customer_id = c.id
+WHERE o.id IS NULL;          -- → Linus
+```
+
+It works because `o.id` is the primary key: the only way it can be `NULL` here is the row the
+left join invented for a customer with no orders. `NOT EXISTS` (next tier) says the same thing
+more directly.

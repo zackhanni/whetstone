@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 3,
+  "slug": "secrets-and-config",
+  "title": "Secrets & config: what must never reach the browser or git",
+  "skills": ["security", "secrets", "nextjs"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Explain what `NEXT_PUBLIC_` does — the value is inlined into client JavaScript at `next build` and frozen — and treat every prefixed variable as public",
+    "Keep server secrets on the server: unprefixed variables, `import \"server-only\"`, and minimal props and Server Action return values",
+    "Spot configuration code that fails open when a secret is missing, and make it fail closed at startup",
+    "Respond to a committed or published secret in the right order: revoke and rotate first, history second",
+    "Keep `.env` files out of git, and search a build's output for leaked secret values"
+  ],
+  "sources": [
+    { "title": "Next.js docs: Environment variables", "url": "https://nextjs.org/docs/app/guides/environment-variables" },
+    { "title": "Next.js docs: Server and Client Components (preventing environment poisoning)", "url": "https://nextjs.org/docs/app/getting-started/server-and-client-components" },
+    { "title": "Next.js docs: Data Security", "url": "https://nextjs.org/docs/app/guides/data-security" },
+    { "title": "Next.js docs: output (the .next/static folder)", "url": "https://nextjs.org/docs/app/api-reference/config/next-config-js/output" },
+    { "title": "Next.js docs: instrumentation.js (register runs before the server handles requests)", "url": "https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation" },
+    { "title": "OWASP Cheat Sheet: Secrets Management", "url": "https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html" },
+    { "title": "GitHub Docs: Removing sensitive data from a repository", "url": "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository" },
+    { "title": "Git docs: gitignore", "url": "https://git-scm.com/docs/gitignore" },
+    { "title": "OWASP Top 10:2025 — A10 Mishandling of Exceptional Conditions", "url": "https://top10.owasp.org/2025/A10_2025-Mishandling_of_Exceptional_Conditions/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-secrets", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-secrets",
+      "questions": [
+        {
+          "id": "prefix-is-public",
+          "prompt": "Which statement about a Next.js `NEXT_PUBLIC_` variable is accurate?",
+          "options": [
+            { "id": "inlined", "text": "At `next build`, references to `process.env.NEXT_PUBLIC_X` are replaced with the value, which ships in the browser's JavaScript, so treat every prefixed value as public" },
+            { "id": "encrypted", "text": "Its value is encrypted in the client bundle and decrypted at runtime" },
+            { "id": "runtime", "text": "It's read from the server at runtime, so changing it in production applies on the next request" },
+            { "id": "label", "text": "The prefix only marks the variable as safe to print in logs" }
+          ],
+          "answer": "inlined",
+          "explanation": "The docs: Next.js will \"replace all references to `process.env.NEXT_PUBLIC_…` … with the value from the environment in which you run `next build`\", and it is \"inlined into any JavaScript sent to the browser\". Nothing is encrypted; anyone can read the bundle. And because it's a build-time substitution, changing the variable later does nothing until the next build. The prefix is an instruction to publish, so a secret must never carry it."
+        },
+        {
+          "id": "frozen-at-build",
+          "prompt": "You build one Docker image in staging and promote the same image to production with production's environment variables. The browser keeps calling the staging API. Why?",
+          "options": [
+            { "id": "frozen", "text": "The API URL is a `NEXT_PUBLIC_` variable, so its staging value was inlined during the staging build and is frozen in the image" },
+            { "id": "cache", "text": "The production CDN is still serving a cached copy of staging's HTML" },
+            { "id": "load-order", "text": "`.env.production` is read after the real environment, so it overrides it" },
+            { "id": "restart", "text": "The container needs a restart to re-read `process.env`" }
+          ],
+          "answer": "frozen",
+          "explanation": "The docs say this exact pipeline freezes public variables: \"all `NEXT_PUBLIC_` variables will be frozen with the value evaluated at build time\". Restarting can't change JavaScript that was already written out. Build per environment, or have the server provide runtime values to the client. The load-order option is backwards: the real `process.env` is checked first and wins over every `.env` file."
+        },
+        {
+          "id": "server-only-import",
+          "prompt": "What does `import \"server-only\"` at the top of `lib/payments.ts` do?",
+          "options": [
+            { "id": "build-error", "text": "Importing the module into client code becomes a build-time error, so secret-handling code can't slip into the browser's module graph" },
+            { "id": "encrypts", "text": "It encrypts every `process.env` read in that file" },
+            { "id": "runtime-strip", "text": "It strips secrets from the module at runtime when it runs in the browser" },
+            { "id": "edge", "text": "It forces the module to run in the Edge runtime" }
+          ],
+          "answer": "build-error",
+          "explanation": "Modules can be imported by both Server and Client Components. Without the marker, a client import of a server helper compiles, the unprefixed secret isn't there, and it just fails in the browser. With it, the docs promise \"a build-time error\" at the moment someone imports it on the client side. It's a guard on the import graph and does nothing to values at runtime."
+        },
+        {
+          "id": "props-serialised",
+          "prompt": "A Server Component loads `const user = await db.user.findUnique({ where: { id } })` and renders `<Profile user={user} />`. `Profile` is a Client Component that displays only `user.name`. What reaches the browser?",
+          "options": [
+            { "id": "whole-row", "text": "The whole `user` object, `passwordHash` and any tokens included, serialised into the page for the client" },
+            { "id": "name-only", "text": "Only `name`, because that's all `Profile` renders" },
+            { "id": "stripped", "text": "The object, with server-only fields stripped by Next.js automatically" },
+            { "id": "nothing", "text": "Nothing: Server Components never send data to the browser" }
+          ],
+          "answer": "whole-row",
+          "explanation": "Props crossing into a Client Component are serialised in full; React has no idea which fields the component will read. The data security guide shows this exact case (\"This exposes all the fields in userData to the client\") and the fix: return a minimal object with only what the UI needs, ideally from a `server-only` Data Access Layer. Nothing is stripped automatically. The opt-in taint APIs can make React refuse a marked object, but they're an extra layer, not filtering."
+        },
+        {
+          "id": "detect-missing",
+          "prompt": "Where should a missing required secret, such as the webhook signing key, be detected?",
+          "options": [
+            { "id": "startup", "text": "When the server starts: read every required variable once, throw if any is missing or empty, and refuse to serve traffic" },
+            { "id": "fallback", "text": "Where it's used, with a safe default like `?? \"\"` so the app keeps running" },
+            { "id": "warn", "text": "Log a warning at startup and continue, so one missing value doesn't take the site down" },
+            { "id": "dev-value", "text": "Fall back to the development value, which is better than nothing" }
+          ],
+          "answer": "startup",
+          "explanation": "A missing secret silently changes what security code means: `header === undefined` matches a request with no header, and `createHmac(\"sha256\", \"\")` signs with a key anyone knows. Failing at boot turns that into a failed deploy instead of an open endpoint. A default, a warning or a dev value all keep the hole open while looking healthy. That's \"failing open\", which OWASP Top 10:2025 lists under A10."
+        },
+        {
+          "id": "first-step",
+          "prompt": "A live API key was pushed to a public repository yesterday. What do you do first?",
+          "options": [
+            { "id": "rotate", "text": "Revoke or rotate the key with its provider, then deploy the new one" },
+            { "id": "filter-repo", "text": "Rewrite history with `git filter-repo` and force-push" },
+            { "id": "delete-line", "text": "Delete the line and push a new commit" },
+            { "id": "private", "text": "Make the repository private" }
+          ],
+          "answer": "rotate",
+          "explanation": "Everyone who cloned, forked or scanned the repository since yesterday has the key, and none of the other options reach them. GitHub's guide: \"as a first step you need to revoke and/or rotate that secret\". Once that's done the old value is useless, and rewriting history becomes a clean-up decision, not an emergency. Deleting the line leaves it in history, and making the repo private doesn't recall copies."
+        },
+        {
+          "id": "public-rotation",
+          "prompt": "A real secret shipped as `NEXT_PUBLIC_…` for a week. You rename the variable, remove the client reference and redeploy. Is the incident closed?",
+          "options": [
+            { "id": "rotate-anyway", "text": "No. Old bundles containing the value are still in CDN caches, browser caches and any copy someone saved; rotate the secret" },
+            { "id": "closed", "text": "Yes. The new build no longer contains it, so it's gone" },
+            { "id": "purge", "text": "Yes, once you purge the CDN cache" },
+            { "id": "minified", "text": "It was never exposed, because the bundle is minified" }
+          ],
+          "answer": "rotate-anyway",
+          "explanation": "The redeploy stops *new* copies; it doesn't recall the ones already delivered to every visitor for a week. Purging your CDN doesn't reach browsers or scrapers. Minification renames variables, but string values stay intact and readable. Once a secret has left your control, only rotation makes the copies worthless."
+        },
+        {
+          "id": "gitignore-after-commit",
+          "prompt": "`.env` was committed months ago. Today you add `.env` to `.gitignore` and commit. What's still true?",
+          "options": [
+            { "id": "still-tracked", "text": "Git still tracks `.env`, so future edits keep being committed, and the old secrets are still in history: untrack it with `git rm --cached .env` and rotate what was in it" },
+            { "id": "purged", "text": "Git stops tracking the file and removes it from earlier commits" },
+            { "id": "deleted", "text": "The file is deleted from the remote, but stays on your machine" },
+            { "id": "fine", "text": "Nothing; the file is now ignored and the repository is clean" }
+          ],
+          "answer": "still-tracked",
+          "explanation": "The git docs: \"Files already tracked by Git are not affected.\" `.gitignore` only stops untracked files from being added. `git rm --cached .env` removes it from the index (keeping your local copy) so the ignore rule applies from then on. History is untouched either way, which is why the values must be rotated."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-secrets",
+      "prompts": [
+        {
+          "id": "server-only-line",
+          "prompt": "Make it a build error to import this secret-handling module into client code.",
+          "code": [
+            "import \"___\";",
+            "",
+            "export async function charge(amount: number) { /* uses process.env.PAYMENTS_SECRET_KEY */ }"
+          ],
+          "blanks": [{ "id": "s1", "accept": ["server-only"] }],
+          "explanation": "`import \"server-only\"` marks the module as server-only; Next.js reports a build-time error if it ends up in the client environment. Use it on every module that reads secrets, talks to the database or calls internal APIs."
+        },
+        {
+          "id": "required-env",
+          "prompt": "Fail closed: a missing or empty required variable must stop the server at startup.",
+          "code": [
+            "function required(name: string): string {",
+            "  const value = process.env[name];",
+            "  if (!value) ___ new Error(`Missing required environment variable: ${name}`);",
+            "  return value;",
+            "}"
+          ],
+          "blanks": [{ "id": "r1", "accept": ["throw"] }],
+          "explanation": "Throwing while the config module loads means no code that needs the secret runs without it. Import the module from `register()` in `instrumentation.ts` and the throw happens at startup, before any request, rather than on the first request to a route that uses it. `!value` rejects both `undefined` and `\"\"`, the empty string an empty `.env` line produces. The dynamic `process.env[name]` lookup is fine on the server; it would never work for a `NEXT_PUBLIC_` value, which is only inlined when written literally."
+        },
+        {
+          "id": "grep-bundle",
+          "prompt": "After `next build`, search the JavaScript that will be served to browsers for a known secret prefix.",
+          "code": "grep -rl \"sk_live_\" .next/___",
+          "blanks": [{ "id": "g1", "accept": ["static", "static/"] }],
+          "explanation": "`.next/static` holds the client assets Next.js serves at `/_next/static/`. Search for values, not variable names, because inlined or serialised output contains the value. Props and RSC payloads travel in the page HTML instead, so also `curl` real pages and search them."
+        },
+        {
+          "id": "untrack-env",
+          "prompt": "`.env` is already tracked. Stop tracking it without deleting your local copy, so `.gitignore` can take effect.",
+          "code": "git rm ___ .env",
+          "blanks": [{ "id": "u1", "accept": ["--cached"] }],
+          "explanation": "`git rm --cached` removes the file from the index only, so the next commit untracks it and the ignore rule applies from then on. It doesn't touch history, so any secret that was in the file still needs rotating."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-secrets",
+      "snippets": [
+        {
+          "id": "undefined-equals-undefined",
+          "code": [
+            "// API_KEY was never set on this server",
+            "const API_KEY = process.env.API_KEY;",
+            "",
+            "function isAuthorized(headers) {",
+            "  return headers[\"x-api-key\"] === API_KEY;",
+            "}",
+            "",
+            "console.log(isAuthorized({}));",
+            "console.log(isAuthorized({ \"x-api-key\": \"guess\" }));"
+          ],
+          "question": "What two lines are printed?",
+          "answer": "true, then false",
+          "acceptable": ["true false", "true / false"],
+          "explanation": "With `API_KEY` unset, the check becomes `headers[\"x-api-key\"] === undefined`, so a request that sends **no** key is authorised (`undefined === undefined`), while anyone who guesses wrong is refused. The bug hides because every test that sends a key behaves correctly. Validate required config at startup and refuse to run without it."
+        },
+        {
+          "id": "empty-hmac-key",
+          "code": [
+            "import { createHmac } from \"node:crypto\";",
+            "",
+            "// WEBHOOK_SECRET is not set; `?? \"\"` was added to stop a startup crash",
+            "const secret = process.env.WEBHOOK_SECRET ?? \"\";",
+            "const sign = (body) => createHmac(\"sha256\", secret).update(body).digest(\"hex\");",
+            "",
+            "const forged = createHmac(\"sha256\", \"\").update('{\"paid\":true}').digest(\"hex\");",
+            "console.log(sign('{\"paid\":true}') === forged);"
+          ],
+          "question": "What is printed?",
+          "answer": "true",
+          "explanation": "Node accepts an empty string as an HMAC key, so the server signs with a key anyone can use, and every forged webhook \"verifies\". Without the `?? \"\"`, `createHmac(\"sha256\", undefined)` throws `ERR_INVALID_ARG_TYPE`, which was the correct, fail-closed behaviour the default switched off."
+        }
+      ]
+    }
+  ]
+}

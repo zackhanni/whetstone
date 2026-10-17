@@ -1,0 +1,43 @@
+---
+id: next-public-means-public
+title: NEXT_PUBLIC_ means "copy this into every visitor's browser"
+---
+
+In Next.js, an environment variable is server-only **unless its name starts with
+`NEXT_PUBLIC_`**. The prefix isn't a label; it's an instruction to the build:
+
+```txt
+# .env.local
+NEXT_PUBLIC_ANALYTICS_ID=abcdefghijk
+PAYMENTS_SECRET_KEY=sk_live_…
+```
+
+```tsx
+"use client";
+setupAnalytics(process.env.NEXT_PUBLIC_ANALYTICS_ID);
+```
+
+The Next.js docs: it will "replace all references to `process.env.NEXT_PUBLIC_ANALYTICS_ID` …
+with the value from the environment in which you run `next build`", and the value "will be inlined
+into any JavaScript sent to the browser". After the build, that line in the shipped bundle reads
+`setupAnalytics("abcdefghijk")`. Anyone can open DevTools and read it.
+
+Two consequences:
+
+- **The prefix decides, not the variable's purpose.** Name a secret `NEXT_PUBLIC_PAYMENTS_SECRET_KEY`
+  and it is published, whatever you intended. Third-party services usually give you two keys for
+  this reason: a *publishable* one that's designed to be seen in the browser, and a *secret* one
+  that must never leave the server. Only the publishable one may ever carry the prefix.
+- **The value is frozen at build time.** Changing a `NEXT_PUBLIC_` variable in production does
+  nothing until you rebuild. One Docker image promoted from staging to production carries
+  staging's public values.
+
+An unprefixed variable such as `PAYMENTS_SECRET_KEY` is only available in the Node.js environment;
+its value never reaches the client bundle. That is the default to rely on, and the rest of this
+unit is about the ways a server-only value still escapes.
+
+<!--more-->
+
+The build only replaces the literal expression `process.env.NEXT_PUBLIC_X`. A dynamic lookup such
+as `process.env[name]`, or `const env = process.env; env.NEXT_PUBLIC_X`, is **not** inlined, so the
+browser code never gets the value — a confusing bug, but not a leak.

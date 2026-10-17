@@ -1,0 +1,21 @@
+---
+id: headers-to-drop
+title: Headers to drop or switch off
+---
+
+```js
+// next.config.js
+module.exports = { poweredByHeader: false }; // Next.js adds X-Powered-By by default
+```
+
+Some headers make things worse, or only help an attacker:
+
+- **`X-XSS-Protection`** drove a filter that old browsers built in. OWASP: "Do not set this header
+  or explicitly turn it off" (`X-XSS-Protection: 0`), because "in some cases, this header can
+  create XSS vulnerabilities in otherwise safe websites". A CSP is the real replacement.
+- **`X-Powered-By`** advertises your framework. Next.js sends it unless `poweredByHeader` is
+  `false`. OWASP: "Remove all `X-Powered-By` headers."
+- **`Server`** with a product and version: OWASP says to remove it or set a non-informative value.
+
+Removing them is hygiene, not a defence. OWASP: "attackers have other means of fingerprinting
+your tech stack", so it buys you less than any header on the previous cards.

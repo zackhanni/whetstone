@@ -1,0 +1,40 @@
+---
+id: three-ways-to-allow-inline-script
+title: Nonce, hash, or 'unsafe-inline'
+---
+
+Real pages have inline scripts — a framework's bootstrap, an analytics snippet. The policy has to
+let *those* run without letting an injected one run. There are three ways, and only two of them
+keep the protection:
+
+**`'unsafe-inline'` — allow every inline script.** The browser can't tell your inline script from
+the attacker's, so it allows both. For script, this switches off the main thing CSP is for.
+
+**A nonce — allow inline scripts that carry this response's secret.** The server generates a random
+value for **each response**, puts it in the header, and adds it to its own script tags:
+
+```http
+Content-Security-Policy: script-src 'nonce-DFsSSeZaNYL/9GSWRxdKMg=='
+```
+
+```html
+<script nonce="DFsSSeZaNYL/9GSWRxdKMg==">boot()</script>
+```
+
+An attacker who injects `<script>steal()</script>` doesn't know the value, so the browser blocks it.
+The whole scheme rests on the nonce being unguessable — the CSP spec says the server "MUST
+generate a unique value each time it transmits a policy", and that the value should be at least
+128 bits from a cryptographically secure random generator.
+
+**A hash — allow inline scripts with exactly this content.** `'sha256-…'` is the base64 SHA-256 of
+the script's text. Change one character of the script and it stops matching. Hashes suit inline
+scripts that never change, because they can be computed at build time.
+
+One rule ties them together: **if a directive contains a nonce or a hash, browsers ignore
+`'unsafe-inline'` in it** (MDN). That's deliberate — a policy can list `'unsafe-inline'` as a
+fallback for very old browsers that don't understand nonces, and modern browsers drop it.
+
+A nonce covers whole `<script>` (and `<style>`) elements. An inline event handler such as
+`onclick="buy()"` is an attribute, and the spec notes nonces "only apply to inline script and inline
+style, not to attributes" — so under a nonce-based policy, move handlers into JavaScript
+(`addEventListener`, or a React `onClick` prop).

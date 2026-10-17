@@ -1,0 +1,26 @@
+---
+id: a06-insecure-design
+title: A06 Insecure Design
+---
+
+A missing control, not a coding slip. OWASP: "An insecure design cannot be fixed by a perfect
+implementation." Its examples include password recovery by security questions, group bookings
+with no upper limit, and checkouts that bots can sweep.
+
+```ts
+// ❌ the client decides what it pays
+const { productId, quantity, total } = await req.json();
+await charge(session.userId, total);
+
+// ✅ the server owns the price and the limits
+const product = await db.product.findUniqueOrThrow({ where: { id: productId } });
+if (!Number.isInteger(quantity) || quantity < 1 || quantity > product.maxPerOrder) {
+  return Response.json({ error: "Invalid quantity" }, { status: 400 });
+}
+await charge(session.userId, product.price * quantity);
+```
+
+No amount of input validation fixes the first version: the design gave the price to the client.
+
+OWASP's fixes: threat-model the flows that move money or data, add plausibility checks at each
+tier, and write tests for misuse cases, not just for the happy path.

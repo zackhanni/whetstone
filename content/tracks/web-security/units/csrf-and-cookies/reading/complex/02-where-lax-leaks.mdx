@@ -1,0 +1,42 @@
+---
+id: where-lax-leaks
+title: Where Lax leaks, and three myths about CSRF defences
+---
+
+`SameSite=Lax` blocks the auto-submitting form, so it's easy to believe CSRF is solved. These are
+the gaps that remain.
+
+**1. State-changing `GET`s.** Lax sends the cookie on a cross-site top-level navigation that uses
+a safe method. OWASP: "Lax only blocks unsafe methods". So if `GET /account/delete?confirm=1`
+deletes the account, a link on any site, or a script that sets `location`, does it with the user's
+session.
+
+**2. The two-minute window for unlabelled cookies.** Chromium's Lax-by-default is not quite `Lax`.
+MDN: for cookies that get the default, "cookies are also included in `POST` requests, as long as
+they were set no more than two minutes before the request was made". A session cookie issued at
+login with no `SameSite` attribute rides a cross-site form `POST` for its first two minutes. A
+cookie labelled `SameSite=Lax` explicitly doesn't get that leeway.
+
+**3. Sibling subdomains are "same site".** A request from `https://uploads.example.com` to
+`https://app.example.com` is same-site, so `Lax` and `Strict` both send the cookie, and
+`Sec-Fetch-Site` reports `same-site`. Treat `same-site` as untrusted unless you control every
+subdomain and what it serves.
+
+Three beliefs that don't hold:
+
+- **"CORS protects us."** CORS decides whether a page from another origin may *read* your
+  response (the `cors-and-preflight` unit). A cross-site form `POST` is sent without any CORS
+  check, and CSRF never needed the response. A preflight only happens for non-simple requests —
+  a JSON `Content-Type` or a custom header — which is why requiring one helps, and why an endpoint
+  that also accepts a form-encoded or `text/plain` body is exposed.
+- **"We use POST, so we're safe."** Forms post cross-site just fine. POST-only stops link and
+  image attacks; it does nothing about a form.
+- **"The login form doesn't need protecting."** OWASP describes **login CSRF**: the attacker logs
+  the victim into the *attacker's* account, and whatever the victim then saves (a card, search
+  history) lands in an account the attacker can read. Protect the login form too (OWASP suggests
+  a pre-session with a token), and issue a new session after login.
+
+The layered answer, cheapest first: no state changes on `GET`; an explicit `SameSite=Lax` (or
+`Strict`) on the session cookie; a server-side `Sec-Fetch-Site`/`Origin` check on every
+state-changing request; CSRF tokens where browsers without Fetch Metadata or `same-site` traffic
+must be served. And none of it survives an XSS.

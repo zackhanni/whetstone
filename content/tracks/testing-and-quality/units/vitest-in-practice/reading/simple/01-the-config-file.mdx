@@ -1,0 +1,54 @@
+---
+id: the-config-file
+title: The config file, line by line
+---
+
+Vitest runs with no config at all. You add `vitest.config.ts` when a default doesn't fit — and
+you should know the defaults, because they're what you get for every line you leave out. This is
+Vitest 4.
+
+```ts
+// vitest.config.ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    // Which files are tests. Default: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"]
+    include: ["src/**/*.test.ts"],
+
+    // Where tests run. Default: "node" — no DOM. "jsdom" or "happy-dom" for UI tests.
+    environment: "node",
+
+    // describe/it/expect as globals? Default: false — import them from "vitest".
+    globals: false,
+
+    // Files run before EACH test file, in the same worker as its tests.
+    setupFiles: ["./test/setup.ts"],
+  },
+});
+```
+
+The one for this app is a good example of "only what's needed":
+
+```ts
+export default defineConfig({
+  resolve: { alias: { "@": root } },   // the same @/ alias as tsconfig
+  test: {
+    environment: "node",               // lib/* logic is pure; no DOM needed
+    include: ["lib/**/*.test.ts", "learning/**/*.test.ts"],
+  },
+});
+```
+
+`include` keeps Vitest from picking up test files it shouldn't — here, the challenge graders under
+`content/`, which have their own config and their own run.
+
+Two commands cover daily use:
+
+- **`vitest`** — in an interactive terminal, starts **watch mode**: it re-runs the tests affected by
+  each file you save.
+- **`vitest run`** — runs once and exits with a status code. That's what CI and `package.json`
+  scripts use. Outside a terminal (CI, or a non-interactive shell) plain `vitest` runs once too.
+
+Run part of the suite by passing a filter: `vitest run cart` runs files whose path contains `cart`;
+`-t "starts empty"` runs tests whose name matches.

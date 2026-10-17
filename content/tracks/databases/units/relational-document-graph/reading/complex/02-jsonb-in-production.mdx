@@ -1,0 +1,69 @@
+---
+id: jsonb-in-production
+title: jsonb in production — drift, constraints, and promoting a key to a column
+---
+
+"Schemaless" never means no schema; it means the schema lives in every piece of code that reads the
+data. A year in, a `jsonb` column usually holds three spellings of the same idea.
+
+## Drift: the same key, different types
+
+```sql
+-- written by three versions of the app:
+{"qty": 9}          {"qty": "9"}          {"quantity": 9}
+```
+
+`(attrs->>'qty')::int` works on the first two and returns `NULL` for the third, so the third
+product silently drops out of every "low stock" report. Nothing rejected any of these writes.
+
+## Constraints still work on jsonb
+
+A `CHECK` constraint can pin down what you depend on, and the database then refuses the drift at
+write time (same `products` table as the medium tier: `id`, `sku`, `price`, `attrs`):
+
+```sql
+ALTER TABLE products ADD CONSTRAINT qty_is_a_number
+  CHECK (NOT attrs ? 'qty' OR jsonb_typeof(attrs->'qty') = 'number');
+
+INSERT INTO products (sku, price, attrs) VALUES ('PEN-9', 1.50, '{"qty": "9"}');
+-- ERROR 23514: new row for relation "products" violates check constraint "qty_is_a_number"
+```
+
+(Adding a constraint to a table that already holds bad rows fails until they're fixed — the
+migrations unit covers adding it `NOT VALID` and validating later.)
+
+## Promote a key the moment it matters
+
+When a key starts being filtered, joined or referenced, make it a real column. A **stored generated
+column** derives it from the JSON, so writers keep sending one document and the database keeps the
+column in step:
+
+```sql
+ALTER TABLE products
+  ADD COLUMN supplier_id bigint GENERATED ALWAYS AS ((attrs->>'supplier_id')::bigint) STORED
+  REFERENCES suppliers (id);
+
+INSERT INTO products (sku, price, attrs) VALUES ('PAD-1', 4, '{"supplier_id": 99}');
+-- ERROR 23503: … violates foreign key constraint "products_supplier_id_fkey"
+```
+
+(Adding a stored generated column rewrites the table, so on a big one this is a planned migration —
+see the migrations unit.)
+
+Now the "no foreign keys into JSON" limit is gone for that key, and `supplier_id` can take an
+ordinary B-tree index. It must be `STORED`: in PostgreSQL 18, where generated columns are virtual by
+default, a foreign key on a virtual generated column fails with "foreign key constraints on virtual
+generated columns are not supported" (and, as the normalization unit showed, virtual ones can't be
+indexed either).
+
+## Partial updates still write the whole row
+
+```sql
+UPDATE products SET attrs = jsonb_set(attrs, '{qty}', '10') WHERE sku = 'PEN-1';
+```
+
+`jsonb_set` changes one key in the *value*, but the row is still rewritten and locked as a whole —
+the PostgreSQL manual's advice is to keep each JSON document to "an atomic datum" and a manageable
+size, so that concurrent updates of unrelated keys don't contend for one row lock. Two features that
+update different keys of one big settings document at once will queue behind each other (and, done
+as read-modify-write in the app, lose each other's changes — the transactions unit's lost update).

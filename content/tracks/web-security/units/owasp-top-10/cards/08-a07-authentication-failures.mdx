@@ -1,0 +1,22 @@
+---
+id: a07-authentication-failures
+title: A07 Authentication Failures
+---
+
+Login and session handling that attackers can automate or abuse: credential stuffing and brute
+force that aren't throttled, weak or breached passwords accepted, error messages that reveal which
+accounts exist, a session id that survives login (session fixation), sessions that outlive logout.
+
+```ts
+const user = await db.user.findUnique({ where: { email } });
+const ok = user !== null && (await verifyPassword(user.passwordHash, password));
+if (!ok) {
+  await recordFailedLogin(email, ip); // throttle, and alert on spikes
+  return Response.json({ error: "Invalid email or password" }, { status: 401 }); // one message for every failure
+}
+const sessionId = await createSession(user.id); // a fresh id after login, never the pre-login one
+```
+
+OWASP's fixes: MFA, checking new passwords against breached-password lists, limiting or
+increasingly delaying failed attempts, the same response for every login and recovery outcome,
+and sessions that end on logout and on idle and absolute timeouts.

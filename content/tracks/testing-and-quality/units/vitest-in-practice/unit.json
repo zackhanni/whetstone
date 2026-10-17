@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 3,
+  "slug": "vitest-in-practice",
+  "title": "Vitest 4 in practice: config, environments, coverage, output",
+  "skills": ["testing", "vitest", "coverage"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Read and write a Vitest 4 config — `include`, `environment` (and the per-file `@vitest-environment` comment), `globals`, `setupFiles` vs `globalSetup` — knowing each default",
+    "Explain what the default `forks` pool gives you over `threads` (process-level state such as `process.env.TZ`), and what turning `isolate` off lets leak between files",
+    "Turn on coverage with `coverage.include` set, and say what a coverage percentage does and doesn't prove",
+    "Judge when a snapshot test helps and when it rubber-stamps, and review a `-u` update like code",
+    "Get passing tests' console output back when a reporter hides it (the agent reporter, `silent: \"passed-only\"`), and predict what breaks when a suite moves to Vitest 5"
+  ],
+  "sources": [
+    { "title": "Vitest 4 docs: Config reference", "url": "https://v4.vitest.dev/config/" },
+    { "title": "Vitest 4 docs: environment", "url": "https://v4.vitest.dev/config/environment" },
+    { "title": "Vitest 4 docs: setupFiles", "url": "https://v4.vitest.dev/config/setupfiles" },
+    { "title": "Vitest 4 docs: globals", "url": "https://v4.vitest.dev/config/globals" },
+    { "title": "Vitest 4 docs: pool", "url": "https://v4.vitest.dev/config/pool" },
+    { "title": "Vitest 4 docs: Coverage", "url": "https://v4.vitest.dev/guide/coverage" },
+    { "title": "Vitest 4 docs: Snapshot", "url": "https://v4.vitest.dev/guide/snapshot" },
+    { "title": "Vitest 4 docs: Reporters", "url": "https://v4.vitest.dev/guide/reporters" },
+    { "title": "Vitest docs: Migrating to Vitest 5", "url": "https://vitest.dev/guide/migration/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-vitest", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-vitest",
+      "questions": [
+        {
+          "id": "document-not-defined",
+          "prompt": "In a project of mostly logic tests, one new component test fails with `ReferenceError: document is not defined`. What's the most targeted fix?",
+          "options": [
+            { "id": "docblock", "text": "Install `happy-dom` (or `jsdom`) and put `// @vitest-environment happy-dom` at the top of that one file" },
+            { "id": "global-env", "text": "Set `environment: \"jsdom\"` for the whole project" },
+            { "id": "globals", "text": "Turn on `globals: true`" },
+            { "id": "import-document", "text": "Import `document` from `\"vitest\"`" }
+          ],
+          "answer": "docblock",
+          "explanation": "Vitest's default environment is `node`, which has no DOM. A per-file comment gives just that file a simulated DOM and leaves every logic test in fast plain Node. Switching the whole project works but makes every test pay for a DOM it doesn't use. `globals` only controls whether `describe`/`it`/`expect` are imported, and Vitest doesn't export a `document`."
+        },
+        {
+          "id": "where-msw-listens",
+          "prompt": "Where should MSW's `server.listen()` go so every test file's `fetch` calls are intercepted?",
+          "options": [
+            { "id": "setup-files", "text": "In a `setupFiles` file — it runs before each test file, in the same worker as its tests" },
+            { "id": "global-setup", "text": "In `globalSetup` — it runs once, so it's cheaper" },
+            { "id": "config", "text": "Directly in `vitest.config.ts`" },
+            { "id": "package-json", "text": "In a `pretest` script in `package.json`" }
+          ],
+          "answer": "setup-files",
+          "explanation": "Interception patches the request modules of the process the tests run in. `setupFiles` run inside each worker before its test file, so the patch applies where `fetch` is called. `globalSetup` runs once in the main process before the workers exist — right for starting a database, wrong for anything that must live in the test's own process. The config file and npm scripts run in yet other processes."
+        },
+        {
+          "id": "rtl-cleanup",
+          "prompt": "With `globals: false`, React Testing Library renders pile up within a test file — the second test finds two copies of a button. Why?",
+          "options": [
+            { "id": "cleanup", "text": "RTL's automatic cleanup registers through a global `afterEach`; without globals, call `cleanup()` in an `afterEach` yourself" },
+            { "id": "isolate", "text": "`isolate` is off, so the DOM is shared between files" },
+            { "id": "env", "text": "happy-dom never removes elements" },
+            { "id": "pool", "text": "The `threads` pool shares one DOM between tests" }
+          ],
+          "answer": "cleanup",
+          "explanation": "Vitest's docs note that `@testing-library/react` relies on globals being present to perform auto cleanup. With imports instead of globals, nothing unmounts the previous test's tree, so it's still in `document.body`. A setup file with `afterEach(cleanup)` restores the behaviour. The leak is within one file — isolation between files and the pool aren't involved."
+        },
+        {
+          "id": "threads-tz",
+          "prompt": "A setup file sets `process.env.TZ = \"Asia/Tokyo\"`. After someone switches `pool` to `\"threads\"` for speed, date tests start seeing the machine's own time zone. Why?",
+          "options": [
+            { "id": "threads", "text": "Worker threads share one process, and the TZ change made inside a thread doesn't take effect; process-level state needs the default `forks` pool" },
+            { "id": "env-copy", "text": "Threads can't read `process.env` at all" },
+            { "id": "order", "text": "Setup files run after the tests under `threads`" },
+            { "id": "cache", "text": "Vitest caches the time zone between runs" }
+          ],
+          "answer": "threads",
+          "explanation": "Under `forks` each worker is its own process, so changing `TZ` in the setup file changes that process's zone (checked: `Asia/Tokyo`). Under `threads` the same line runs but the zone stays the machine's — like `process.chdir()`, which the docs say is unavailable in threads. Setup files still run before the tests in both pools. Assert the zone took effect in the test, so a config change can't silently void it."
+        },
+        {
+          "id": "coverage-absent-files",
+          "prompt": "Coverage says 92%, but you know two whole modules have no tests at all. What's going on?",
+          "options": [
+            { "id": "include", "text": "Without `coverage.include`, Vitest 4 reports only files imported during the run — untested modules are missing, not 0%" },
+            { "id": "v8", "text": "The v8 provider can't measure modules without tests; switch to istanbul" },
+            { "id": "rounding", "text": "Coverage rounds small modules down to nothing" },
+            { "id": "correct", "text": "92% is right; files with no tests don't count towards coverage by design" }
+          ],
+          "answer": "include",
+          "explanation": "The report only lists files some test loaded. A module no test imports isn't counted as uncovered — it's left out, which inflates the total. Set `coverage.include` (e.g. `[\"src/**/*.ts\"]`) and those modules appear at 0%. Both providers behave this way by default."
+        },
+        {
+          "id": "snapshot-rubber-stamp",
+          "prompt": "A markup refactor fails 40 snapshot tests. The author runs `vitest -u`, and reviewers approve the PR without opening the `.snap` diffs. What has gone wrong?",
+          "options": [
+            { "id": "rubber-stamp", "text": "The snapshots became a rubber stamp: whatever the code now outputs is \"expected\"; review `.snap` diffs like code, or use targeted assertions" },
+            { "id": "nothing", "text": "Nothing — updating snapshots after a refactor is exactly what `-u` is for" },
+            { "id": "inline", "text": "They should have used `toMatchInlineSnapshot`, which can't be updated with `-u`" },
+            { "id": "gitignore", "text": "`.snap` files should be git-ignored so they don't clutter reviews" }
+          ],
+          "answer": "rubber-stamp",
+          "explanation": "A snapshot test only checks something if a human confirmed the snapshot was right. Updating 40 unread snapshots accepts any regression the refactor introduced. Vitest's docs say snapshots should be committed and reviewed as part of code review. Inline snapshots update with `-u` too. Git-ignoring `.snap` files means every fresh checkout writes new snapshots that pass by definition — and CI, where Vitest doesn't write snapshots, fails on the missing ones."
+        },
+        {
+          "id": "agent-reporter",
+          "prompt": "An AI coding agent runs `vitest run` to debug. A `console.log` inside a passing test never shows up. What's the likeliest reason?",
+          "options": [
+            { "id": "agent", "text": "With no `reporters` configured, Vitest 4.1+ uses its agent reporter in agent sessions, which drops passing tests' logs; run with `--reporter=verbose`" },
+            { "id": "not-reached", "text": "The line isn't reached — passing tests always print their logs" },
+            { "id": "silent-default", "text": "`silent` is `true` by default" },
+            { "id": "stdout-ci", "text": "Vitest never prints stdout outside a TTY" }
+          ],
+          "answer": "agent",
+          "explanation": "Since 4.1, Vitest detects coding agents through the environment and, unless you configured `reporters`, switches to a minimal report of failures only, suppressing passing tests' console output (checked under 4.1.12; `--reporter=default` brings it back). `silent` defaults to `false`, and logs do print outside a TTY with the default reporter. Concluding \"the code isn't reached\" here sends a debugging session the wrong way."
+        },
+        {
+          "id": "vitest-5-upgrade",
+          "prompt": "A file creates `const send = vi.fn()` at the top; its second test calls `send()` once and expects `toHaveBeenCalledTimes(2)`, counting the first test's call. Green on Vitest 4, red after upgrading to Vitest 5. Why?",
+          "options": [
+            { "id": "clear-mocks", "text": "Vitest 5 turns `clearMocks` on by default, so call history is cleared before every test — the test relied on order" },
+            { "id": "parallel", "text": "Vitest 5 runs the tests in a file in parallel" },
+            { "id": "restore", "text": "Vitest 5's `restoreAllMocks` runs automatically and replaces `vi.fn` with the original" },
+            { "id": "renamed", "text": "`toHaveBeenCalledTimes` was renamed in Vitest 5" }
+          ],
+          "answer": "clear-mocks",
+          "explanation": "Vitest 4's `clearMocks` defaults to `false`, so a module-level mock's history carries from test to test; Vitest 5 defaults it to `true` (checked on 5.0.5: the second test sees 1 call). The upgrade exposed an order-dependent test — create the mock per test, or assert only on calls made in that test. Tests in a file still run in sequence, and the matcher is unchanged."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-vitest",
+      "prompts": [
+        {
+          "id": "per-file-env",
+          "prompt": "Give one file a simulated DOM, leaving the rest of the suite in Node.",
+          "code": [
+            "// @vitest-___ happy-dom",
+            "import { render, screen } from \"@testing-library/react\";"
+          ],
+          "blanks": [{ "id": "environment", "accept": ["environment"] }],
+          "explanation": "The docblock comment must be at the top of the file. `@jest-environment` also works, for Jest compatibility. The DOM package itself (`happy-dom` or `jsdom`) has to be installed."
+        },
+        {
+          "id": "config-keys",
+          "prompt": "Fill in the config keys.",
+          "code": [
+            "export default defineConfig({",
+            "  test: {",
+            "    ___: [\"./test/setup.ts\"], // before each test file, in its worker",
+            "    ___: true,                // describe/it/expect without importing them",
+            "  },",
+            "});"
+          ],
+          "blanks": [
+            { "id": "setup-files", "accept": ["setupFiles"] },
+            { "id": "globals", "accept": ["globals"] }
+          ],
+          "explanation": "`setupFiles` run inside each worker before every test file; `globalSetup` is the run-once, main-process one. `globals: true` also needs `\"vitest/globals\"` in `tsconfig.json`'s `types` for TypeScript."
+        },
+        {
+          "id": "coverage-include",
+          "prompt": "Make untested files show up in the coverage report at 0% instead of being left out.",
+          "code": [
+            "coverage: {",
+            "  ___: [\"src/**/*.ts\"],",
+            "},"
+          ],
+          "blanks": [{ "id": "include", "accept": ["include"] }],
+          "explanation": "By default Vitest 4 reports only files imported during the run. `coverage.include` names the files that *should* be covered, so a module no test touches counts against the total instead of disappearing."
+        },
+        {
+          "id": "cli-flags",
+          "prompt": "Two CLI flags: see every test (and its logs) as it finishes, and accept intentional snapshot changes.",
+          "code": [
+            "vitest run --reporter=___",
+            "vitest run ___"
+          ],
+          "blanks": [
+            { "id": "reporter", "accept": ["verbose", "tree"] },
+            { "id": "update", "accept": ["-u", "--update"] }
+          ],
+          "explanation": "`verbose` prints every test as it finishes, with its logs (`tree` lists them too, once each file finishes); `default` only lists every test when one file runs. Naming any reporter overrides the automatic choice, including the agent reporter that hides passing tests' logs. `-u` rewrites failing snapshots with the current output — so the `.snap` diff it produces is what a reviewer must read."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-vitest",
+      "snippets": [
+        {
+          "id": "threads-ignores-tz",
+          "code": [
+            "// test/setup.ts",
+            "process.env.TZ = \"Asia/Tokyo\";",
+            "",
+            "// vitest.config.ts",
+            "test: { setupFiles: [\"./test/setup.ts\"], pool: \"threads\" }",
+            "",
+            "// tz.test.ts — the machine's own zone is America/New_York",
+            "it(\"zone\", () => {",
+            "  console.log(Intl.DateTimeFormat().resolvedOptions().timeZone);",
+            "});"
+          ],
+          "question": "What does the test print under Vitest 4.1? And with `pool: \"forks\"`?",
+          "answer": "America/New_York with threads; Asia/Tokyo with forks",
+          "acceptable": ["America/New_York, then Asia/Tokyo", "the machine's zone with threads, Tokyo with forks"],
+          "explanation": "The setup file runs in both pools, but the time-zone change only takes effect when the worker is its own process (`forks`, the default). In a worker thread the process keeps the zone it started with. A test that depends on `TZ` should assert the zone it got, so a pool change can't quietly turn it into a test of the machine's zone."
+        },
+        {
+          "id": "coverage-missing-file",
+          "code": [
+            "// src/price.ts      — tested by src/price.test.ts",
+            "// src/untested.ts   — no test imports it",
+            "",
+            "// vitest.config.ts — coverage on, no coverage.include",
+            "",
+            "// $ vitest run --coverage"
+          ],
+          "question": "What does the Statements line of the coverage summary show (price.ts is fully exercised)?",
+          "answer": "100%",
+          "acceptable": ["100", "100%", "Statements : 100%"],
+          "explanation": "`untested.ts` was never imported, so Vitest 4 leaves it out of the report entirely and the total is computed from `price.ts` alone. With `coverage.include: [\"src/**/*.ts\"]` the same run shows `untested.ts` at 0% and the total drops (75% of statements in the checked run)."
+        },
+        {
+          "id": "isolate-off-leak",
+          "code": [
+            "// registry.ts",
+            "export const seen: string[] = [];",
+            "",
+            "// a.test.ts",
+            "it(\"a adds\", () => { seen.push(\"a\"); });",
+            "",
+            "// b.test.ts — runs after a.test.ts, in the same worker",
+            "it(\"b expects empty\", () => { expect(seen).toEqual([]); });",
+            "",
+            "// vitest.config.ts",
+            "test: { isolate: false, maxWorkers: 1 }"
+          ],
+          "question": "Does `b expects empty` pass? And with the default `isolate: true`?",
+          "answer": "It fails (expected [ 'a' ] to deeply equal []); with isolate: true it passes",
+          "acceptable": ["fails, then passes with isolate", "no; yes with isolation on"],
+          "explanation": "With isolation off, a worker keeps its module cache between files, so `b.test.ts` imports the same `registry.ts` instance that `a.test.ts` already pushed to (checked under Vitest 4.1). The default gives each file fresh modules, so the leak can't cross files — though it still can between tests in one file. Whether it shows up depends on which files share a worker and in what order, which is what makes it hard to debug."
+        }
+      ]
+    }
+  ]
+}

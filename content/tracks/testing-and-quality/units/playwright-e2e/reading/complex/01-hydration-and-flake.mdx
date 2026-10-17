@@ -1,0 +1,58 @@
+---
+id: hydration-and-flake
+title: Clicking before hydration, and other flake
+---
+
+## The click that became a page load
+
+A server-rendered React page arrives as HTML first. The form is real HTML, so the browser can submit
+it on its own; the `onSubmit` handler that calls `preventDefault()` only exists once React has
+**hydrated** — downloaded the JavaScript and attached its handlers. Until then, a click on "Add"
+does what a plain HTML form does: a GET to the form's URL with the fields in the query string.
+
+Playwright's actionability checks don't know about hydration. The button is visible, stable,
+enabled and receives events from the moment the HTML renders, so `click()` goes ahead immediately.
+
+Checked with Playwright 1.64 against a page whose handlers attach 1.5 s after load (standing in for
+slow hydration):
+
+```ts
+await page.goto("/todos");
+await page.getByLabel("New todo").fill("Buy milk");
+await page.getByRole("button", { name: "Add" }).click();
+page.url(); // "http://localhost:4610/todos?title=Buy+milk" — a full page load, not a new todo
+```
+
+The item never appears, and the test fails waiting for it. With no named fields the URL ends in a
+bare `?` (checked: `/todos?`). It's worst under a dev server — Next.js's docs: `next dev`
+*"compiles routes in your application as you open or navigate to them"*, and nothing is minified, so
+hydration lags — and on a loaded CI machine: the classic "fails on CI, passes when I retry".
+
+Fixes:
+
+- **Wait for a signal that only exists after hydration.** For example, set
+  `document.body.dataset.hydrated = "true"` in an effect in the root layout, then
+  `await expect(page.locator("body")).toHaveAttribute("data-hydrated", "true")` after `goto` —
+  checked: the same test then adds the todo and the URL stays `/todos`. Put it in a fixture so every
+  test gets it.
+- **Assert on something the click must change**, so a premature click fails loudly rather than
+  silently reloading.
+- **Run the suite against a production build** (`next build && next start` as the `webServer`
+  command): hydration is faster, and it's the build you ship.
+
+## Other common sources of flake
+
+- **Shared server state.** Two tests editing the same record in parallel, or one test's leftovers
+  breaking another. Create the data each test needs, with unique names.
+- **Assertions that don't retry.** `expect(await locator.textContent()).toBe(…)` reads once; the
+  web-first `toHaveText` keeps checking.
+- **Fixed sleeps.** `waitForTimeout` is a race against the machine's speed.
+- **Things you don't control.** A third-party widget or payment page. Playwright's guide: *"Only test
+  what you control"* — route those requests to a stub with `page.route`.
+
+## Retries reveal flake; they don't fix it
+
+With `retries` set, Playwright reports a test that failed and then passed as **flaky** — a separate
+category from passed and failed. Treat that label as a bug report, not as green: the retry's trace
+(`trace: "on-first-retry"`) shows what differed. To reproduce locally, run the one test many times:
+`npx playwright test todos.spec.ts --repeat-each=20`.

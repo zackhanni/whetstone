@@ -1,0 +1,22 @@
+---
+id: a08-software-or-data-integrity-failures
+title: A08 Software or Data Integrity Failures
+---
+
+Trusting code or data without checking where it came from or whether it was changed: unsigned
+updates, scripts from a CDN with no integrity check, serialised objects an attacker can edit, and
+cookies used in security decisions without validation.
+
+```tsx
+// ❌ the role comes from a cookie the user can edit in DevTools
+const prefs = JSON.parse((await cookies()).get("prefs")?.value ?? "{}");
+if (prefs.role === "admin") return <AdminPanel />;
+```
+
+The role belongs in server-side state (the session record or the database), or at least in a value
+whose signature the server verifies before trusting it. The same idea covers code: a third-party
+`<script>` tag can pin the exact file with an `integrity` (Subresource Integrity) hash.
+
+OWASP's fixes: verify signatures on software and data, consume dependencies only from trusted
+repositories, never accept unsigned serialised data from clients, and keep CI/CD pipelines
+segregated, access-controlled and reviewed.

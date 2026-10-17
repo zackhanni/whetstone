@@ -1,0 +1,21 @@
+---
+id: a09-security-logging-and-alerting-failures
+title: A09 Security Logging and Alerting Failures
+---
+
+Attacks that go unnoticed: logins, failed logins and high-value transactions that aren't logged;
+logs nobody alerts on; logs that contain what they mustn't; log data that isn't encoded, so input
+can forge entries. Renamed from "Monitoring" in 2021 to stress **alerting**.
+
+```ts
+// ❌ logger.info({ body: req.body }, "login") writes the password into your logs
+logger.warn({ event: "login_failed", accountId: user?.id ?? null, ip }, "login failed");
+```
+
+A structured logger (one JSON object per event) also handles encoding: a newline in user input
+can't start a fake log line.
+
+OWASP's fixes: log security-relevant successes and failures with enough context to investigate,
+keep sensitive data (personal data, credentials) out of logs, alert on suspicious patterns such as
+a burst of failed logins, store an audit trail append-only, and consider honeytokens, decoy
+records whose use is always an alert.

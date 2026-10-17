@@ -1,0 +1,430 @@
+{
+  "schemaVersion": 3,
+  "slug": "normalization",
+  "title": "Normalization: one fact, one place",
+  "skills": [
+    "databases",
+    "data-modeling",
+    "normalization",
+    "postgres"
+  ],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Spot the update, insert and delete anomalies that a fact stored in more than one place causes",
+    "Normalize a table to third normal form in working terms: one value per cell, every column about the whole key, and nothing but the key",
+    "Replace a column that can disagree with another by deriving it — in the query, a view, or a generated column (virtual by default since PostgreSQL 18)",
+    "Tell a deliberate copy (a price at the time of sale, a cached counter) from accidental duplication, and keep a cache honest",
+    "Store instants as `timestamptz` and dates as `date`, not text, and predict the rows a text comparison or an inclusive date bound silently drops"
+  ],
+  "sources": [
+    {
+      "title": "Microsoft Learn: Database normalization description",
+      "url": "https://learn.microsoft.com/en-us/previous-versions/troubleshoot/microsoft-365/microsoft-365-apps/access/database-normalization-description"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Generated Columns",
+      "url": "https://www.postgresql.org/docs/18/ddl-generated-columns.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: CREATE VIEW",
+      "url": "https://www.postgresql.org/docs/18/sql-createview.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Constraints (CHECK)",
+      "url": "https://www.postgresql.org/docs/18/ddl-constraints.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Trigger Functions (PL/pgSQL)",
+      "url": "https://www.postgresql.org/docs/18/plpgsql-trigger.html"
+    },
+    {
+      "title": "PostgreSQL 18 docs: Date/Time Types",
+      "url": "https://www.postgresql.org/docs/18/datatype-datetime.html"
+    },
+    {
+      "title": "PostgreSQL 18 release notes",
+      "url": "https://www.postgresql.org/docs/18/release-18.html"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-normalization",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-normalization",
+      "questions": [
+        {
+          "id": "update-anomaly",
+          "prompt": "`orders` stores `customer_email` on every order. Ada changes her email, and the account page updates it on her most recent order only. What has happened?",
+          "options": [
+            {
+              "id": "update-anomaly",
+              "text": "An update anomaly — customer 7 now has two emails in the database and nothing says which is current"
+            },
+            {
+              "id": "fine",
+              "text": "Nothing wrong: old orders should keep the email they were placed with"
+            },
+            {
+              "id": "insert-anomaly",
+              "text": "An insert anomaly — the new email couldn't be stored"
+            },
+            {
+              "id": "fk-error",
+              "text": "The update fails with a foreign-key error"
+            }
+          ],
+          "answer": "update-anomaly",
+          "explanation": "The email is a fact about the *customer*, stored once per *order*, so every change has to touch every copy — and this one didn't. The fix is one home for the fact (`customers.email`) and a pointer to it. The \"keep the old email\" option describes a *snapshot*, which would be a deliberate, documented choice; this column is read as \"the customer's email\", so two values for it is simply a contradiction."
+        },
+        {
+          "id": "insert-and-delete-anomalies",
+          "prompt": "Course titles and room numbers are stored only on `enrollments` rows, one copy per enrolled student. Which problems does that cause? (Pick two.)",
+          "options": [
+            {
+              "id": "delete",
+              "text": "When the last student drops a course and that enrollment row is deleted, the course's title and room are gone too"
+            },
+            {
+              "id": "insert",
+              "text": "A new course can't be recorded until someone enrolls in it"
+            },
+            {
+              "id": "vacuum",
+              "text": "Deleted enrollments keep the course visible until `VACUUM` runs"
+            },
+            {
+              "id": "one-course",
+              "text": "A student can't enroll in more than one course"
+            }
+          ],
+          "answer": [
+            "delete",
+            "insert"
+          ],
+          "explanation": "Both are anomalies from storing the course's facts on a table about enrollments. The delete anomaly: removing one fact (an enrollment) destroys an unrelated one (the course). The insert anomaly: you can't store the course without inventing an enrollment. Give courses their own table and let `enrollments` hold only the link. Deleted rows aren't visible to queries after the delete commits, whatever `VACUUM` has or hasn't done; and one row per enrollment allows any number of courses per student — the problem is what else each row carries."
+        },
+        {
+          "id": "comma-list",
+          "prompt": "`products.tags` is a `text` column holding values like `\"red,outdoor,sale\"`. Which normal form does that break, and what's the practical cost?",
+          "options": [
+            {
+              "id": "1nf",
+              "text": "1NF — the cell holds a list, so you can't put a foreign key on a tag, and `LIKE '%red%'` also matches `infrared`"
+            },
+            {
+              "id": "2nf",
+              "text": "2NF — `tags` depends on only part of the key"
+            },
+            {
+              "id": "3nf",
+              "text": "3NF — `tags` depends on a non-key column"
+            },
+            {
+              "id": "none",
+              "text": "None — a string is a single value, so the table is normalized"
+            }
+          ],
+          "answer": "1nf",
+          "explanation": "First normal form is \"one value per cell\": a delimited list is a repeating group squeezed into a string. You can't constrain each tag, you can't index tag lookups cleanly, renaming a tag means string surgery on every row, and substring matching gives false hits. A `product_tags(product_id, tag_id)` join table fixes all of it. 2NF and 3NF are about which *key* a column depends on — the problem here comes earlier."
+        },
+        {
+          "id": "partial-key-dependency",
+          "prompt": "`order_items` has `PRIMARY KEY (order_id, sku)` and columns `qty`, `product_name`. What's wrong with `product_name` here?",
+          "options": [
+            {
+              "id": "2nf",
+              "text": "It depends on only part of the key (`sku`), so it's repeated on every order that sells that product — it belongs in `products` (2NF)"
+            },
+            {
+              "id": "nothing",
+              "text": "Nothing; every column depends on the primary key because the key identifies the row"
+            },
+            {
+              "id": "1nf",
+              "text": "It breaks 1NF because names can contain spaces"
+            },
+            {
+              "id": "needs-index",
+              "text": "It needs its own index to be in 2NF"
+            }
+          ],
+          "answer": "2nf",
+          "explanation": "Ask of each column: \"to know this, do I need the whole key?\" `qty` needs both `order_id` and `sku`. `product_name` needs only `sku`, so rename a product and you must update every line that ever sold it. 2NF only matters with a multi-column key — and the \"the key identifies the row, so everything depends on it\" answer is exactly the reasoning it exists to correct."
+        },
+        {
+          "id": "transitive-dependency",
+          "prompt": "`orders(id, ordered_at, customer_id, customer_city)` — `id` is the key. Which normal form does `customer_city` break?",
+          "options": [
+            {
+              "id": "3nf",
+              "text": "3NF — it depends on `customer_id`, a non-key column, not on the order itself"
+            },
+            {
+              "id": "2nf",
+              "text": "2NF — it depends on part of a composite key"
+            },
+            {
+              "id": "1nf",
+              "text": "1NF — cities are repeated"
+            },
+            {
+              "id": "none",
+              "text": "None — it's on the same row as the key, so it depends on the key"
+            }
+          ],
+          "answer": "3nf",
+          "explanation": "Third normal form: non-key columns depend on the key *and nothing but the key*. The city is determined by the customer, so it changes when the customer moves, not when the order changes — and every order holds a copy. The key here is a single column, so 2NF can't be the problem. Move the city to `customers` (unless you mean \"the city this order shipped to\", which is a snapshot — a different fact)."
+        },
+        {
+          "id": "is-paid-and-paid-at",
+          "prompt": "`invoices` has both `is_paid boolean` and `paid_at timestamptz`, and production has rows where they disagree. What's the most robust fix?",
+          "options": [
+            {
+              "id": "derive",
+              "text": "Keep `paid_at` and derive `is_paid` from `paid_at IS NOT NULL` (in queries, a view, or a generated column)"
+            },
+            {
+              "id": "check",
+              "text": "Keep both and add `CHECK (is_paid = (paid_at IS NOT NULL))`"
+            },
+            {
+              "id": "app-sync",
+              "text": "Keep both, and make one service function responsible for writing them together"
+            },
+            {
+              "id": "nightly",
+              "text": "Keep both and run a nightly job that repairs mismatches"
+            }
+          ],
+          "answer": "derive",
+          "explanation": "When one column can be computed from another, storing both creates a way to be wrong. Deriving removes the second write and so removes the bug class. The `CHECK` is a decent stopgap when legacy readers need the column — it makes disagreement impossible to write — but every writer still has to set both. A service function guards only the code that calls it (not scripts or the SQL editor), and a nightly repair job means the data is wrong for up to a day, and it has to guess which column was right."
+        },
+        {
+          "id": "generated-total",
+          "prompt": "You try `orders.total numeric GENERATED ALWAYS AS ((SELECT sum(quantity * unit_price) FROM order_items WHERE order_id = id))`. What happens?",
+          "options": [
+            {
+              "id": "rejected",
+              "text": "It's rejected (`cannot use subquery in column generation expression`) — a generated column sees only its own row; use a view or compute it in the query"
+            },
+            {
+              "id": "virtual-works",
+              "text": "It works in PostgreSQL 18, because virtual columns are computed when read"
+            },
+            {
+              "id": "stored-works",
+              "text": "It works if you add `STORED`"
+            },
+            {
+              "id": "stale",
+              "text": "It works, but the total goes stale when `order_items` changes"
+            }
+          ],
+          "answer": "rejected",
+          "explanation": "The manual: a generation expression can only use immutable functions and can't use subqueries or reference anything other than the current row. Virtual vs stored changes *when* it's computed, not *what it can see*. A total over child rows belongs in a view (`CREATE VIEW order_totals AS SELECT order_id, sum(…) … GROUP BY order_id`) or in the query that needs it; a same-row value like `quantity * unit_price` is the generated column's job."
+        },
+        {
+          "id": "price-snapshot",
+          "prompt": "A reviewer says `order_items.unit_price` duplicates `products.price` and should be dropped in favour of a join. Are they right?",
+          "options": [
+            {
+              "id": "snapshot",
+              "text": "No — it records what this order was charged, a different fact; joining to the current price would rewrite past orders"
+            },
+            {
+              "id": "yes",
+              "text": "Yes — the same value in two tables is always a normalization error"
+            },
+            {
+              "id": "yes-trigger",
+              "text": "Yes, unless a trigger keeps `unit_price` in sync with `products.price`"
+            },
+            {
+              "id": "index",
+              "text": "No — but only because a join would be slower"
+            }
+          ],
+          "answer": "snapshot",
+          "explanation": "The test isn't \"is the value repeated?\" but \"is it the same fact?\" Ask: if the catalogue price changes tomorrow, should last month's invoice change? No — so `unit_price` is a snapshot, and storing it is correct. A trigger keeping it in sync would make it *wrong*: it would turn the snapshot back into a copy of today's price. Performance has nothing to do with it."
+        },
+        {
+          "id": "cache-honest",
+          "prompt": "`posts.comment_count` is a deliberate cache. The API inserts a comment and commits, then runs `UPDATE posts SET comment_count = $1` with a count it computed in Node. Counts drift. Which change keeps the cache honest?",
+          "options": [
+            {
+              "id": "same-tx-relative",
+              "text": "Update it in the same transaction as the insert, relative to itself (`comment_count = comment_count + 1`, e.g. from an `AFTER INSERT OR DELETE` trigger), and keep a query that rebuilds it from `comments`"
+            },
+            {
+              "id": "nightly",
+              "text": "Keep the code and recompute every count in a nightly job"
+            },
+            {
+              "id": "mutex",
+              "text": "Compute the count in Node inside a mutex so two requests can't interleave"
+            },
+            {
+              "id": "generated",
+              "text": "Make `comment_count` a generated column that counts the post's comments"
+            }
+          ],
+          "answer": "same-tx-relative",
+          "explanation": "Three separate bugs drift the count: the update runs in a second transaction (if it fails, the comment exists and the count never moves), the value is computed from a read (two requests both read 5 and both write 6), and only the API maintains it (a script or the SQL editor doesn't). Same transaction + relative update + a trigger fixes all three, and the rebuild query is the recovery path. A nightly job leaves it wrong for up to a day; an in-process mutex doesn't cover other server instances or other writers; a generated column can only see its own row, so it can't count comments."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-normalization",
+      "prompts": [
+        {
+          "id": "derive-in-view",
+          "prompt": "Derive `is_paid` from `paid_at` so it can never disagree with it.",
+          "code": [
+            "CREATE ___ invoices_v AS",
+            "SELECT id, amount, paid_at, paid_at ___ AS is_paid",
+            "FROM invoices;"
+          ],
+          "blanks": [
+            {
+              "id": "a1",
+              "accept": [
+                "VIEW",
+                "OR REPLACE VIEW"
+              ]
+            },
+            {
+              "id": "a2",
+              "accept": [
+                "IS NOT NULL"
+              ]
+            }
+          ],
+          "explanation": "A view stores the query, not the data, so every read computes `paid_at IS NOT NULL` from the one stored column. There's no second value to update — and nothing to drift."
+        },
+        {
+          "id": "generated-column",
+          "prompt": "A same-row derived value that you also need to index. In PostgreSQL 18, finish the definition.",
+          "code": "line_total numeric(12,2) GENERATED ALWAYS ___ (quantity * unit_price) ___",
+          "blanks": [
+            {
+              "id": "b1",
+              "accept": [
+                "AS"
+              ]
+            },
+            {
+              "id": "b2",
+              "accept": [
+                "STORED"
+              ]
+            }
+          ],
+          "explanation": "`GENERATED ALWAYS AS (expr)` defines a generated column. Since PostgreSQL 18 it's virtual by default (computed on read), and PostgreSQL 18 can't index a virtual generated column — so a column you want to index needs `STORED` (computed on write). Before PostgreSQL 18, `STORED` was the only kind and was always required."
+        },
+        {
+          "id": "honest-types",
+          "prompt": "Pick column types that make the database understand the values: a due date (no time of day) and the moment a row was created.",
+          "code": [
+            "due_on     ___ NOT NULL,",
+            "created_at ___ NOT NULL DEFAULT now()"
+          ],
+          "blanks": [
+            {
+              "id": "c1",
+              "accept": [
+                "date"
+              ]
+            },
+            {
+              "id": "c2",
+              "accept": [
+                "timestamptz",
+                "timestamp with time zone"
+              ]
+            }
+          ],
+          "explanation": "`date` holds a calendar day with no time or zone, and rejects `2026-02-30` at insert. `timestamptz` converts any input offset to UTC and stores the instant, so comparisons are between instants rather than between strings that happen to look like dates."
+        },
+        {
+          "id": "half-open-range",
+          "prompt": "All rows created from March 1 to March 10 inclusive, correct for any timestamp precision.",
+          "code": "WHERE created_at >= '2026-03-01' AND created_at ___ '2026-03-11'",
+          "blanks": [
+            {
+              "id": "d1",
+              "accept": [
+                "<"
+              ]
+            }
+          ],
+          "explanation": "A half-open range: include the start, exclude the next day's start. `<= '2026-03-10'` would mean \"up to midnight at the *start* of March 10\" and drop that whole day, for a `timestamptz` column and (as a string prefix) for a `text` one."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-normalization",
+      "snippets": [
+        {
+          "id": "text-upper-bound",
+          "code": [
+            "-- created_at is TEXT holding ISO strings:",
+            "--   '2026-03-09T22:00:00Z', '2026-03-10T09:15:00Z',",
+            "--   '2026-03-10T23:59:00Z', '2026-03-11T00:01:00Z'",
+            "SELECT count(*) FROM events",
+            "WHERE created_at BETWEEN '2026-03-01' AND '2026-03-10';"
+          ],
+          "question": "What count comes back?",
+          "answer": "1",
+          "acceptable": [
+            "1",
+            "one",
+            "1 (March 10 is dropped)"
+          ],
+          "explanation": "Text compares character by character, and `'2026-03-10'` is a prefix of both March 10 timestamps, so it sorts *before* them — both fall outside `<= '2026-03-10'`. Only the March 9 row qualifies. The last day of every such report is silently missing."
+        },
+        {
+          "id": "date-text-vs-instant",
+          "code": [
+            "-- due_on is TEXT holding date-only values: '2026-03-09', '2026-03-10', '2026-03-11'",
+            "-- The app passes new Date('2026-03-10').toISOString():",
+            "SELECT due_on FROM tasks",
+            "WHERE due_on >= '2026-03-10T00:00:00.000Z';"
+          ],
+          "question": "Which rows come back?",
+          "answer": "Only '2026-03-11'",
+          "acceptable": [
+            "2026-03-11",
+            "just the 11th",
+            "only 2026-03-11"
+          ],
+          "explanation": "Now the short string is in the column: `'2026-03-10'` is a prefix of `'2026-03-10T00:00:00.000Z'`, so it compares as *less*, and the tasks due on the 10th — the ones the query is for — are dropped. A `date` column compared with a date parameter has no such trap."
+        },
+        {
+          "id": "timestamptz-inclusive-bound",
+          "code": [
+            "SET timezone = 'UTC';",
+            "-- created_at is TIMESTAMPTZ now, same four instants:",
+            "--   2026-03-09 22:00, 2026-03-10 09:15, 2026-03-10 23:59, 2026-03-11 00:01 (UTC)",
+            "SELECT count(*) FROM events",
+            "WHERE created_at <= '2026-03-10';"
+          ],
+          "question": "What count comes back?",
+          "answer": "1",
+          "acceptable": [
+            "1",
+            "one",
+            "still 1"
+          ],
+          "explanation": "The type is right now, but `'2026-03-10'` as a `timestamptz` means midnight at the *start* of March 10 (in the session's time zone), so both March 10 rows are later than it. Fixing the type removes the string traps; the inclusive upper bound needs a half-open range: `>= '2026-03-01' AND < '2026-03-11'`."
+        }
+      ]
+    }
+  ]
+}
