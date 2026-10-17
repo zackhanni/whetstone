@@ -2,7 +2,7 @@
 
 Found on 2026-10-17 while backfilling every unit's `sources`. Each entry is a claim that the
 official docs contradict, a claim that depends on a version without naming it, or a place where a
-unit contradicts itself. **None are fixed yet**: this is the work list for the content phase.
+unit contradicts itself. This is the work list for the content phase.
 
 Work through it with `/improve-lesson`, like feedback issues. Check each entry against the
 unit's sources before changing anything (the finder was an AI reading the docs, and could be
@@ -52,31 +52,6 @@ relative to the unit folder unless they start with `content/`.
 - `reading/complex/01-dep-arrays-strict-mode-and-extraction.mdx`: latest.current = onCommit is written during render (react.dev says not to); React 19.2's stable useEffectEvent is the documented tool here
 - `unit.json quiz-untangle/stale-closure-deps`: presents a ref 'refreshed on every render' as correct without saying where to refresh it or mentioning useEffectEvent
 - `unit.json predict-untangle/listener-accumulates`: answer 3 assumes no StrictMode; under StrictMode in development the uncleaned effect runs twice and the span shows 5
-
-## state-and-data-flow
-
-### choosing-where-state-lives
-
-- `reading/complex/01-tradeoffs-and-antipatterns.mdx`: says persist 'gives you hasHydrated() to implement the same gate', but with sync storage (localStorage) Zustand hydrates at store creation, so hasHydrated() is already true on the first client render and cannot prevent the mismatch (the app's interests store uses useMounted for this reason)
-- `reading/complex/01-tradeoffs-and-antipatterns.mdx`: the case study says Zustand comes 'the moment a second persisted store appears'; that trigger has fired (docs/zustand-migration.md), so the case study is stale
-- `reading/medium/01-context-vs-store-vs-server.mdx`: isPending is TanStack Query v5 naming (v4 used isLoading); the version is not named (minor)
-
-### context-vs-store-vs-server-state
-
-- `reading/complex/01-combining-owners.mdx`: 'const [params, setParams] = useSearchParams()' is React Router's API, but the library is not named and the track otherwise targets Next.js, whose useSearchParams is read-only
-- `reading/complex/01-combining-owners.mdx`: isPending is TanStack Query v5 naming; the version is not named (minor)
-- `reading/simple/02-triage-table.mdx`: puts 'Multi-step wizard draft' in a persisted client store, while reading/medium/01-failure-modes.mdx and quiz-owners/wizard-scope use the wizard as the example of a store that wrongly outlives its screen (internal inconsistency)
-
-### zustand-basics
-
-- `reading/complex/01-how-it-works-and-testing.mdx`: says real Zustand uses useSyncExternalStoreWithSelector from the shim with an equalityFn; that is v4. In v5 (repo has zustand 5.0.14) create calls React's useSyncExternalStore directly; the shim path survives only in zustand/traditional
-- `unit.json quiz-zustand/selector-identity + predict-zustand/object-selector-rerender (and the medium reading, and a comment in challenges/selector-store-subscription/solution.tsx)`: say an object-returning selector re-renders on every store change; that is v4 behaviour. v5's migration guide says it can cause an infinite loop ('Maximum update depth exceeded')
-- `reading/medium/01-selectors-and-persist.mdx`: 'Rehydration is async-ish ... replaced once storage is read' contradicts the persist docs: with sync storage like localStorage the store is hydrated at creation
-- `unit.json quiz-zustand/ssr-hydration explanation (and the medium reading)`: gating on hasHydrated() does not prevent the mismatch with localStorage; a mounted flag, or skipHydration plus rehydrate() after mount, does
-- `unit.json fill-zustand/persist-config explanation`: says partialize keeps 'the store's functions' from being serialized, contradicting the unit's own quiz-zustand/partialize explanation and medium reading
-- `unit.json predict-zustand/stale-set-object`: two clicks that 'both read before either writes' cannot interleave with synchronous set and click handlers, so the lost update can't happen as written
-- `unit.json quiz-zustand/test-reset`: marks 'Mock the zustand module' wrong, but the official Zustand testing guide recommends a shared __mocks__/zustand.ts that resets every store after each test
-- `reading/medium/01-selectors-and-persist.mdx`: presents create`<T>`()(...) as needed only with middleware, but Zustand's TypeScript guide says to use the curried form whenever you annotate T (minor)
 
 ## backend-nestjs
 

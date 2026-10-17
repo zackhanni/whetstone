@@ -15,8 +15,12 @@
   "sources": [
     { "title": "TanStack Query docs: Does TanStack Query replace client state?", "url": "https://tanstack.com/query/latest/docs/framework/react/guides/does-this-replace-client-state" },
     { "title": "TanStack Query docs: Query Keys", "url": "https://tanstack.com/query/latest/docs/framework/react/guides/query-keys" },
+    { "title": "TanStack Query docs: Query Invalidation", "url": "https://tanstack.com/query/latest/docs/framework/react/guides/query-invalidation" },
+    { "title": "TanStack Query docs: Optimistic Updates", "url": "https://tanstack.com/query/latest/docs/framework/react/guides/optimistic-updates" },
     { "title": "React docs: Scaling Up with Reducer and Context", "url": "https://react.dev/learn/scaling-up-with-reducer-and-context" },
-    { "title": "React docs: hydrateRoot", "url": "https://react.dev/reference/react-dom/client/hydrateRoot" }
+    { "title": "React docs: useReducer", "url": "https://react.dev/reference/react/useReducer" },
+    { "title": "React docs: hydrateRoot", "url": "https://react.dev/reference/react-dom/client/hydrateRoot" },
+    { "title": "Next.js docs: useSearchParams", "url": "https://nextjs.org/docs/app/api-reference/functions/use-search-params" }
   ],
   "blocks": [
     { "type": "reading", "id": "read-owners", "dir": "reading" },
@@ -82,7 +86,7 @@
             { "id": "ssr-only", "text": "Module-level stores only work with SSR disabled" }
           ],
           "answer": "singleton",
-          "explanation": "A module-level store is created once per page load and shared by everything — great for app-wide state, a leak for screen-scoped state (it also leaks between test cases). Either reset it explicitly when the wizard mounts/unmounts, or create the store per-wizard and provide it through Context so it dies with the screen."
+          "explanation": "A module-level store is created once per page load and shared by everything — great for app-wide state, a leak for screen-scoped state (it also leaks between test cases). Either reset it explicitly when the wizard opens and when it finishes or is cancelled, or create the store per wizard and provide it through Context from the wizard's shared layout, so it lives exactly as long as the wizard's routes do."
         },
         {
           "id": "hydration",
@@ -90,11 +94,11 @@
           "options": [
             { "id": "no-storage-on-server", "text": "localStorage doesn't exist on the server, so the server's HTML used the default — the first client render must match it, then apply the stored value" },
             { "id": "react-bug", "text": "It's a React bug fixed by disabling StrictMode" },
-            { "id": "context-only", "text": "Only Context values cause mismatches; a store would be fine" },
+            { "id": "server-copy", "text": "The server read an older copy of the user's localStorage, so the two renders disagree" },
             { "id": "async", "text": "localStorage is asynchronous, so the value arrives too late" }
           ],
           "answer": "no-storage-on-server",
-          "explanation": "Hydration requires the client's first render to produce the same markup the server sent. The server had no localStorage, so it rendered the default; reading the stored theme immediately produces different output. Render the default, then apply the persisted value after mount (a hydration gate) — localStorage itself is synchronous, and the problem is identical for a store or a Context."
+          "explanation": "Hydration requires the client's first render to produce the same markup the server sent. The server had no localStorage, so it rendered the default; rendering the stored theme on that first client pass produces different output. Render the default, then apply the persisted value after mount (a hydration gate). The server never sees the browser's storage at all — only cookies travel with the request, which is why a theme that must be right in the server HTML goes in a cookie. And localStorage is synchronous: the value is available immediately, which is exactly why reading it during render gets ahead of the server."
         }
       ]
     },
@@ -115,7 +119,7 @@
             { "id": "a1", "accept": ["status"] },
             { "id": "a2", "accept": ["page"] }
           ],
-          "explanation": "The key IS the cache identity. With status and page inside it, switching filters is a cache lookup (or a fresh fetch) rather than a manual refetch, and `invalidateQueries({ queryKey: [\"orders\"] })` still invalidates every variant at once."
+          "explanation": "The key IS the cache identity. With status and page inside it, switching filters is a cache lookup (or a fresh fetch) rather than a manual refetch, and `invalidateQueries({ queryKey: [\"orders\"] })` (TanStack Query v5's object form) still invalidates every variant at once, because invalidation matches keys by prefix."
         },
         {
           "id": "derive-selection",
@@ -142,7 +146,7 @@
             { "id": "c1", "accept": ["DispatchContext"] },
             { "id": "c2", "accept": ["DispatchContext"] }
           ],
-          "explanation": "`dispatch` from useReducer is referentially stable, so a dispatch-only context never changes identity and its consumers never re-render. Splitting state from dispatch is the cheapest fix for \"everything re-renders\" before reaching for a store with selectors."
+          "explanation": "React documents `dispatch` from useReducer as having a stable identity, so a dispatch-only context never changes value and its consumers aren't re-rendered when the state changes (they still re-render for their own reasons, like a parent re-render). Splitting state from dispatch is the cheapest fix for \"everything re-renders\" before reaching for a store with selectors."
         }
       ]
     }

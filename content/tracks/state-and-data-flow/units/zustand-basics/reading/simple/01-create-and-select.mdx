@@ -4,7 +4,8 @@ title: create() makes a hook; the selector decides who re-renders
 ---
 
 A Zustand store is one call. `create` returns a **hook** that any component can import —
-no provider, no wrapper.
+no provider, no wrapper. This unit is about Zustand v5 (this app runs 5.0.x); where v4
+behaved differently, it says so.
 
 ```ts
 import { create } from "zustand";
@@ -15,12 +16,16 @@ type CounterState = {
   reset: () => void;
 };
 
-export const useCounter = create<CounterState>((set) => ({
+export const useCounter = create<CounterState>()((set) => ({
   count: 0,
   inc: () => set((s) => ({ count: s.count + 1 })),
   reset: () => set({ count: 0 }),
 }));
 ```
+
+The empty `()` after `create<CounterState>` isn't a typo: it's the curried form Zustand's
+TypeScript guide recommends whenever you annotate the state type (the medium tier explains
+why).
 
 Note that **actions live in the store**, next to the data they change. Components call
 `inc()`; they never reach in and assign `count`.
@@ -29,10 +34,13 @@ Reading it, always with a selector:
 
 ```tsx
 const count = useCounter((s) => s.count);   // ✅ re-renders only when count changes
-const { count } = useCounter();             // ⚠️ re-renders on ANY store change
+const { count } = useCounter();             // ⚠️ no selector = the whole state: re-renders on ANY change
 const inc = useCounter((s) => s.inc);       // ✅ a function identity that never changes
 ```
 
 That selector is the whole difference from Context: the component subscribes to the
-**slice it selected**, compared with `Object.is`. Change some unrelated field and this
+**value it selected**, compared with `Object.is`. Change some unrelated field and this
 component doesn't re-render at all.
+
+One rule to carry into the next tier: a selector should return something that stays
+`Object.is`-equal while nothing it reads has changed — a field, not a freshly built object.

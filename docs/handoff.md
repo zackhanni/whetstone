@@ -6,29 +6,23 @@ in `AGENTS.md` → "Working with this repo".
 ## Status (2026-10-17)
 
 - Deployed on Vercel. 3 tracks, 14 units, 10 challenges: React Hooks & Rendering (7 units),
-  State & Data Flow (3), Backend with NestJS (4). `main` is at PR #12 (headless challenge
-  grader, schema v2, challenge `dependencies`, stricter validation).
-- **PR #13** (`feat/lesson-structure`, against `main`) is open, with CodeRabbit round 1
-  addressed: schema v3 — objectives + sources on every unit, challenge text moved into
-  meta.json, code as arrays of lines, `content/catalog.json`, the validator as a tested module,
-  "Flag" → GitHub issue feedback, inline Markdown in prompts.
-- **PR #14** (`feat/cards-and-build-gate`, against `main`; #13 is merged): the `cards` block
-  for reference units, derived Card / Lesson / Full depth, question-less units completing on
-  visit, and `vercel.json` running `pnpm check` before every Vercel build. CodeRabbit round 1
-  is fixed, and the Vercel build is green with the gate confirmed in its log (106 tests, all 10
-  challenges, then `next build`).
-- Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build` — and, once
-  `vercel.json` is merged, every Vercel build runs both.
+  State & Data Flow (3), Backend with NestJS (4). `main` is at PR #14 (schema v3, `cards`
+  block, derived depth, `vercel.json` gate).
+- **Content phase in progress, as a PR stack.** Each PR targets the one below it; merge
+  bottom-up with merge commits (repo auto-delete retargets the next PR). Accuracy fixes come
+  first, one PR per existing track, then one PR per new track from `docs/ROADMAP.md`.
+  - State & Data Flow accuracy pass — all 14 `docs/content-review.md` findings fixed and
+    independently reviewed.
+- Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
+  Vercel build runs both.
 
 ## Next up
 
-1. Merge PR #14.
-2. After it merges, a production spot-check: a challenge's _Run tests_ (fails) and _Show
-   solution_ (passes) with the new title / task list / collapsed hints; a "Flag" link opening a
-   prefilled issue; a predict-output reveal showing "Also counts:".
-3. **Content phase, first:** the 47 accuracy findings in `docs/content-review.md`, via
-   `/improve-lesson`. Then new units from `docs/ROADMAP.md` → "Content tracks" (a new track
-   starts with its unit outline in the ROADMAP).
+1. Review and merge the content stack bottom-up.
+2. The remaining `docs/content-review.md` findings (React Hooks, NestJS) land in the PRs above
+   this one.
+3. A production spot-check after merging: a changed challenge's _Run tests_ (fails) and _Show
+   solution_ (passes); a "Flag" link opening a prefilled issue.
 
 ## Open items
 

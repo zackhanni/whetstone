@@ -1,17 +1,31 @@
 ---
 id: combining-owners
-title: Real screens combine all three — cleanly
+title: Real screens combine all four owners — cleanly
 ---
 
 A production list screen usually has **all** of these at once. The skill is keeping the
-seams clean: each value has exactly one owner, and the others *derive* from it.
+seams clean: each value has exactly one owner, and the others *derive* from it. Here it is
+as a Next.js App Router client component with TanStack Query v5:
 
 ```tsx
+"use client";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+
 function OrdersScreen() {
   // 1. URL owns navigation state — shareable, restorable, back/forward for free.
-  const [params, setParams] = useSearchParams();
+  //    Next.js's useSearchParams is read-only: you change the URL by navigating.
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const status = params.get("status") ?? "open";
   const page = Number(params.get("page") ?? 1);
+
+  const setStatus = (next: string) => {
+    const query = new URLSearchParams(params.toString());
+    query.set("status", next);
+    query.delete("page"); // a new filter starts at page 1
+    router.push(`${pathname}?${query.toString()}`);
+  };
 
   // 2. Server owns the data. The query key includes everything the request depends on,
   //    so changing a filter is just a new cache entry — no manual refetch.
@@ -35,9 +49,11 @@ function OrdersScreen() {
   the selected *rows* goes stale the moment the query updates.
 - **Put every request input in the query key.** `["orders", { status, page }]` makes the
   cache correct by construction, and invalidation (`invalidateQueries({ queryKey:
-  ["orders"] })`) then hits every page/filter variant at once.
-- **Writes go through mutations, not the store.** Optimistic UI belongs in `onMutate`
-  (patch the cache, keep the rollback context), not in a parallel store the mutation must
+  ["orders"] })`) matches by prefix, so it hits every page/filter variant at once.
+- **Writes go through mutations, not the store.** TanStack Query v5 documents two ways to
+  show a write before the server confirms it: render the pending mutation's `variables`
+  (simplest, when one place shows the change), or patch the cache in `onMutate` and keep a
+  rollback (when several places do). Neither needs a parallel store that the mutation must
   remember to update.
 - **Context carries the clients.** `QueryClientProvider` and an auth/theme provider sit at
   the root — dependencies, not state.
@@ -45,7 +61,7 @@ function OrdersScreen() {
 ## When a store *is* the right answer for shared data
 
 Cross-cutting, client-owned, high-write values: a toast queue, undo/redo, drag state, a
-websocket connection's live presence map. These aren't server truth, don't belong in the
+canvas editor's selection and tool state. These aren't server truth, don't belong in the
 URL, and update too often for Context.
 
 ## Cost of getting it wrong, ranked
@@ -57,3 +73,13 @@ URL, and update too often for Context.
 
 The first two are architectural; the last two are refactors. Spend your review attention
 accordingly.
+
+<!--more-->
+
+**Next.js vs React Router.** React Router's `useSearchParams()` returns a
+`[params, setParams]` pair; Next.js's returns only the read-only params, and writes go
+through `router.push` / `router.replace` or a `<Link>`. In current Next.js (16, which this
+app runs), a prerendered page that calls `useSearchParams` in a client component must wrap
+that component in `<Suspense>`, or the production build fails with "Missing Suspense
+boundary with useSearchParams" — in development nothing suspends, so it looks fine until
+you build.

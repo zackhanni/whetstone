@@ -3,28 +3,38 @@ id: selectors-and-persist
 title: Selector identity, and persisting a store
 ---
 
-## The selector re-render rule
+## The selector rule (Zustand v5)
 
-Zustand compares the **selected value** with `Object.is` after every store change. A
-selector that builds a new object or array every call therefore never compares equal — the
-component re-renders on *every* store update, which is exactly the problem you left Context
-to escape.
+The hook `create` returns is React's `useSyncExternalStore` with
+`() => selector(getState())` as its snapshot. React compares snapshots with `Object.is` and
+treats any difference as a change. So a selector that builds a new object or array on every
+call never compares equal — not even when nothing in the store moved — and React keeps
+re-rendering until it gives up with **"Maximum update depth exceeded"** (after warning, in
+development, that "the result of getSnapshot should be cached").
 
 ```tsx
-// ❌ a new object each call → re-renders on any change
+// ❌ a new object on every call → an infinite render loop in v5
 const { count, name } = useStore((s) => ({ count: s.count, name: s.name }));
 
 // ✅ two atomic selectors, each a primitive
 const count = useStore((s) => s.count);
 const name = useStore((s) => s.name);
 
-// ✅ or one selector with a shallow comparison
+// ✅ or one selector wrapped in useShallow
 import { useShallow } from "zustand/react/shallow";
 const { count, name } = useStore(useShallow((s) => ({ count: s.count, name: s.name })));
 ```
 
-Prefer several atomic selectors; reach for `useShallow` when you genuinely need a derived
-object/array (e.g. a filtered list).
+`useShallow` remembers the previous result and hands it back while the new one is
+shallow-equal, so the snapshot only changes when a field does. Prefer atomic selectors;
+reach for `useShallow` when you genuinely need a derived object or array (a filtered list,
+`Object.keys(s)`). The same trap catches an inline fallback: `s.onSave ?? (() => {})` is a
+new function on every call — hoist the fallback to a module-level constant.
+
+**v4 was different.** There, the same object selector didn't loop; it re-rendered the
+component on every store change. v5 dropped the per-hook equality function, so v4 code that
+passed `shallow` as the hook's second argument needs `useShallow` (or `createWithEqualityFn`
+from `zustand/traditional`, which keeps the v4 behaviour).
 
 ## persist: localStorage in one line
 
@@ -48,21 +58,37 @@ export const useSettings = create<Settings>()(
 );
 ```
 
-Note `create<Settings>()( … )` — the extra `()` is the curried form TypeScript needs when
-a middleware wraps the initializer.
+Note `create<Settings>()( … )`. Zustand's TypeScript guide recommends this curried form
+whenever you annotate the state type: TypeScript can't infer some type arguments while you
+pass others, and the extra call works around that. Without middleware,
+`create<Settings>(…)` happens to compile; with `persist` wrapping the initializer it
+doesn't — so write the curried form every time.
 
-Four details that bite:
+Details that bite:
 
 - **`partialize`** — chooses *which* state is durable. You don't need it to strip actions
   (JSON serialization drops function values, and rehydration shallow-merges over the
   initializer, so your actions come back intact regardless). You need it to keep ephemeral,
   derived, or sensitive fields out of `localStorage`: a smaller payload, nothing private on
   disk, and less shape for a future `migrate` to worry about.
-- **`version` + `migrate`** — the shape you persist today will change; a version number is
-  how you avoid crashing on someone's year-old localStorage.
-- **Rehydration is async-ish.** The store starts at its initial state and is replaced once
-  storage is read; `useSettings.persist.hasHydrated()` and `onFinishHydration` let you wait
-  for it.
-- **SSR:** the server has no `localStorage`, so the first client render must match the
-  server's default. Gate on a `hydrated` flag before rendering persisted values, or you get
-  a hydration mismatch (see `docs/zustand-migration.md` for how this project plans to do it).
+- **`version` + `migrate`** — the shape you persist today will change. When the stored
+  version doesn't match the code's and there's no `migrate`, persist ignores the stored value
+  rather than loading a shape your code no longer expects.
+- **Rehydration merges one level deep, like `set`.** The stored state is spread over the
+  initial state (`{ ...current, ...persisted }`), so a nested object comes back wholesale
+  from storage. Add a field inside it later (`prefs.fontSize`) and every returning user's
+  saved `prefs` lacks it. Pass a deep `merge` option, or bump `version` and fill the gap in
+  `migrate`.
+- **Hydration happens at creation.** With synchronous storage like `localStorage` (the
+  default), the store is already hydrated when `create` returns — before React renders
+  anything — and `useSettings.persist.hasHydrated()` is already `true`. Only async storage
+  (IndexedDB, React Native's AsyncStorage) hydrates later, in a microtask; that's when
+  `hasHydrated()` and `onFinishHydration` are useful.
+- **SSR:** the server has no `localStorage`, so it renders the initial state, and the first
+  client render must match it. Because the client store is already hydrated,
+  `hasHydrated()` can't be your gate (and on the server, with no storage, `persist` doesn't
+  attach `useSettings.persist` at all, so calling it in render throws there). Show persisted
+  values only after mount — this app's `useMounted()` (`lib/use-mounted.ts`, used with
+  `lib/stores/interests-store.ts`) is `false` during hydration and `true` after — or create
+  the store with `skipHydration: true` and call `useSettings.persist.rehydrate()` in an
+  effect.

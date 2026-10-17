@@ -4,24 +4,32 @@ title: State has a home — climb the ladder only as far as you need
 ---
 
 Most "state management" problems are really _placement_ problems: the state is fine, it's
-living in the wrong place. Before reaching for a library, walk this ladder and stop at the
-first rung that works:
+living in the wrong place. Before reaching for a library, ask two questions, then walk a
+ladder.
+
+**First, does something outside your components already own it?**
+
+- **Did it come from a server?** (users, orders, this page's content) → a server-state
+  library (TanStack Query / SWR), however few components read it. It's a _cache of someone
+  else's data_, with its own rules: loading, caching, staleness, invalidation.
+- **Should a link reproduce it?** (filters, tabs, pagination, the currently-open item) → the
+  **URL** (`searchParams`). It's shareable, bookmarkable, and survives a refresh.
+
+**If both answers are no, it's state your app invents.** Climb only as far as you need and
+stop at the first rung that works:
 
 1. **Local** (`useState` / `useReducer`) — only one component cares. This is the default.
 2. **Lifted** — a couple of nearby components share it → move it to their nearest common
    parent and pass it down.
 3. **Context** — many components across the tree need the _same, rarely-changing_ value
-   (theme, current user, locale). Context is a _transport_, not a store.
+   (theme, locale). Context is a _transport_, not a store: it can also carry a value
+   something else owns, such as the signed-in user your query cache fetched.
 4. **Client store** (Zustand / Redux) — app-wide client state that changes often and is read
    in many places, where you want components to subscribe to _slices_.
-5. **Server state** (TanStack Query / SWR) — data you fetched from a server. It's a _cache of
-   someone else's data_, with its own rules: loading, caching, staleness, invalidation.
-6. **URL** (`searchParams`) — state that should be shareable and survive a refresh: filters,
-   tabs, pagination, the currently-open item.
 
-The mistakes that cause "state hell" are almost always _skipping rungs_ — reaching for a
-global store when lifting would do, or stuffing server data into a client store and
-re-implementing caching by hand.
+The mistakes that cause "state hell" are almost always one of two: _skipping rungs_ —
+reaching for a global store when lifting would do — or _skipping the two questions_ —
+stuffing server data into `useState` or a client store and re-implementing caching by hand.
 
 > Rule of thumb: **put state at the smallest scope that still lets everything that needs it
-> reach it.**
+> reach it — unless the server or the URL already owns it.**

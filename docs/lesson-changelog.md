@@ -15,6 +15,7 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — state-and-data-flow — content-review pass (14 findings, all confirmed and fixed, then independently reviewed): Zustand v5 object selectors loop (Maximum update depth) rather than re-render; localStorage `persist` hydrates at creation, so the SSR gate is a mounted flag, not `hasHydrated()` (which also throws on the server); curried `create<T>()(…)`; `getInitialState()` reset and the official `__mocks__` pattern; a real async lost-update predict; Next.js read-only `useSearchParams`; TanStack Query v5 named; `selector-store-subscription` grader now rejects an effect-copied slice.
 - 2026-10-17 — authoring system — the first gated Vercel build failed every React challenge: Vercel builds with `NODE_ENV=production`, which loads React's production build (no `act()`); the headless grader now forces `NODE_ENV=test` and prints each failure's first error line. Also: a unit whose questions were all removed now completes (PR #14 review).
 
 - 2026-10-17 — authoring system — new `cards` block for reference units (no schema bump: an added block type), derived Card/Lesson/Full depth, question-less units complete on visit; Vercel builds now run `pnpm check`.

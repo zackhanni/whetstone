@@ -3,7 +3,7 @@
   "slug": "choosing-where-state-lives",
   "title": "Choosing where state lives",
   "skills": ["react", "state-management", "context", "zustand", "tanstack-query", "architecture", "frontend"],
-  "difficulty": "advanced",
+  "difficulty": "core",
   "estimatedMinutes": 30,
   "objectives": [
     "Choose the smallest home for state: lift to a common parent first, and use the URL for shareable state",
@@ -15,7 +15,9 @@
     { "title": "React docs: Sharing State Between Components", "url": "https://react.dev/learn/sharing-state-between-components" },
     { "title": "React docs: useContext", "url": "https://react.dev/reference/react/useContext" },
     { "title": "React docs: Choosing the State Structure", "url": "https://react.dev/learn/choosing-the-state-structure" },
-    { "title": "TanStack Query docs: Overview", "url": "https://tanstack.com/query/latest/docs/framework/react/overview" }
+    { "title": "TanStack Query docs: Overview", "url": "https://tanstack.com/query/latest/docs/framework/react/overview" },
+    { "title": "Next.js docs: useSearchParams", "url": "https://nextjs.org/docs/app/api-reference/functions/use-search-params" },
+    { "title": "Zustand docs: Persisting store data", "url": "https://zustand.docs.pmnd.rs/reference/integrations/persisting-store-data" }
   ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
@@ -45,7 +47,7 @@
             { "id": "auto-memo", "text": "React automatically memoizes the provider so consumers are skipped" }
           ],
           "answer": "all-consumers",
-          "explanation": "Context has no per-field subscription. When the provider's value changes identity, EVERY consumer re-renders regardless of which field it reads — and memo() on a consumer doesn't help. High-frequency values want a ref, a store with selectors, or a split context. This is the cost that pushes people off Context for hot values."
+          "explanation": "Context has no per-field subscription. When the provider's value changes identity, EVERY consumer re-renders regardless of which field it reads — and memo() on a consumer doesn't help. Nor does memoization of any kind, by hand or by React Compiler: the value genuinely changes on every tick, and React doesn't batch context updates away. High-frequency values want a ref, a store with selectors, or a split context. This is the cost that pushes people off Context for hot values."
         },
         {
           "id": "first-reach",
@@ -57,19 +59,19 @@
             { "id": "url", "text": "Put it in the URL" }
           ],
           "answer": "lift",
-          "explanation": "Colocation first: lift to the nearest common ancestor. Reach for Context or a store only when lifting causes real prop-drilling pain across many layers or many consumers. Globalizing by reflex is how everything ends up entangled in one store."
+          "explanation": "Colocation first: lift to the nearest common ancestor. Reach for Context or a store only when lifting causes real prop-drilling pain across many layers or many consumers. Globalizing by reflex is how everything ends up entangled in one store. The URL is the right owner only when a link should reproduce the state (a filter, a tab, a page number); nothing here says it should, and the URL is a place to share navigation state, not a shortcut around passing props."
         },
         {
           "id": "zustand-over-context",
           "prompt": "What is the main practical reason to choose a client store like Zustand over Context for frequently-changing, app-wide client state?",
           "options": [
             { "id": "selectors", "text": "Components can subscribe to a slice, so unrelated updates don't re-render them" },
-            { "id": "no-hydration", "text": "It removes the SSR hydration problem that Context has" },
+            { "id": "survives-refresh", "text": "Zustand state survives a page refresh without extra code" },
             { "id": "required-ts", "text": "It's required for TypeScript support" },
             { "id": "cant-persist-context", "text": "Context values can't be persisted to localStorage" }
           ],
           "answer": "selectors",
-          "explanation": "Zustand's selector subscriptions re-render a component only when its selected slice changes; Context re-renders all consumers on any value change. The others are wrong: both approaches still need an SSR hydration gate (Zustand's persist doesn't remove it), neither is tied to TypeScript, and state transported by Context can be persisted just fine."
+          "explanation": "Zustand's selector subscriptions re-render a component only when its selected slice changes; Context re-renders every consumer on any value change. The others are wrong: a Zustand store lives in memory just like a Context value, so surviving a refresh takes the `persist` middleware (or your own storage code) either way; neither tool is tied to TypeScript; and state that Context carries can be persisted just fine — persistence is a storage concern, not a transport one."
         }
       ]
     },
@@ -96,10 +98,10 @@
         },
         {
           "id": "url-state",
-          "prompt": "A search filter should be shareable via a link and survive a refresh, so it belongs in the URL. Read it from the query string.",
-          "code": "const q = new URLSearchParams(window.location.___).get(\"q\");",
-          "blanks": [{ "id": "b1", "accept": ["search"] }],
-          "explanation": "window.location.search is the query string (\"?q=react\"). Filters, tabs, and pagination in the URL are linkable, bookmarkable, and survive reload — things component state can't give you."
+          "prompt": "A search filter should be shareable via a link and survive a refresh, so it belongs in the URL. Read it in a Next.js App Router client component.",
+          "code": "const q = ___().get(\"q\");",
+          "blanks": [{ "id": "b1", "accept": ["useSearchParams"] }],
+          "explanation": "In the Next.js App Router, `useSearchParams()` from `next/navigation` (client components only) returns a read-only `URLSearchParams`; you change the query by navigating — `router.push`, or a `<Link>` to the new URL. Filters, tabs and pagination in the URL are linkable, bookmarkable and survive a reload — things component state can't give you. Reading `window.location.search` during render instead breaks server rendering (there is no `window` on the server) and doesn't re-render when a client-side navigation changes the query."
         }
       ]
     },
