@@ -1,0 +1,52 @@
+---
+id: merge-methods
+title: Merge commit, squash, or rebase — what each does to history
+---
+
+GitHub's merge button has three modes; a repo can allow any subset. Each one is a git operation
+you already know, with consequences that outlive the PR.
+
+| Method | What lands on `main` | The PR's own commits |
+| --- | --- | --- |
+| **Create a merge commit** | all the commits, plus a merge commit (`--no-ff`) | kept as-is, same ids |
+| **Squash and merge** | one new commit with the whole change | not on `main` at all |
+| **Rebase and merge** | each commit replayed on top, no merge commit | copied with **new ids** |
+
+## Squash: clean history, with a catch
+
+Squash suits branches full of "wip" and "fix lint" commits: `main` gets one commit per PR, and
+reverting a feature is one `git revert`. The cost, in GitHub's words: "You lose information about
+when specific changes were originally made and who authored the squashed commits." And:
+
+> If you continue working on the head branch of a pull request after squashing and merging, and
+> then create a new pull request between the same branches, commits that you previously squashed
+> and merged will be listed in the new pull request.
+
+The squash commit is a new commit; the branch's original commits never entered `main`'s history.
+After a squash merge, the branch is done — start the next change from the updated `main`. The same
+fact is what breaks a branch **stacked** on a squash-merged one (the rebase unit shows the
+`rebase --onto` fix, and the next example shows how to drain a stack).
+
+## Rebase and merge: linear, but new commits
+
+Linear history without squashing — every commit survives as a separate step. GitHub's docs note it
+"always updates the committer information and creates new commit SHAs", so the commits on `main`
+aren't the ones on your branch, and (like squash) your branch isn't an ancestor of `main`
+afterwards. GitHub can't sign those new commits on your behalf either.
+
+## Merge commit: nothing rewritten
+
+Every commit keeps its id, and the merge's second parent records the branch. A branch stacked on
+this one is still in good shape: `main` now contains its base's commits, so `git rebase main`
+replays only its own. The price is a non-linear graph with a merge commit per PR.
+
+## Choosing
+
+- Many small, self-contained PRs, messy branch histories → **squash**.
+- Commits curated to be read one by one (`rebase -i` before review) → **rebase and merge** or
+  **merge commit**.
+- Stacked PRs, or anyone branching off your branch before it merges → prefer a **merge commit**,
+  or drain the stack with `--onto`.
+
+Whatever you pick, a protected branch with "Require linear history" only allows squash and rebase
+merges.
