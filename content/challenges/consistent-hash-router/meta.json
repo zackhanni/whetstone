@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "consistent-hash-router",
+  "title": "Fix a consistent-hash shard router",
+  "skills": ["system-design", "partitioning", "scaling"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "runner": "in-browser",
+  "entry": "hash-ring.ts",
+  "acceptanceCriteria": [
+    "A key routes to the node at the first ring position **at or after** its hash, with positions compared as numbers",
+    "A key hashing past the highest position wraps around to the lowest one",
+    "With virtual nodes, each of 4 nodes owns between 15% and 35% of 10,000 keys",
+    "Removing a node moves only the keys it owned, and no key routes to it afterwards",
+    "Adding a 5th node moves keys only to the new node — between 10% and 30% of them"
+  ]
+}

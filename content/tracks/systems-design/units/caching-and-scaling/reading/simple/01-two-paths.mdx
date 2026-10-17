@@ -1,0 +1,42 @@
+---
+id: two-paths
+title: Every system has a read path and a write path
+---
+
+Follow one request through a system and you get a **path**: the hops it touches, in order. Most
+systems have two paths that matter, and they want opposite things.
+
+```
+READ:   client → CDN → app → cache ──miss──→ database replica
+WRITE:  client → app → database primary → delete the cached copy
+                              └──→ queue → workers (the slow follow-up work)
+```
+
+- The **read path** wants copies close to the reader. Every copy — a CDN edge, a cache entry, a
+  read replica — takes load off the source of truth and latency off the request. The price is
+  staleness: a copy can be older than the original.
+- The **write path** wants one authoritative place to land, durably. Copying a write doesn't
+  make it faster. You can only make it *smaller* (do less before replying) or *spread* it
+  (partition the data so different writes land on different machines).
+
+So the tools sort themselves by path:
+
+| Tool | Path | What it buys | What it costs |
+| --- | --- | --- | --- |
+| Cache, CDN | read | fewer trips to the source, lower latency | stale data; invalidation |
+| Read replicas | read | more read capacity | replication lag |
+| Queue | write | the reply doesn't wait for slow work; bursts get absorbed | work finishes later; duplicates |
+| Partitioning (sharding) | write and storage | writes and data spread across machines | cross-shard queries; resharding |
+
+The first number to get in any design is the read:write ratio, because it says which half of
+this table you're shopping in. The URL shortener, at 100 reads per write, lives almost entirely
+in the top half.
+
+<!--more-->
+
+A queue on the write path doesn't make the work smaller — it moves the work out of the request.
+Azure's Queue-Based Load Leveling pattern describes the deal: producers post at whatever rate
+they arrive, consumers drain at the rate the downstream service can take, and that service only
+has to be sized for the average load instead of the peak. The pattern also names the catch: if
+the average producer rate exceeds the consumer rate, the queue keeps growing and latency with
+it. A queue levels bursts; it doesn't add capacity.

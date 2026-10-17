@@ -1,0 +1,57 @@
+---
+id: races-cache-aside-leaves
+title: The two races cache-aside still has
+---
+
+Updating the database before deleting the key closes one race (the NestJS track's
+[`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit). Two remain, and at fleet scale the fixes have to live
+in the shared cache, not in one process.
+
+**The stale set.** A reader that misses can be slower than a writer:
+
+```
+reader A:  GET link:x        → miss
+reader A:  SELECT … → old row
+                                writer B:  UPDATE … → COMMIT
+                                writer B:  DEL link:x
+reader A:  SET link:x = old row     ← lands after the delete
+```
+
+The delete happened — and then A refilled the cache with the row it read *before* the update.
+Every reader gets the old value until the TTL expires. Facebook's memcache paper calls this a
+*stale set* and fixes it with **leases**: on a miss, the cache hands the reader a 64-bit token
+bound to the key; a delete invalidates outstanding tokens; a set carrying an invalidated token
+isn't stored.
+
+Redis has no leases, and a plain version check can't stand in for one: after B's `DEL` there's
+nothing left in the cache to compare A's old version against. You can build the lease:
+
+- On a miss, the reader takes a token key: `SET lease:link:x <random> NX PX 5000`.
+- The writer's invalidation deletes `lease:link:x` along with `link:x`.
+- The fill is a small Lua script that writes `link:x` only if `lease:link:x` still holds the
+  reader's token. Redis runs a script atomically, so nothing slips in between the check and the
+  write.
+
+(Versions work if the writer *leaves* its version behind instead of deleting — the new value, or
+a tombstone holding the version — and every fill refuses to overwrite a newer version: the
+version-column idea from [`transactions-and-isolation`](/learn/databases/transactions-and-isolation), applied to the cache.) With neither, the
+TTL is your only bound on how long a stale set survives, so choose it knowing that.
+
+**The stampede across the fleet.** A hot key expires and every request that misses asks the
+database for the same row. In-process coalescing — one load per key per process, like
+cache-manager's `wrap` — caps that at one query **per server**: with 50 servers, a cold key still
+costs up to 50 identical queries, every time it expires. Removing the multiplier needs a decision
+every server can see, which means the cache. AWS's Builders' Library describes coalescing done by
+the servers *or by an external cache*. Memcache does it with the same leases: a server hands out
+a token for a key at most once every 10 seconds, and other clients that miss are told to wait
+briefly. The paper reports a set of keys prone to herds going from a peak of 17K database
+queries a second without leases to 1.3K with them. The Redis lease above has the same property —
+whoever loses the `NX` waits briefly and reads again.
+
+<!--more-->
+
+One more fix from the AWS article, for when the *database* is the thing failing: a **soft TTL
+plus a hard TTL**. Refresh an entry once it passes the soft TTL, but if the refresh fails, keep
+serving the cached value until the hard TTL. That turns a short outage behind the cache into
+slightly old data instead of errors — a staleness bound you choose in advance, rather than one
+an incident chooses for you.

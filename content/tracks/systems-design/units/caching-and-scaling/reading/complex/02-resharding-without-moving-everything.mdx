@@ -1,0 +1,42 @@
+---
+id: resharding-without-moving-everything
+title: Resharding without moving everything
+---
+
+The obvious router is `shard = hash(key) % N`. It spreads keys evenly — until N changes. A key
+stays put only if `hash % 4 === hash % 5`, which is true for only about one key in five, so
+going from 4 shards to 5 moves **about 80% of the keys**; from 10 to 11, about 90%. The more
+shards you have, the worse adding one gets. For a database that's a migration of most of the
+data; for a cache cluster it's a fleet-wide miss storm. Azure's Sharding pattern puts it
+directly: with `hash(key) mod N`, adding or removing a shard reassigns most keys.
+
+Two designs avoid it.
+
+**Consistent hashing.** Hash nodes and keys onto the same ring of positions; a key belongs to the
+first node position at or after its own hash, wrapping around at the top. The Dynamo paper states
+the property that matters: a node arriving or leaving affects only its immediate neighbours on
+the ring. Add a fifth node and it takes over only the arcs just before its positions — about
+**1/5 of the keys**, every one of which moves *to the new node*; nothing reshuffles among the old
+four. In this unit's challenge preview, 19.6% of 10,000 keys move on the ring, against 79.6% with
+`% N`.
+
+Plain consistent hashing gives each node one random point, which carves the ring into uneven
+arcs. Dynamo's answer is **virtual nodes**: each physical node gets many points ("tokens"). Many
+small arcs per node even out the load; when a node fails, its load spreads across all the others
+instead of landing on one neighbour; and a bigger machine can simply be given more points.
+
+**Fixed slots plus a lookup.** Redis Cluster takes the other route. The key space is split into
+**16,384 hash slots** — `CRC16(key) mod 16384`, a modulus that never changes — and each master
+owns a set of slots. Adding a node means moving *some slots* to it; a client that asks the wrong
+node gets a `MOVED` error naming the right one. Azure calls the general idea virtual
+partitioning: many logical partitions mapped onto fewer physical ones, so rebalancing moves
+partitions instead of rehashing keys.
+
+Both separate **where a key hashes to** (fixed) from **which machine owns that place**
+(changeable). That's the whole trick: the number of machines never appears in the key's hash.
+
+<!--more-->
+
+Redis Cluster's *hash tags* are the partition-key decision written into key names: in
+`{user:42}:profile` and `{user:42}:orders`, only the part inside the braces is hashed, so both
+keys land in the same slot and a multi-key operation on them stays on one node.

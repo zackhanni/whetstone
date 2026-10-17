@@ -1,0 +1,51 @@
+---
+id: cache-aside-in-order
+title: Cache-aside, sized — the miss rate is the database's load
+---
+
+The pattern itself is the NestJS track's [`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit: read the
+cache; on a miss, load from the database and leave a copy with a TTL; on a write, update the
+database **first**, then delete the key (deletes, unlike sets, can't land in the wrong order).
+This tier assumes that and asks the design questions around it: what to cache, how big, and what
+the database behind it has to survive.
+
+**What to cache is an estimate too.** The shortener stores 6 × 10⁹ links — about 3 TB — but
+the redirect only needs the links people are clicking now:
+
+```
+Assume: 10 million distinct links are clicked on a given day     (assumption)
+Cache:  10,000,000 × ~500 B per entry                            ≈ 5 GB
+```
+
+Five gigabytes fits in one cache node's memory; 3 TB doesn't fit in any. So the cache holds the
+**working set**, the TTL decides how long a link stays in it once its clicks stop, and the
+database still holds everything. Get the assumption from real traffic when you have it.
+
+**The hit ratio is the database's load, read upside down.** At 10,000 reads a second:
+
+```
+hit ratio 99%  →  1% miss  →    100 reads/s reach the database
+hit ratio 98%  →  2% miss  →    200 reads/s   (one point lower, twice the database load)
+hit ratio 90%  → 10% miss  →  1,000 reads/s
+```
+
+A dashboard showing 98% looks almost the same as 99%. The database sees its load double. Near
+the top, read a hit ratio as its complement.
+
+**Size the database for a bad day's miss rate**, not today's. Three ordinary events push it up:
+
+- a deploy restarts every server, and every in-process cache starts empty;
+- a change to key names (a new prefix, a new field in the key) makes every old entry unreachable
+  at once;
+- traffic shifts to keys nobody has asked for lately — a newsletter links to old posts.
+
+And the worst day is the cache being gone altogether: 100% misses. The [`design-framework`](/learn/systems-design/design-framework)
+unit's complex tier does that arithmetic, and AWS's caching article gives the test: run load
+tests with the cache disabled.
+
+**The TTL is a requirement, not a tuning knob.** Azure's Cache-Aside guidance is to fit the
+expiry to how the data is used: too short and requests keep going back to the database, too long
+and stale data lingers. Delete-on-write only covers writers that go through your code. If another
+service, an admin script or a migration can change the table, the TTL is the only freshness
+guarantee those writes get, so pick it by asking "how stale may this be?" — and write the answer
+down next to the requirement it serves.
