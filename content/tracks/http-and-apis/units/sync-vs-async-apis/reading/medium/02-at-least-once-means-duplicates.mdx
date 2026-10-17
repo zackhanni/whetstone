@@ -1,0 +1,54 @@
+---
+id: at-least-once-means-duplicates
+title: At-least-once delivery means your handler sees duplicates
+---
+
+A provider can't know whether your endpoint processed an event unless you return `2xx`. So when a
+delivery times out, gets a `5xx`, or the connection drops after your code ran but before the
+response got back, it sends the event **again**. Stripe retries for up to three days in live mode,
+with exponential backoff. The result is **at-least-once** delivery, and the providers say so
+plainly:
+
+- Stripe: "Webhook endpoints might occasionally receive the same event more than once." It also
+  doesn't guarantee delivery in the order events were generated.
+- GitHub doesn't retry failed deliveries on its own — you redeliver them by hand or with a
+  script — but a redelivery keeps the original `X-GitHub-Delivery` id, so you can recognise it.
+
+The receiver's job is to make the duplicate harmless: an **idempotent handler**.
+
+```ts
+async function handlePaymentEvent(event: { id: string; type: string; data: { orderId: string } }) {
+  if (await processedEvents.has(event.id)) {
+    return 200;                       // seen it: acknowledge, do nothing
+  }
+  await markOrderPaid(event.data.orderId);   // the side effect
+  await processedEvents.add(event.id);       // record it only AFTER the work succeeded
+  return 200;
+}
+```
+
+Three decisions in those few lines:
+
+1. **Dedupe on the event's id**, which is the same on every delivery of that event. (Not on the
+   signature — the next example shows why.)
+2. **Answer a duplicate with `2xx`.** A `409` or `500` tells the provider the delivery failed, and
+   it will keep retrying something you've already done.
+3. **Record the id after the work, not before.** If you record first and `markOrderPaid` throws,
+   your endpoint returns `500`, the provider retries — and the retry finds the id already recorded
+   and skips the work. The event is lost while every log line looks healthy.
+
+Better still, make the side effect itself idempotent where you can: "set order 42's status to
+`paid`" can run twice; "add £20 to the balance" can't.
+
+## Order isn't guaranteed either
+
+`invoice.paid` can arrive before `invoice.created`. Don't write handlers that assume a sequence;
+check the current state of the object (or fetch it from the provider) and make each event move
+it forward only if that's still valid — a late `payment.failed` shouldn't un-pay an order that a
+later event already marked paid.
+
+<!--more-->
+
+**Duplicates that aren't retries.** Stripe also notes that it sometimes generates two separate
+event objects for one change. Its advice: dedupe on the object's id plus the event type, not only
+on the event id.
