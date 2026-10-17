@@ -15,6 +15,13 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — taxonomy — `ssh`, `git`, `github`, `gh-cli`, `branches`, `undoing-changes`, `rebase`, `pull-requests` and `code-review` under `tooling` for the Terminal, Git & GitHub track; `terminal` relabelled "Terminal & Shell".
+- 2026-10-17 — developer-tooling/terminal-survival-kit — what the shell does to a line: quoting, `~`, globs and zsh's no-match error, zsh not splitting `$VAR`, the `path`/`PATH` tie, redirection order, exit codes with `&&`/`||`/`pipefail`, `export` and PATH, which startup files each shell reads (and why a git hook or Dock app reads none).
+- 2026-10-17 — developer-tooling/ssh-and-github-cli — HTTPS + token vs SSH remotes, ed25519 keys with the agent/Keychain, `ssh_config` first-value-wins and account aliases, `ssh -T` exiting 1 on success, fine-grained PATs, `gh auth login` vs `GH_TOKEN`, `ssh-keygen` without a TTY.
+- 2026-10-17 — developer-tooling/everyday-git — working tree/index/commit, `status` and `diff` columns, branches as pointers, `origin/*` as the last fetch, the branch-from-`origin/main` push-to-main trap and its fixes, `.gitignore` vs `git rm --cached`.
+- 2026-10-17 — developer-tooling/git-recovery — undo by layer: `restore`, `amend`, the three `reset` modes (untracked vs staged-only under `--hard`), the stash that saves nothing, `revert` on shared history, `reflog`/`ORIG_HEAD` and their limits. Challenge `git-reset-model`.
+- 2026-10-17 — developer-tooling/rebase-vs-merge — fast-forward vs merge vs rebase, conflicts and `zdiff3`, the ours/theirs flip, `pull` on divergence (refused since Git 2.33.1), the golden rule, `--force-with-lease` + `--force-if-includes`, squash-merged stacks with `--onto`, `--update-refs`. Challenge `rebase-replay-set`.
+- 2026-10-17 — developer-tooling/pull-request-workflow — focused PRs, commit messages, `Fixes #N` scope, drafts and review states, what blocks a merge, required-check edge cases, merge methods, draining a stack bottom-up (retarget before delete), GitHub's native stacks preview.
 - 2026-10-17 — taxonomy — new `testing` root with `test-strategy`, `assertions`, `test-doubles`, `testability`, `vitest`, `coverage`, `e2e-testing` and `playwright`.
 - 2026-10-17 — testing-and-quality/what-to-test — what a test is for (fails when behaviour breaks, and only then), behaviour vs implementation assertions, pyramid vs trophy, what to prioritise and skip, and tests that can't fail.
 - 2026-10-17 — testing-and-quality/kinds-of-tests — unit, integration, component, contract, e2e and smoke defined by what's real vs replaced; which kind catches which bug; what a simulated DOM can't see; consumer-driven contracts.
