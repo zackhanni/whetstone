@@ -9,7 +9,11 @@ re-renders for the tick, the context value looks "new" and **every consumer re-r
 
 ## Hints
 
-Give the context value a stable identity. Stabilize `toggleTheme` with
-`useCallback(fn, [])`, then wrap the object in `useMemo(() => ({ theme, toggleTheme }), [theme, toggleTheme])`.
-Now an unrelated tick re-renders `Settings` but leaves the context value referentially equal,
-so the memo'd consumer is skipped.
+- Two things are new on every render: the `value` object and the `toggleTheme` function
+  inside it. Memoizing only the object doesn't help while one of its dependencies is a
+  fresh function each time.
+- Give `toggleTheme` a stable identity first (`useCallback`). It already uses the functional
+  form of `setTheme`, so it doesn't need to read `theme` and can keep one identity forever.
+- Then memoize the object (`useMemo`) on exactly what it's built from. An unrelated tick
+  should re-render `Settings` but hand the provider the very same object, so the memo'd
+  consumer is skipped — while a theme change still produces a new one.

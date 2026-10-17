@@ -13,8 +13,8 @@ title: Triage: twelve real values and where they go
 | Sidebar open / modal stack | Client store | App-invented UI state, many consumers |
 | Search filters, sort, page | **URL** | Must be shareable and survive reload |
 | Selected rows in a table | Local or store | Local if one screen; store if a toolbar elsewhere acts on it |
-| Multi-step wizard draft | Client store (persisted) | Spans routes, must survive a refresh |
-| Toast/notification queue | Client store | Written from anywhere, read once |
+| Multi-step wizard draft | Client store, scoped to the wizard | Spans the wizard's routes; cleared on finish or cancel, or it reappears next time |
+| Toast/notification queue | Client store | Written from anywhere, rendered in one place |
 | Table data from `/api/orders` | Server state | A cache: needs staleness + invalidation |
 | Cursor position, timer handle | Ref / local | Never rendered, or only by one component |
 

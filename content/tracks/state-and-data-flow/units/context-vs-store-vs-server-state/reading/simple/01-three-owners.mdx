@@ -4,8 +4,8 @@ title: Ask "who owns this data?" before "where do I put it?"
 ---
 
 Once state has outgrown a single component you're not picking a library, you're picking an
-**owner**. Three of the four candidates live inside React; the fourth is the one people
-forget, and it's often the right answer.
+**owner**. Three of the four candidates are a React API or a library you add; the fourth is
+already in the browser, it's the one people forget, and it's often the right answer.
 
 | Owner | Owns | The question it answers |
 | --- | --- | --- |
@@ -20,8 +20,8 @@ They're not interchangeable:
 - Context is a **delivery mechanism**, not a store — it has no selectors, so every consumer
   re-renders when the value's identity changes. Perfect for a theme, a locale, a
   `queryClient`, a stable dependency. Bad for anything that ticks.
-- A client store is for state your **app** invents: sidebar open, selected rows,
-  multi-step wizard draft, undo stack.
+- A client store is for state your **app** invents: sidebar open, selected rows, a
+  multi-step wizard's draft (cleared when the wizard ends), undo stack.
 - Server state is for data your **server** invents. It's a cache, and caches need
   staleness, deduping, retries and invalidation — all things you'd otherwise hand-roll.
 - The URL owns **where the user is**: filters, tab, page, selected id. It's the only owner a

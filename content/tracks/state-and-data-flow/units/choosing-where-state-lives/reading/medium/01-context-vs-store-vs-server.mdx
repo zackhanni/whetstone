@@ -23,11 +23,16 @@ Context's "re-render everyone" cost starts to bite.
 
 **Server state is a different animal — use a server-state library.** Data you fetched (users,
 orders, this page's content) is a _cache of the server's data_. It goes stale, needs
-refetching, deduping, retries, and invalidation. TanStack Query gives you all of that:
+refetching, deduping, retries, and invalidation. TanStack Query gives you all of that
+(this track uses v5):
 
 ```jsx
 const { data, isPending } = useQuery({ queryKey: ["users"], queryFn: fetchUsers });
 ```
+
+`isPending` is the v5 name for "no data yet"; v4 called it `isLoading`, and in v5
+`isLoading` means `isPending && isFetching`. v5 also accepts only this single-object form of
+`useQuery`.
 
 Putting server data in `useState` or Zustand means hand-rolling caching and invalidation —
 badly. The tell: if you've written a `useEffect` that fetches and stores into state, you're

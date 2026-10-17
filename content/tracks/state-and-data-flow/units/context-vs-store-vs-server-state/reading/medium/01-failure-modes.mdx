@@ -56,13 +56,22 @@ half-filled; tests need a store reset between cases.
 
 A module-level store is a singleton. That's a feature for app-wide state and a bug for
 screen-local state — prefer local state (or a store created *per screen* and thrown away
-with it).
+with it). A flow that spans routes, like that wizard, can still use a store: create it in
+the wizard's shared layout, or clear it when the flow finishes or is cancelled.
 
 ## SSR / hydration
 
-**Symptom:** "Text content did not match" warnings, or a flash of the default theme.
+**Symptom:** a hydration error in the console — React 19 reports "Hydration failed because
+the server rendered text didn't match the client" (React 18 warned "Text content did not
+match") — and the tree re-rendered from scratch on the client. If only an attribute differs
+(a theme class), React 19 logs that the attributes didn't match and leaves the server's
+value in place.
 
 Anything read from `localStorage` (a persisted store, a theme) doesn't exist on the server.
 Render the server's default, then apply the persisted value after mount — a hydration gate.
+The cost that's left is a brief flash of the default. If that's unacceptable (a theme), the
+server has to know the value up front, which means a cookie rather than `localStorage`, or
+a small inline script has to apply it before the first paint.
+
 Server state has the parallel version of this: prefetch on the server and hydrate the cache,
 rather than fetching again on the client.
