@@ -1,0 +1,16 @@
+---
+id: alternation
+title: Alternation — | has the lowest precedence
+---
+
+`a|b` matches either side, and `|` binds more loosely than anything else, so it splits the
+**whole** pattern unless a group holds it:
+
+```js
+/^cat|dog$/.test("hotdog");      // true — means (^cat) or (dog$)
+/^(?:cat|dog)$/.test("hotdog");  // false — exactly "cat" or exactly "dog"
+"ab".match(/a|ab/)[0];           // "a" — the first alternative that works wins
+```
+
+The engine tries alternatives left to right and keeps the first one that leads to a match, not
+the longest. When one option is a prefix of another, put the longer one first: `/ab|a/`.

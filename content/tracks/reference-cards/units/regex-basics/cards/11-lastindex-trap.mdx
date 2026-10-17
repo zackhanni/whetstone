@@ -1,0 +1,21 @@
+---
+id: lastindex-trap
+title: The lastIndex trap — a g regex remembers where it stopped
+---
+
+A regex with `g` (or `y`) is **stateful**. `test` and `exec` start searching at `re.lastIndex`, a
+match moves it forward — even if the next call passes a different string — and a miss resets it
+to 0.
+
+```js
+const startsWithA = /^a/g;
+["apple", "avocado", "banana", "apricot"].filter((w) => startsWithA.test(w));
+// ["apple", "apricot"] — "avocado" was searched from index 1
+```
+
+The fix is to drop the `g`: `test` never needs it. If a shared regex must stay global, set
+`re.lastIndex = 0` before each `test`, or create the regex inside the function.
+
+`match` and `replace` reset a global regex's `lastIndex` to 0 before they start, and `split`
+ignores it. `matchAll` copies it, so a regex left mid-string by `test` makes `matchAll` skip
+matches too.
