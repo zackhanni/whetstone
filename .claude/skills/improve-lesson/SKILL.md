@@ -48,9 +48,10 @@ invoked with no feedback at all ("take what you just learned and make the system
      and system edits in separate change sets, so the developer can stage them as separate
      commits (you don't commit — see step 5).
 4. **Gate.** `pnpm check` (which includes `pnpm test:challenges`, the headless proof that each
-   starter fails and each solution passes) + `pnpm build`. If a challenge changed, also open it
-   **in the browser** once (starter FAILS, _Show solution_ PASSES), since the headless grader is
-   happy-dom, not Sandpack; reuse the dev server already on :3002 instead of starting another.
+   starter fails and each solution passes) + `pnpm build`. If a challenge changed, also run
+   `pnpm test:challenges:browser <slug>` (Sandpack in headless Chrome: starter FAILS, _Show
+   solution_ PASSES), since the headless grader is happy-dom, not Sandpack; reuse the dev server
+   already on :3002 instead of starting another.
 5. **Log.** Append **one line** to `docs/lesson-changelog.md`
    (`YYYY-MM-DD — <track>/<unit> — what changed`); a PR-review round gets one line too, with the
    triage detail (applied / pushed back, and why) in the PR, not the changelog. Update
@@ -63,6 +64,14 @@ invoked with no feedback at all ("take what you just learned and make the system
 ## Where the recurring problems have actually been
 
 Check these before inventing new ones — each has bitten at least once:
+
+- **A grader that a shortcut passes.** The October 2026 reviews found one in about every three
+  challenges: `autoFocus` instead of a ref, `setCount(count + 3)`, a module-level timer handle,
+  `resetQueries` instead of a cache write, `parseInt`. Write the shortcut, run the grader, and add
+  the test that rejects it.
+- **Timing a grader can't keep.** A fixed short sleep followed by "it happened twice" fails a
+  correct solution once timers are throttled (a background tab) — wait for the condition with a
+  deadline, or hold the async step open through a seam.
 
 - **Adjacent units overlapping** (two units teaching the same quiz question from different
   angles). Fix: sharpen the later unit's angle, don't delete the earlier one.

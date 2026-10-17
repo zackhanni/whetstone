@@ -15,6 +15,7 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — authoring system — folded the content phase's lessons upstream: `pnpm validate` now rejects two grader tests with the same name (Sandpack keys results by name) and ignores import-looking text in comments, and warns on Markdown in a track description; the schema rejects a line break in inline-Markdown fields; `pnpm test:challenges:browser` runs challenges in real Sandpack (headless Chrome); PLAYBOOK gains `<Profiler>` render counters (and the three remaining render-body counters are swept), condition-based waits, "try the obvious wrong fix", id and StrictMode-mode rules, and run-it-when-docs-disagree.
 - 2026-10-17 — taxonomy — `api-versioning`, `redis`, `rate-limiting`, `messaging` and `microservices` for the three new NestJS units; `idempotency` now also sits under `messaging`.
 - 2026-10-17 — backend-nestjs/nest-controllers-and-routing — Nest 12 routing: the first registered route wins (`:id` shadows `me`, pipes can't fix it), opt-in `routeConflictPolicy`/`routeResolutionStrategy`, default statuses, `@HttpCode`/`@Header`/`@Redirect`, `@Res()` vs `passthrough`, URI/header versioning and `VERSION_NEUTRAL` traps.
 - 2026-10-17 — backend-nestjs/nest-redis-caching-and-rate-limits — cache-aside (ms TTLs, delete after the write, no cached failures, single-flight), `CacheModule` on cache-manager v7 + `@keyv/redis`, `CacheInterceptor`'s per-user URL-key leak, throttler v6 per-route/IP/process counts and `trust proxy`, Redis-down fail open vs closed. Challenge `nest-cache-aside`.

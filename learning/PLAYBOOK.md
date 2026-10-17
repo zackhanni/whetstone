@@ -41,7 +41,14 @@ as tagged challenges.
   version-dependent, and **name the version in the prose** ("since React 18", "in Zustand v5").
   Unstated version drift is where shipped lessons have most often been wrong. Confirm a link by
   what the page says, not by its HTTP status: docs.nestjs.com is a single-page app that answers
-  200 for any path, real or not.
+  200 for any path, real or not (its raw Markdown is in the `nestjs/docs.nestjs.com` repo).
+- **Run it when you can.** Framework behaviour is often not what its docs say: 5 of the 12 NestJS
+  findings, and several React, Zustand and TanStack ones, could only be settled by running a
+  pinned install. When the code and the docs disagree, teach what the code does, say "observed on
+  Nest 12.1" (or similar) in the prose, and name the doc that says otherwise. Next.js ships its
+  version-exact docs in `node_modules/next/dist/docs`.
+- **Version fine print goes below `<!--more-->`** when it would crowd an intro reading. The note
+  still has to be there; it just shouldn't bury the main idea.
 
 ## The six block types — and when to reach for each
 
@@ -73,6 +80,14 @@ Two simple rules cover "sometimes one isn't enough":
 now to keep the future cheap.
 
 ### Writing unit.json
+
+- **Ids are progress keys.** Keep an item's `id` when you reword it and its meaning stays; give it
+  a new `id` when it now asks something different (stored progress on the old id is orphaned,
+  which is what you want). Say which ids changed in the PR.
+- **Say the mode when a predict-output answer depends on it.** Anything that logs during render or
+  runs an effect differs under StrictMode in development (React 18+): write "Production build"
+  (or "StrictMode, development") into the snippet or question, and give the other answer in the
+  explanation.
 
 - **Multi-line `code`** (fill-blank and predict-output) is an **array of lines**, so it reads
   naturally in the JSON and diffs line by line in review; a one-liner stays a plain string. The
@@ -208,17 +223,36 @@ plus `reflect-metadata`). Prove one in the browser before you design a unit arou
 Writing the grader — conventions that survive contact with Sandpack:
 
 - Query by `data-testid`; assert on `.textContent` (strings, so `"2"` not `2`).
-- To prove a re-render _didn't_ happen, render-count with a `useRef` counter shown in the DOM.
+- To prove a re-render _didn't_ happen, count commits with React's `<Profiler onRender>` inside the
+  read-only component and write the count into an empty element via a ref (copy
+  `memoization-stop-rerender/Child.tsx`). **Don't** do `renders.current += 1` in the render body:
+  react.dev forbids writing refs during render, and the preview wraps `App` in `<StrictMode>`, so
+  the on-screen count doubles while the tests (no StrictMode) say 1.
+- **Every `it`/`test` name is unique across the whole file**, not just within its `describe`:
+  Sandpack keys its result list by test name alone, so a repeat logs a React duplicate-key error
+  (`pnpm validate` rejects it).
 - Events dispatched outside RTL (e.g. `window.dispatchEvent(new Event("resize"))`) need an
   explicit `act(() => …)`; `fireEvent` already wraps itself.
-- Timers are **real** — no confirmed fake-timer support. Keep the challenge's delay small
-  (a `config.ts` constant the test imports beats a magic number) and `await` a slightly longer
-  sleep. Keep the total suite under a couple of seconds.
+- Timers are **real** — no confirmed fake-timer support. Keep the challenge's delay small (a
+  `config.ts` constant the test imports beats a magic number) and the suite under a couple of
+  seconds. **Wait for a condition, not a fixed window:** poll until the thing you expect has
+  happened, with a generous deadline (`until(() => stats.calls > 1, 3000)`), or hold an async
+  step open through a seam and release it from the test. A background tab throttles timers to
+  about once a second and Sandpack fails any test that runs past 5 s, so "sleep 240 ms, then
+  expect a second poll" fails a correct solution there. Bound a loop by a count of calls, never
+  by elapsed wall-clock time.
 - Module-level singletons (a store) leak between test cases: export a `reset()` and call it at
   the top of each case. RTL's auto-cleanup unmounts components between cases, so render
   counters restart at 1.
 - Each planted bug should be caught by its **own** test — that's what makes a red run read like
   a to-do list. Say the fix order in a comment in the starter without writing the code.
+- **Write the obvious wrong fix and make sure the grader rejects it.** For each planted bug, try
+  the shortcut a learner would reach for (`autoFocus` instead of a ref, `setCount(count + 3)`
+  instead of the updater, `parseInt` instead of a strict number check, `resetQueries` instead of
+  a cache write, a module-level variable instead of a ref, `structuredClone` of everything). The
+  reviews of the first 30 challenges found such a pass in about one challenge in three.
+- **Hints teach the idea, not the line.** A hint that contains the fix's code turns the
+  challenge into copying.
 
 ### Grading headlessly — `pnpm test:challenges`
 
@@ -230,9 +264,14 @@ or that skips a test, fails too. That is Rule 4, checked by machine, in about 15
 whole corpus. Run `pnpm test:challenges` on its own while iterating on one challenge.
 
 It stands in for Sandpack but is not Sandpack: a happy-dom document instead of a browser iframe,
-and Vite's module resolution instead of Sandpack's bundler. So **open a new or changed challenge in
-the browser once** — _Run tests_ on the starter fails, _Show solution_ passes — before calling it
-done. After that, the headless run catches regressions every time.
+and Vite's module resolution instead of Sandpack's bundler. So **run a new or changed challenge in
+Sandpack once** — _Run tests_ on the starter fails, _Show solution_ passes — before calling it
+done: `pnpm test:challenges:browser <slug…>` does exactly that in headless Chrome against the dev
+server (`pnpm dev`; set `BASE_URL` for another), and checks every referenced challenge when given
+no slug. It needs Google Chrome installed and the network (Sandpack's bundler is remote), so it is
+not part of `pnpm check`. Checking by hand works too, but keep the tab in front: a background tab
+throttles timers and timer-based tests then time out for no real reason. After that, the headless
+run catches regressions every time.
 
 **IDE lint noise is expected here.** `content/challenges/**` is outside `tsconfig.json`, so the
 editor flags `describe`/`it`/`expect` as undefined in every challenge test. That's not a
@@ -248,8 +287,9 @@ Sandpack iframe:
   misspelled key is an error) checks Rule 1, unique ids at every level (blocks, questions,
   options, prompts, blanks, snippets), that a quiz `answer` names real option ids, that the
   `___` count matches the blanks, 2–5 objectives and at least one https source per unit,
-  multi-line code written as an array of lines, no two fill-blank answers that normalize alike,
-  and the checkable half of Rule 3: readings and cards open the unit, challenges close it.
+  multi-line code written as an array of lines, no line break in a field rendered as inline
+  Markdown (prompts, options, questions, objectives, challenge titles and criteria), no two
+  fill-blank answers that normalize alike, and the checkable half of Rule 3: readings and cards open the unit, challenges close it.
 - **The validator** (`learning/validate-content.ts`, run by `pnpm validate` and pinned case by
   case in `learning/validate-content.test.ts`) checks Rule 2 and the reading-file rules above,
   which apply to card files too (plus a warning when a card outgrows one idea and one example).
@@ -263,11 +303,13 @@ Sandpack iframe:
   - `App.tsx`, `solution.tsx` and a `*.test.tsx`/`*.test.ts` grader exist
   - the solution differs from the starter
   - every bare import in every sandbox file (in `from` / `import "x"` / `import("x")` /
-    `require("x")` form) resolves to a sandbox package or a declared dependency
+    `require("x")` form, comments ignored) resolves to a sandbox package or a declared dependency
   - the grader uses no jest-dom matcher and nothing from `vi.*` / `jest.*`
+  - every test name in a grader file is unique (Sandpack keys its results by name)
   - every sandbox package is a devDependency at the same pinned version
 - **The headless grader** (`pnpm test:challenges`) checks Rule 4's behaviour: the starter fails
-  and the solution passes.
+  and the solution passes. `pnpm test:challenges:browser` checks the same in Sandpack itself
+  (needs the dev server and Chrome, so it runs on demand, not in `pnpm check`).
 
 Still judgment, not checked: the rest of Rule 3 (each assessment harder than the last), that
 each planted bug has its own test, that every acceptance criterion is actually asserted, that
@@ -343,12 +385,12 @@ at layer 1–4, not just a lesson.
 - [ ] Each reading tier has ≥1 example; each example is the same idea at higher resolution
 - [ ] Distractors are real misconceptions; every question/item has a teaching `explanation`
 - [ ] Difficulty escalates; the challenge is genuinely harder than the quiz
-- [ ] Challenge has starter + reference solution + tests, one test per planted bug, and every
-      acceptance criterion asserted by some test
+- [ ] Challenge has starter + reference solution + tests, one test per planted bug, every
+      acceptance criterion asserted by some test, and the obvious wrong fix rejected
 - [ ] Every example/question/option has a stable `id`
 - [ ] Skills tagged at the right altitude on the unit, and every tag exists in `learning/taxonomy.ts`
 - [ ] It doesn't restate the neighbouring unit — you can say in one sentence what's new here
-- [ ] `pnpm check` **and** `pnpm build` pass (the headless grader is part of `check`); the
-      challenge opened once in the browser
+- [ ] `pnpm check` **and** `pnpm build` pass (the headless grader is part of `check`), and
+      `pnpm test:challenges:browser <slug>` passes for a new or changed challenge
 - [ ] One line in `docs/lesson-changelog.md`; `docs/ROADMAP.md` and `docs/handoff.md` updated;
       changes left **uncommitted** for review
