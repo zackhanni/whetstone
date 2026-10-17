@@ -22,10 +22,18 @@ set({ filters: { status: "open" } });
 set((s) => ({ filters: { ...s.filters, status: "open" } }));
 ```
 
+**Why the function form.** `set` is synchronous: the store has the new state, and every
+subscriber has been told, before `set` returns. So `set((s) => …)` sees exactly what
+`getState()` would at that moment. What goes stale is a value you read _earlier_ — a `count`
+selected during the last render, or a `getState()` taken before an `await` — and an update
+built on it can overwrite a newer one. Building the update inside `set((s) => …)` starts from
+the current state every time.
+
 Two more things worth knowing early:
 
 - `set(partial, true)` **replaces** the whole state instead of merging — which also throws
-  away your actions unless you re-supply them. It's rarely what you want.
+  away your actions unless you re-supply them. In v5 its TypeScript type demands a complete
+  state, actions included, so the compiler catches a partial replace.
 - Outside React (an event handler in a plain module, a test) use
   `useCounter.getState().inc()` and `useCounter.setState(...)`. The hook and the store are
   the same object.

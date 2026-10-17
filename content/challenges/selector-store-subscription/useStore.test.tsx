@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import { useLayoutEffect } from "react";
 import { CountLabel } from "./CountLabel";
 import { OtherLabel } from "./OtherLabel";
 import { store } from "./counter-store";
@@ -57,5 +58,24 @@ describe("useStore", () => {
     expect(view.other()).toBe("1");
     expect(view.otherRenders()).toBe("2");
     expect(view.countRenders()).toBe("1");
+  });
+
+  it("shows a store change made while it was mounting", () => {
+    store.reset();
+    // A sibling that writes to the store as it mounts. Its layout effect runs before
+    // CountLabel's subscription exists, so the hook must re-check the store after subscribing.
+    function IncOnMount() {
+      useLayoutEffect(() => {
+        store.getState().inc();
+      }, []);
+      return null;
+    }
+    render(
+      <>
+        <IncOnMount />
+        <CountLabel />
+      </>,
+    );
+    expect(screen.getByTestId("count").textContent).toBe("1");
   });
 });

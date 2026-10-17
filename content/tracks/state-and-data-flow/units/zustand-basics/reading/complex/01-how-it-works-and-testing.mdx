@@ -3,58 +3,74 @@ id: how-it-works-and-testing
 title: What create() is actually doing — and testing a singleton
 ---
 
-## Zustand in ~20 lines
+## Zustand in ~30 lines
 
 There's no magic under `create`: a variable, a `Set` of listeners, and React's
-`useSyncExternalStore`.
+`useSyncExternalStore` (added in React 18, which is v5's minimum).
 
 ```ts
 type Listener = () => void;
+type Store<T> = {
+  getState: () => T;
+  getInitialState: () => T;
+  subscribe: (listener: Listener) => () => void;
+};
 
-function createStore<T>(init: (set: (partial: Partial<T>) => void) => T) {
+function createStore<T>(init: (set: (partial: Partial<T>) => void) => T): Store<T> {
   let state: T;
   const listeners = new Set<Listener>();
 
   const set = (partial: Partial<T>) => {
-    state = { ...state, ...partial };   // the shallow merge
-    listeners.forEach((l) => l());      // tell every subscriber
+    state = { ...state, ...partial }; // the one-level merge
+    listeners.forEach((l) => l());    // notify every subscriber before set returns
   };
 
   state = init(set);
+  const initialState = state;
 
   return {
     getState: () => state,
-    subscribe: (l: Listener) => { listeners.add(l); return () => listeners.delete(l); },
+    getInitialState: () => initialState,
+    subscribe: (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
   };
 }
 
-// The React binding: subscribe to the store, but only re-render when the SELECTED slice changes.
+// The React binding: subscribe to the store, re-render only when the SELECTED value changes.
 function useStore<T, U>(store: Store<T>, selector: (s: T) => U): U {
   return useSyncExternalStore(
     store.subscribe,
-    () => selector(store.getState()),   // client snapshot
-    () => selector(store.getState()),   // server snapshot (SSR)
+    () => selector(store.getState()),        // client snapshot
+    () => selector(store.getInitialState()), // server snapshot: SSR and the hydration render
   );
 }
 ```
 
-`useSyncExternalStore` is the React 18 API for subscribing to state that lives outside
-React. It re-renders only when the snapshot changes by `Object.is` — which is precisely why
-a selector returning a fresh object re-renders every time, and why an atomic selector
-doesn't. It also handles tearing during concurrent rendering, which a hand-rolled
-`useState` + `useEffect` subscription does not.
+This is close to the real thing. In Zustand v5, the hook `create` returns calls React's
+`useSyncExternalStore` with exactly these two snapshot functions (wrapped in `useCallback`);
+the real `setState` adds the function form and the `replace` flag, and skips notifying when
+it's handed the current state object itself (`set((s) => s)`). Everything else Zustand ships —
+`persist`, `devtools`, `immer`, `subscribeWithSelector` — is middleware: a function around
+your initializer that swaps in its own `set` or patches the store's API (`persist` writes
+to storage on every `set`; `subscribeWithSelector` replaces `subscribe`).
 
-> **This is a teaching shorthand, not Zustand's source.** Real Zustand reaches for
-> `useSyncExternalStoreWithSelector` (from `use-sync-external-store/shim`), which adds a
-> caching layer plus an `equalityFn`. That matters: with the bare version above, an
-> object-returning selector doesn't merely re-render often — React notices `getSnapshot`
-> returning a new value every call and warns _"The result of getSnapshot should be cached"_.
-> Zustand also keeps a distinct initial state for the server snapshot instead of calling
-> `getState()` twice. Read the shorthand for the mechanism; read the real thing before you
-> ship your own.
+Two behaviours fall straight out of `useSyncExternalStore`:
 
-Everything else Zustand ships — `persist`, `devtools`, `immer`, `subscribeWithSelector` —
-is middleware wrapping that `set`.
+- **Selector identity.** React re-renders whenever the snapshot differs by `Object.is` from
+  the last one it saw, and it re-reads the snapshot after rendering to check. A selector
+  that returns a new object is different every time, so the component never settles:
+  "Maximum update depth exceeded". An atomic selector returns the same primitive until the
+  field changes.
+- **Tearing.** Every component reading the store during one render sees the same snapshot,
+  even under concurrent rendering — something a hand-rolled `useState` + `useEffect`
+  subscription doesn't guarantee.
+
+**v4 worked differently.** Its hook used `useSyncExternalStoreWithSelector` from the
+`use-sync-external-store` shim, which memoizes the selection and accepts an `equalityFn`.
+That's why an object selector "only" re-rendered on every store change in v4 instead of
+looping. In v5 that path survives only as `createWithEqualityFn` in `zustand/traditional`.
 
 ## Testing a module-level store
 
@@ -62,12 +78,15 @@ The store is a singleton created at import time, so state **leaks between tests*
 explicitly:
 
 ```ts
-const initial = useCounter.getState();
-
 beforeEach(() => {
-  useCounter.setState(initial, true); // `true` = replace, not merge
+  useCounter.setState(useCounter.getInitialState(), true); // `true` = replace, not merge
 });
 ```
+
+With many stores, Zustand's testing guide automates this: a shared `__mocks__/zustand.ts`
+wraps `create`, records each store's initial state as it's created, and resets every store
+after each test. Jest picks up a root `__mocks__` folder for a package automatically; Vitest
+needs `vi.mock("zustand")` in a setup file.
 
 Test the store itself without React (`useCounter.getState().inc()` then assert on
 `getState().count`) — plain functions, no renderer. Save component tests for the wiring.
@@ -80,3 +99,19 @@ Test the store itself without React (`useCounter.getState().inc()` then assert o
   Context so it dies with the screen (module-level stores are app-lifetime by definition).
 - You need time-travel debugging and strict action logs across a large team → Redux
   Toolkit's ceremony starts paying for itself.
+
+<!--more-->
+
+**Why a persisted value read through the hook doesn't mismatch — and why you gate anyway.**
+`persist` (v5) makes `getInitialState()` return the initializer's defaults, not the
+hydrated state. So on the client's hydration render, the server snapshot is the same
+default the server rendered; React then sees the client snapshot differs and re-renders
+with the stored value. That only covers reads that go through the hook:
+`useSettings.getState().theme` in render bypasses it and mismatches, and a
+`useSettings.persist.hasHydrated()` check in render never gets that far — on the server,
+with no storage, `persist` never attaches `useSettings.persist`, so the call throws. The
+hook-read guarantee comes from the source (checked against 5.0.14), not the docs —
+the persist page still tells you to defer reads until after mount — so keep an explicit
+mounted gate, as this app does. The hand-written hook in this unit's challenge passes
+`getState()` for both snapshots, which is fine there only because nothing is
+server-rendered.
