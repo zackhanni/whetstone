@@ -18,11 +18,11 @@ input.addEventListener("input", (e) => debouncedSearch(e.target.value));
 
 The bad version still _delays_ each search by 300 ms, so it looks debounced in a quick manual
 test. In React the same bug appears as a debounced function created during render. The
-`debounced-input-and-autosave` unit shows how to keep it stable.
+[`debounced-input-and-autosave`](/learn/react-hooks-and-rendering/debounced-input-and-autosave) unit shows how to keep it stable.
 
 **2. Debouncing doesn't serialise async work.** A debounce controls when a function _starts_,
 not how long it runs, so two debounced searches can still overlap and finish out of order. The
-`debounced-input-and-autosave` unit shows it with saves. The `cancellation-and-races` unit fixes
+[`debounced-input-and-autosave`](/learn/react-hooks-and-rendering/debounced-input-and-autosave) unit shows it with saves. The [`cancellation-and-races`](/learn/async-javascript/cancellation-and-races) unit fixes
 it.
 
 **3. A promise-returning debounce must settle every promise.** It's tempting to make
@@ -34,7 +34,7 @@ pending callers with the final run's result, or reject the superseded ones with 
 
 **4. Tear down explicitly.** A pending trailing call outlives whatever scheduled it. `cancel()`
 or `flush()` it when the screen or connection goes away (in a component, that's the cleanup in
-the `debounced-input-and-autosave` unit).
+the [`debounced-input-and-autosave`](/learn/react-hooks-and-rendering/debounced-input-and-autosave) unit).
 
 <!--more-->
 

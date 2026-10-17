@@ -205,6 +205,10 @@ const ERROR_CASES: [string, () => Promise<unknown>, string][] = [
       ),
     'two tests are named "works"',
   ],
+  ["invisible character in a reading", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nOne\u2028two.\n"), "invisible character U+2028"],
+  ["invisible character in unit.json", () => set(UNIT, ["blocks", 1, "questions", 0, "explanation"], "because\u200b"), "invisible character U+200B"],
+  ["link to a unit that doesn't exist", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nSee [the other unit](/learn/t/nope).\n"), "links to /learn/t/nope"],
+  ["link to a unit under the wrong track", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nSee [it](/learn/other/u).\n"), "links to /learn/other/u"],
   [
     "an unreferenced challenge is still validated",
     async () => {
@@ -255,6 +259,15 @@ describe("validateContent non-errors", () => {
     await write(
       "content/challenges/c/Thing.tsx",
       '// the list comes from "the server", not from "lodash"\n/* import x from "lodash" */\nexport function Thing() {\n  return null;\n}\n',
+    );
+    expect((await validateContent(root)).errors).toEqual([]);
+  });
+
+  it("accepts a link to a real unit, and import-like words inside string literals", async () => {
+    await write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nSee [the unit](/learn/t/u) and [the track](/learn/t).\n");
+    await write(
+      "content/challenges/c/Thing.tsx",
+      'const steps = [["import", "Plan: 1 to import"], ["from", "lodash"]];\nexport function Thing() {\n  return steps.length;\n}\n',
     );
     expect((await validateContent(root)).errors).toEqual([]);
   });

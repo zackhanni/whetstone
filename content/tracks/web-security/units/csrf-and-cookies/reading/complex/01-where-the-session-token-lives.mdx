@@ -4,7 +4,7 @@ title: HttpOnly cookie or localStorage — decide by what an XSS can do
 ---
 
 Where the browser keeps your session token decides which attack you have to worry about. The
-`auth-over-http` unit covers how each option *works*; this is the security trade-off.
+[`auth-over-http`](/learn/http-and-apis/auth-over-http) unit covers how each option *works*; this is the security trade-off.
 
 | | `HttpOnly; Secure; SameSite` cookie | Token in `localStorage`, sent as `Authorization: Bearer` |
 | --- | --- | --- |

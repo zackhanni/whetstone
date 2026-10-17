@@ -5,54 +5,39 @@ in `AGENTS.md` → "Working with this repo".
 
 ## Status (2026-10-17)
 
-- Deployed on Vercel (as of `main`). 3 tracks, 14 units, 10 challenges: React Hooks & Rendering (7 units),
-  State & Data Flow (3), Backend with NestJS (4). `main` is at PR #14 (schema v3, `cards`
-  block, derived depth, `vercel.json` gate).
-- **Content phase in progress, as a PR stack.** Each PR targets the one below it; merge
-  bottom-up with merge commits (repo auto-delete retargets the next PR). Accuracy fixes come
-  first, one PR per existing track, then one PR per new track from `docs/ROADMAP.md`.
-  - State & Data Flow accuracy pass — all 14 `docs/content-review.md` findings fixed and
-    independently reviewed (PR #15).
-  - React Hooks & Rendering accuracy pass — all 21 findings fixed and reviewed; 6 challenges
-    tightened so the obvious shortcut fails (PR #16).
-  - Backend with NestJS accuracy pass — 12 findings handled against Nest 12 (current major);
-    `docs/content-review.md` now has no open findings (PR #17).
-  - New track **JavaScript & TypeScript Fundamentals** (5 units, 4 challenges), first in the
-    catalog (PR #18).
-  - New track **Dates & Time** (4 mastery units + 1 card unit, 1 challenge) (PR #19).
-  - New track **Async JavaScript & Timing** (5 units, 4 challenges), second in the catalog (PR #20).
-  - New track **Data Fetching with TanStack** (6 units, 6 challenges): the first challenges to
-    use `dependencies` (real `@tanstack/react-query` / `@tanstack/react-router`), proven in Sandpack
-    (PR #21).
-  - New track **HTTP & APIs in Practice** (6 units, 4 challenges) (PR #22).
-  - New track **Next.js & the Network** (4 units, 2 challenges), written for Next 16 (checked
-    against 16.2.9, which the repo runs, and 16.4.2, npm `latest`) (PR #23).
-  - Backend with NestJS gains 3 units (controllers & routing, Redis caching & rate limits,
-    microservices & messaging) and 2 challenges — 7 units in all (PR #24).
-  - Authoring-system hardening from what the content phase taught: duplicate test names and
-    inline line breaks rejected, comments ignored by the import scan, `<Profiler>` render
-    counters, and `pnpm test:challenges:browser` for the Sandpack check (PR #25).
-  - New track **Reference Cards**: three card units (HTTP status codes and regex basics bloomed
-    with quizzes; CLI flags as cards only) (PR #26).
-  - New track **Web Security** (4 mastery units + 2 card units, 3 challenges) (PR #27).
-  - New track **Databases** (7 units, 2 challenges), PostgreSQL 18 as the reference engine (PR #28).
-  - New track **Testing & Quality** (7 units, 2 challenges), written for Vitest 4 / Playwright 1.64;
-    answers "can you use enums in tests?" with the four real failure modes (PR #29).
-  - New track **Terminal, Git & GitHub** (6 units, 2 challenges), macOS + zsh (PR #30).
-  - New capstone track **Systems Design** (3 units, 2 challenges): design reasoning that links
-    back to the HTTP, Next.js, Databases and NestJS units instead of re-teaching them (PR #31).
-  - New capstone track **Infrastructure** (3 units, 3 challenges): Terraform 1.16, environments and
-    CI/CD on GitHub Actions, observability with OpenTelemetry and Prometheus.
-- Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
-  Vercel build runs both. A new or changed challenge also gets `pnpm test:challenges:browser
-  <slug>` (real Sandpack, headless Chrome, needs `pnpm dev`).
+- `main` is at PR #14 (schema v3, `cards` block, derived depth, `vercel.json` gate) and serves
+  3 tracks / 14 units / 10 challenges.
+- **The content phase is complete as a PR stack, #15 → #33.** Merged, it gives **16 tracks,
+  83 units (6 of them card units), 47 challenges**, every one verified in real Sandpack
+  (`pnpm test:challenges:browser`: starter fails, solution passes). Each PR targets the one below
+  it; merge bottom-up with merge commits (repo auto-delete retargets the next PR — don't use
+  `gh pr merge --delete-branch`, which can close the child instead).
+  - #15–#17: accuracy passes on the three shipped tracks; all 47 `docs/content-review.md`
+    findings handled, NestJS moved to Nest 12.
+  - #18–#24: JS & TS Fundamentals, Dates & Time, Async JavaScript, Data Fetching with TanStack
+    (first real-package challenges), HTTP & APIs, Next.js & the Network, three new NestJS units.
+  - #25: authoring-system hardening (duplicate test names, inline line breaks, `<Profiler>`
+    counters, the Sandpack browser check).
+  - #26–#32: Reference Cards, Web Security, Databases, Testing & Quality, Terminal/Git/GitHub,
+    Systems Design, Infrastructure.
+  - #33: content checks (invisible characters, `/learn/` links resolve, statement-level import
+    scan), PLAYBOOK notes, and unit-slug mentions in readings turned into links.
+- Every unit was written by an author agent and then fact-checked by a separate reviewer agent
+  that re-ran its snippets against pinned versions; each PR description lists what the review
+  changed.
+- Gates: `pnpm check` (about 30 s, including the headless grader) and `pnpm build`; every Vercel
+  build runs both. A new or changed challenge also gets `pnpm test:challenges:browser <slug>`
+  (real Sandpack, headless Chrome, needs `pnpm dev`).
 
 ## Next up
 
-1. Review and merge the content stack bottom-up.
-2. New tracks from `docs/ROADMAP.md` → "Content tracks" land in the PRs above this one.
-3. A production spot-check after merging: a changed challenge's _Run tests_ (fails) and _Show
-   solution_ (passes); a "Flag" link opening a prefilled issue.
+1. Review and merge the stack bottom-up (#15 first). Trigger CodeRabbit per PR after the one below
+   it merges, so each review covers its own diff.
+2. After merging, a production spot-check: one challenge per new track (_Run tests_ fails, _Show
+   solution_ passes), a card unit, a cross-track `/learn/…` link.
+3. App follow-ups the content phase surfaced (UI, not content): render predict-output answers as
+   Markdown/preformatted (backticks and multi-line output show literally today), and stop long
+   `code` spans in a challenge's acceptance-criteria list wrapping into boxes.
 
 ## Open items
 
@@ -65,8 +50,9 @@ in `AGENTS.md` → "Working with this repo".
   server, Chrome and the network).
 - A running `pnpm dev` keeps serving the catalog it started with: after adding a track or unit,
   restart it, or the new pages 404.
-- The inline-Markdown task list renders long `code` spans as wrapped boxes that break mid-phrase
-  (e.g. `date-only-helpers`' criteria) — an app styling issue, not content.
+- Dated facts to re-check are ⬜ items in `docs/ROADMAP.md` under each track (e.g. Vitest 5 sweep,
+  Temporal in Safari, GitHub native stacks GA, a `queue: max` YAML example once actionlint accepts
+  it, Nest throttler-storage peer deps).
 
 ## Read before authoring
 
