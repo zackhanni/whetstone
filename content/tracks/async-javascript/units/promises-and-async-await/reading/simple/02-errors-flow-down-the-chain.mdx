@@ -1,0 +1,57 @@
+---
+id: errors-flow-down-the-chain
+title: Errors skip down the chain to the next catch
+---
+
+A rejection travels down the chain, skipping every `.then` success callback, until it reaches a
+`.catch` (or a `.then` with a second callback). That's the async version of an exception
+unwinding to the nearest `try`/`catch`:
+
+```js
+loadConfig()
+  .then(parse)       // skipped if loadConfig rejects
+  .then(applyTheme)  // skipped if loadConfig or parse fails
+  .catch(showError); // handles a failure from any step above
+```
+
+Two rules decide where a `catch` must go:
+
+**1. A `catch` only sees failures from steps _above_ it.** Put one at the end of the chain (or a
+`try` around the `await`s). A `catch` in the middle handles the steps above it, then the chain
+carries on below it.
+
+**2. A `catch` that returns normally _recovers_.** Its return value fulfils the next promise, so
+the steps after it run as if nothing went wrong:
+
+```js
+// ❌ Swallowed: the error is logged, then the chain carries on with `undefined`
+const user = await fetchUser(id).catch((err) => console.error(err));
+render(user.name); // TypeError: Cannot read properties of undefined
+```
+
+The real error ("user service down") was logged and discarded. What reaches your error tracker
+is a `TypeError` two lines later, which points at the wrong place. Only catch where you can do
+something useful: show a message, return a real fallback value, or rethrow.
+
+```js
+// ✅ Handle it where you can act on it
+try {
+  const user = await fetchUser(id);
+  render(user.name);
+} catch (err) {
+  renderError(err); // or rethrow it for a caller that can act
+}
+```
+
+The same holds with `async`/`await`: an `await` on a rejected promise **throws** at that line,
+and `try`/`catch` works the way it does for synchronous code. A `try` only covers the `await`s
+written inside it.
+
+<!--more-->
+
+### `finally` doesn't change the outcome
+
+`.finally(cleanup)` (or a `finally {}` block) runs on both paths and passes the original result
+or error through. It's the place for "hide the spinner". It isn't a handler: an error still
+reaches the next `catch`. (The exceptions: if the cleanup throws, that new error replaces the
+original, and a `return` inside a `finally {}` block overrides the result.)

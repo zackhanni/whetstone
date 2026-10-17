@@ -1,0 +1,57 @@
+---
+id: a-promise-settles-once
+title: A promise settles once, and then returns a new promise
+---
+
+A promise is a placeholder for a result that isn't ready yet. It starts **pending** and
+settles exactly once, as **fulfilled** with a value or **rejected** with a reason (usually an
+`Error`). After that it never changes: further `resolve` or `reject` calls are ignored.
+
+```js
+const p = new Promise((resolve, reject) => {
+  resolve("first");
+  resolve("second"); // ignored
+  reject(new Error("too late")); // ignored
+});
+p.then((v) => console.log(v)); // first
+```
+
+The function you pass to `new Promise` (the _executor_) runs **immediately**, synchronously.
+Only the `.then` callbacks wait, and they always run later as microtasks, even on an
+already-settled promise (the `event-loop` unit).
+
+**`then` returns a new promise**, and what your callback does decides how that new promise
+settles:
+
+| The callback… | The promise `then` returned… |
+| --- | --- |
+| returns a value | fulfils with that value |
+| returns a promise | follows it, settling the same way when it does |
+| throws | rejects with what was thrown |
+
+That table is the whole of chaining:
+
+```js
+fetchUser(1)                             // Promise<User>
+  .then((user) => user.teamId)           // Promise<number>
+  .then((teamId) => fetchTeam(teamId))   // returns a promise, so the chain waits for it
+  .then((team) => console.log(team.name));
+```
+
+**An `async` function always returns a promise.** `return x` fulfils it with `x`, `throw e`
+rejects it with `e`, and a returned promise is followed. Even
+`async function f() { return 1; }` returns a promise of `1`, not `1`, so callers need
+`await f()` or `f().then(…)`.
+
+`await p` is the readable form of `.then`. It pauses the async function until `p` settles,
+then gives you the value, or throws the rejection reason right there, where a normal
+`try`/`catch` can handle it.
+
+<!--more-->
+
+### "Resolved" isn't "fulfilled"
+
+MDN's terms: a promise is _resolved_ once its fate is locked in, which includes being locked
+onto another promise that's still pending. So `resolve(otherPromise)` "resolves" a promise that
+may later **reject**. In conversation people use "resolved" to mean "fulfilled". When precision
+matters, say _fulfilled_, _rejected_ or _settled_.
