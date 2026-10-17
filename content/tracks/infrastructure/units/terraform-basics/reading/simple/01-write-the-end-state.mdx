@@ -1,0 +1,67 @@
+---
+id: write-the-end-state
+title: You write the end state; Terraform works out the steps
+---
+
+A Terraform configuration never says "create a server, then write a file". It says what
+should **exist**. Terraform compares that with what it already manages and proposes the
+difference. That is what *declarative* means here: you edit the destination, never the route.
+
+```hcl
+resource "random_pet" "server" {}
+
+resource "local_file" "motd" {
+  filename = "${path.module}/motd.txt"
+  content  = "hello from ${random_pet.server.id}\n"
+}
+```
+
+(`random` and `local` need no cloud account, so every example in this unit runs on a laptop.
+An `aws_db_instance` follows exactly the same rules.)
+
+The vocabulary:
+
+- A **provider** is the plugin that talks to one API — `hashicorp/aws`, `hashicorp/random`.
+  `terraform init` downloads the ones you declare and pins their exact versions in
+  `.terraform.lock.hcl`, which you commit.
+- A **resource** block declares one object that Terraform creates and owns. Type plus name,
+  `random_pet.server`, is its **address**.
+- A **reference** such as `random_pet.server.id` is also a dependency. Terraform creates the pet
+  before the file because the file's content needs the pet's name.
+
+Then the loop, with real output:
+
+```text
+$ terraform plan
+  # local_file.motd will be created
+  + resource "local_file" "motd" {
+      + content  = (known after apply)
+      + filename = "./motd.txt"
+      ...
+  # random_pet.server will be created
+  + resource "random_pet" "server" {
+      + id = (known after apply)
+      ...
+Plan: 2 to add, 0 to change, 0 to destroy.
+
+$ terraform apply
+random_pet.server: Creation complete after 0s [id=smashing-scorpion]
+local_file.motd: Creation complete after 0s [id=f5820057…]
+Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
+```
+
+- **`plan` changes nothing.** It reads the real objects, compares them with the configuration,
+  and proposes actions. `(known after apply)` marks values that won't exist until the object
+  is created — the pet's name, so also the file's content.
+- **`apply` makes a plan real.** Run bare, it computes a fresh plan, shows it, and waits for
+  `yes`.
+- **Run `plan` again** right after, and it reports *No changes*: the real world now matches the
+  file. Editing the file is how you change infrastructure; the next plan shows the difference.
+
+<!--more-->
+
+**Versions.** This unit uses Terraform 1.16, the current release in October 2026, and names
+the release that introduced each newer feature (`moved` in 1.1, `import` blocks in 1.5, …). OpenTofu
+(opentofu.org) is a Linux Foundation fork, started after HashiCorp moved Terraform from an
+open-source licence to the BUSL; it keeps the same language and plan/apply workflow, but
+features added since the fork can differ, so check its docs if that's what you run.

@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 3,
+  "slug": "design-tradeoffs",
+  "title": "Arguing a trade-off: feeds, rate limits, retries and back-pressure",
+  "skills": ["system-design", "architecture", "fan-out", "rate-limiting", "back-pressure"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 50,
+  "objectives": [
+    "Argue a trade-off out loud: name the options, the requirement or number that decides, what you give up, and what would change your mind",
+    "Choose fan-out on write, on read, or a hybrid for a feed from follower counts and the read:write ratio, with the arithmetic shown",
+    "Compare token-bucket, fixed-window and sliding-window rate limiters by burst behaviour and memory, and fix a token bucket driven by an injected clock",
+    "Keep retries from making an outage worse: retry at one layer only, with capped exponential backoff and jitter",
+    "Apply back-pressure: bound queues and how long work waits in them, shed load early, and answer 429/503 with `Retry-After` instead of buffering without limit"
+  ],
+  "sources": [
+    { "title": "AWS Builders' Library: Timeouts, retries, and backoff with jitter", "url": "https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/" },
+    { "title": "AWS Builders' Library: Making retries safe with idempotent APIs", "url": "https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-apis/" },
+    { "title": "AWS Builders' Library: Using load shedding to avoid overload", "url": "https://aws.amazon.com/builders-library/using-load-shedding-to-avoid-overload/" },
+    { "title": "AWS Builders' Library: Avoiding insurmountable queue backlogs", "url": "https://aws.amazon.com/builders-library/avoiding-insurmountable-queue-backlogs/" },
+    { "title": "Azure Architecture Center: Rate Limiting pattern", "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/rate-limiting-pattern" },
+    { "title": "Azure Architecture Center: Materialized View pattern", "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/materialized-view" },
+    { "title": "Amazon API Gateway: Throttle requests to your REST APIs (token bucket)", "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html" },
+    { "title": "Redis docs: INCR — rate limiter pattern", "url": "https://redis.io/docs/latest/commands/incr/" },
+    { "title": "Redis: Build 5 rate limiters with Redis (algorithm comparison)", "url": "https://redis.io/tutorials/howtos/ratelimiting/" },
+    { "title": "RFC 6585 §4: 429 Too Many Requests", "url": "https://www.rfc-editor.org/rfc/rfc6585#section-4" },
+    { "title": "RFC 9110 §10.2.3: Retry-After", "url": "https://www.rfc-editor.org/rfc/rfc9110#section-10.2.3" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-design-tradeoffs", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-design-tradeoffs",
+      "questions": [
+        {
+          "id": "whats-missing",
+          "prompt": "In a review, a teammate argues: \"Let's put sessions in Redis — it's fast and it scales.\" What's missing from that as a trade-off argument?",
+          "options": [
+            { "id": "three-parts", "text": "The deciding number, the cost, and what would change their mind — it names an option and two adjectives" },
+            { "id": "nothing", "text": "Nothing; speed and scalability are the deciding factors for sessions" },
+            { "id": "benchmark", "text": "A link to a benchmark proving Redis is fast" },
+            { "id": "alternative-tech", "text": "It should have compared Redis with Memcached first" }
+          ],
+          "answer": "three-parts",
+          "explanation": "A checkable argument has four parts: options, the fact that decides, what you give up, and the reversal point. \"Fast\" and \"scales\" aren't facts about *this* system — how many session reads per second, what happens to logged-in users if Redis is down, what it costs to run another fleet. A benchmark or a second product to compare doesn't fix that; it's still an option without a decision behind it."
+        },
+        {
+          "id": "feed-read-heavy",
+          "prompt": "Feed opens outnumber posts about 50 to 1, and most accounts have a few hundred followers. Which feed design fits?",
+          "options": [
+            { "id": "write-async", "text": "Fan-out on write, done asynchronously by workers after the post is accepted — each feed open becomes one lookup" },
+            { "id": "read", "text": "Fan-out on read, because a post then costs a single write" },
+            { "id": "write-sync", "text": "Fan-out on write inside the post request, so the post is in every timeline before the poster sees \"Posted\"" },
+            { "id": "no-precompute", "text": "Query every followed account on each open, with no limit on how many" }
+          ],
+          "answer": "write-async",
+          "explanation": "With 50 reads per post, moving the merge from the read path (hundreds of lookups while a user waits) to the write path (hundreds of inserts nobody waits for) is the better trade — as long as the fan-out runs asynchronously. Doing it inside the post request puts every follower's insert on the poster's latency. Fan-out on read *is* cheaper per post, but posts are the rare operation here. And an unbounded read-time query is the worst case of fan-out on read."
+        },
+        {
+          "id": "huge-account",
+          "prompt": "With pure fan-out on write, one account with 30 million followers posts. What goes wrong, and what's the usual fix?",
+          "options": [
+            { "id": "hybrid", "text": "One post becomes 30 million inserts that delay everything behind it; skip fan-out for accounts above a threshold and merge their recent posts in at read time" },
+            { "id": "more-workers", "text": "Nothing a few more fan-out workers can't absorb" },
+            { "id": "all-read", "text": "Switch the whole system to fan-out on read" },
+            { "id": "drop", "text": "Drop the post for followers who are offline" }
+          ],
+          "answer": "hybrid",
+          "explanation": "Averages hide the tail: at, say, 50,000 inserts/s of fan-out capacity, one such post takes 10 minutes to reach every follower, and other posts queue behind it. The hybrid keeps push for the ordinary case and pulls only the few huge accounts at read time, which stays cheap because a reader follows only a handful of them. Switching everything to pull throws away the win for the 99% case; more workers just moves the bottleneck to the timeline store; and silently dropping posts breaks the feed's meaning — skipping fan-out to inactive users is fine only because their timeline can be rebuilt on return."
+        },
+        {
+          "id": "token-bucket-two-numbers",
+          "prompt": "A public API should let a client send **20 requests at once** after being idle, but hold it to **10 per second** on average. Which limiter states exactly that?",
+          "options": [
+            { "id": "bucket", "text": "A token bucket with capacity 20 and a refill of 10 tokens per second" },
+            { "id": "fixed", "text": "A fixed window of 10 requests per second" },
+            { "id": "log", "text": "A sliding-window log of 10 requests per second" },
+            { "id": "fixed-20", "text": "A fixed window of 20 requests per 2 seconds" }
+          ],
+          "answer": "bucket",
+          "explanation": "A token bucket has two parameters with two meanings: capacity is the burst allowed after being quiet, refill rate is the sustained average — the shape AWS API Gateway documents for its throttling (a rate plus a burst). A sliding log of 10/s forbids the 20-request burst entirely. Fixed windows allow bursts only by accident, at window edges, and \"20 per 2 seconds\" would allow 20 in one instant *and* up to 40 across an edge."
+        },
+        {
+          "id": "atomic-bucket",
+          "prompt": "Four app servers share one token bucket per client in Redis. Each request reads the bucket with one command, refills and decides in Node, then writes the new token count back with another. Under load, a client with **1 token left** gets several concurrent requests allowed. Why, and what's the fix?",
+          "options": [
+            { "id": "lua", "text": "Concurrent requests all read the same last token before any write lands; do the refill, check and decrement in one Lua script, which Redis runs atomically" },
+            { "id": "move-to-redis", "text": "Each server is still counting on its own; move the buckets into Redis" },
+            { "id": "pipeline", "text": "Pipeline the read and the write so they travel in one round trip" },
+            { "id": "ttl", "text": "The bucket keys have no TTL, so old tokens are never cleared" }
+          ],
+          "answer": "lua",
+          "explanation": "This is check-then-act on shared state: between one request's read and its write, other requests read the same 1 token and each decides to allow. Redis runs a Lua script without interleaving any other command, so putting the whole read-decide-write in one script makes it a single step — Redis's rate-limiting tutorial implements every algorithm that way. The buckets *are* already shared: that's the fix the NestJS track's `nest-redis-caching-and-rate-limits` unit makes for per-process counters, and sharing them didn't make the update atomic. Pipelining saves a round trip but still leaves the decision in Node, between the two commands. A missing TTL wastes memory on idle clients; it doesn't admit extra requests."
+        },
+        {
+          "id": "retries-multiply",
+          "prompt": "A request passes through 4 service layers to a database, and **each** layer makes up to 3 attempts. The database starts timing out under load. What's the worst case, and the fix?",
+          "options": [
+            { "id": "81-one-layer", "text": "Up to 3⁴ = 81 database calls per user request — retry at one layer and let the others fail fast" },
+            { "id": "12", "text": "Up to 12 calls — 3 per layer, added up — which is acceptable" },
+            { "id": "3", "text": "Only 3 — only the top layer's retries reach the database" },
+            { "id": "81-jitter", "text": "Up to 81 calls — fixed by adding jitter at every layer" }
+          ],
+          "answer": "81-one-layer",
+          "explanation": "Each layer's attempts each trigger the full set of attempts below it, so retries multiply: 3 × 3 × 3 × 3 = 81. AWS's retries article gives the five-layer version — 243× load on the database — and recommends retrying at a single point in the stack. Jitter spreads retries out in time; it doesn't reduce how many there are, so it can't fix multiplication."
+        },
+        {
+          "id": "jitter-waves",
+          "prompt": "1,000 clients lose their connection to a service at the same instant. Each retries with exponential backoff — wait 100 ms, then 200 ms, then 400 ms — and **no jitter**. What does the recovering service see?",
+          "options": [
+            { "id": "waves", "text": "Waves of about 1,000 requests at the same moments (about +100, +300 and +700 ms) — the original collision on a schedule; randomising each wait spreads them out" },
+            { "id": "trickle", "text": "A steady trickle, because exponentially growing waits already spread the retries out" },
+            { "id": "one-burst", "text": "One burst at +100 ms; after that, backoff keeps the clients apart" },
+            { "id": "more-attempts", "text": "Waves of about 1,000 requests, best fixed with more attempts and shorter waits" }
+          ],
+          "answer": "waves",
+          "explanation": "Backoff spaces out *one* client's attempts. Clients that failed together compute the same waits, so they stay together: every retry is a wave of ~1,000 at +100, +300 (100 + 200) and +700 ms. Jitter — a random wait within each interval, `Math.random() * Math.min(cap, base * 2 ** attempt)` — is what desynchronises them, which is why AWS's retries article adds it. More attempts with shorter waits only add more, closer waves."
+        },
+        {
+          "id": "bounded-queue",
+          "prompt": "Under overload, a service's in-memory request queue grows to 60 seconds of work, while its clients time out after 5 seconds. What's the best change?",
+          "options": [
+            { "id": "bound-and-shed", "text": "Bound the queue, drop requests that have waited longer than the clients will, and reject the excess early with 503 + `Retry-After`" },
+            { "id": "unbounded", "text": "Make the queue unbounded so no request is ever lost" },
+            { "id": "longer-timeout", "text": "Raise the clients' timeout to 60 seconds" },
+            { "id": "more-threads", "text": "Add worker threads so the queue drains faster" }
+          ],
+          "answer": "bound-and-shed",
+          "explanation": "Everything older than 5 seconds in that queue is work for a client that has already given up — throughput with zero goodput. AWS's load-shedding article bounds both queue size and time-in-queue, and rejects excess cheaply so accepted requests finish in time; the 503 with `Retry-After` is the back-pressure signal. An unbounded queue makes the latency worse; a 60-second timeout hides overload instead of handling it; and more threads on an overloaded machine add contention, not capacity."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-design-tradeoffs",
+      "prompts": [
+        {
+          "id": "refill-cap",
+          "prompt": "Refill a token bucket for the time that passed, keeping the fraction but never exceeding the capacity.",
+          "code": "tokens = Math.___(capacity, tokens + elapsedSeconds * refillPerSecond);",
+          "blanks": [{ "id": "a1", "accept": ["min"] }],
+          "explanation": "Without the cap, an hour of idle time saves up 3,600 tokens at 1/s and the client can burst all of them at once. With it, idle time buys at most `capacity` — the burst you chose to allow. Keeping the fraction (no `Math.floor`) is what lets a client that calls often still accumulate whole tokens."
+        },
+        {
+          "id": "retry-after-next-token",
+          "prompt": "A request was denied. Report how long until the bucket holds one whole token.",
+          "code": "retryAfterMs = Math.ceil(((___ - tokens) / refillPerSecond) * 1000);",
+          "blanks": [{ "id": "b1", "accept": ["1"] }],
+          "explanation": "The client needs *one* more token, so the wait is the missing fraction of a token divided by the refill rate. Using `capacity - tokens` would tell clients to wait for a full bucket — far longer than necessary. Rounding up avoids a retry that arrives a hair too early."
+        },
+        {
+          "id": "too-many-requests",
+          "prompt": "Deny a request over its rate limit, and tell the client when to come back (in seconds).",
+          "code": [
+            "HTTP/1.1 ___ Too Many Requests",
+            "___: 2",
+            "Content-Type: application/json"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["429"] },
+            { "id": "c2", "accept": ["Retry-After"] }
+          ],
+          "explanation": "RFC 6585 defines 429 for rate limiting and lets it carry `Retry-After`; RFC 9110 defines the header's value as seconds (or an HTTP date). It's the back-pressure signal a well-behaved client uses instead of guessing a backoff — and why a limiter should compute the wait instead of only saying no."
+        },
+        {
+          "id": "backoff-with-jitter",
+          "prompt": "Wait before retry number `attempt` (0, 1, 2, …): exponential growth, capped, then randomised.",
+          "code": "const delayMs = Math.random() * Math.min(capMs, baseMs * 2 ** ___);",
+          "blanks": [{ "id": "d1", "accept": ["attempt"] }],
+          "explanation": "`baseMs * 2 ** attempt` doubles the wait each time (100, 200, 400 ms …), `Math.min` caps it, and `Math.random()` spreads clients that failed together across the whole interval so they don't retry in lockstep. Pair it with a maximum number of attempts, at one layer of the stack."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-design-tradeoffs",
+      "snippets": [
+        {
+          "id": "fixed-window-edge",
+          "code": [
+            "// Fixed window: 100 requests per calendar minute, one counter per window.",
+            "const LIMIT = 100, WINDOW_MS = 60_000;",
+            "const counters = new Map<string, number>();",
+            "",
+            "function allow(key: string, nowMs: number): boolean {",
+            "  const windowKey = `${key}:${Math.floor(nowMs / WINDOW_MS)}`;",
+            "  const count = (counters.get(windowKey) ?? 0) + 1;",
+            "  counters.set(windowKey, count);",
+            "  return count <= LIMIT;",
+            "}",
+            "",
+            "let allowed = 0;",
+            "for (let i = 0; i < 100; i++) if (allow(\"u\", 59_900)) allowed++; // 0.1 s before the minute ends",
+            "for (let i = 0; i < 100; i++) if (allow(\"u\", 60_100)) allowed++; // 0.1 s after",
+            "console.log(allowed);"
+          ],
+          "question": "What does it print?",
+          "answer": "200",
+          "acceptable": ["200 — all of them", "200 in 0.2 seconds"],
+          "explanation": "59,900 and 60,100 fall in different windows (`u:0` and `u:1`), and each window has its own fresh count of 100. So a \"100 per minute\" limit just let 200 requests through in 0.2 seconds — the 2× edge burst Redis's tutorial lists as the fixed window's weakness. A sliding window counts the last 60 seconds from *now* and would deny the second hundred; a token bucket would allow at most `capacity` at once."
+        },
+        {
+          "id": "estimate-fan-out-lag",
+          "code": [
+            "// Estimate — pure fan-out on write",
+            "followers_of_this_account = 10_000_000",
+            "fan_out_inserts_per_second = 50_000   // total worker throughput (assumption)",
+            "",
+            "seconds_until_the_last_follower_sees_the_post = ?"
+          ],
+          "question": "How long until the last follower's timeline has the post — and what else is happening meanwhile?",
+          "answer": "About 200 seconds (10,000,000 / 50,000) — and every other post queues behind it",
+          "acceptable": ["200 s", "~3.3 minutes", "about 3 minutes"],
+          "explanation": "10 million inserts at 50,000 a second is 200 s — over three minutes for one post, during which the workers do nothing else unless they're partitioned. This is the tail the average hides (the average post fans out to a few hundred followers in milliseconds), and it's the arithmetic behind the hybrid: don't fan out posts from accounts above a follower threshold; merge them in at read time instead."
+        },
+        {
+          "id": "estimate-backlog-drain",
+          "code": [
+            "// Estimate — a queue whose consumers were down for an hour",
+            "arrivals_per_second  = 1_000",
+            "consumer_capacity    = 1_200   // messages/s when running",
+            "outage_seconds       = 3_600",
+            "",
+            "hours_to_drain_the_backlog_after_consumers_return = ?"
+          ],
+          "question": "Once the consumers come back, how long until the queue is caught up?",
+          "answer": "5 hours — a 3.6M-message backlog drained by 200 messages/s of spare capacity",
+          "acceptable": ["5 hours", "18,000 s", "about 5 h"],
+          "explanation": "The backlog is 1,000 × 3,600 = 3.6 million messages, and arrivals don't stop while you drain it, so only the *spare* capacity works it down: 1,200 − 1,000 = 200/s → 18,000 s = 5 hours. An hour of downtime became six hours of late processing. AWS's queue-backlog article gives the same rule of thumb — recovering from an hour-long outage takes double the normal capacity for another hour — and why its defences watch message *age* and process fresh work first."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-token-bucket", "challengeSlug": "token-bucket-rate-limiter" }
+  ]
+}

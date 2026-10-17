@@ -1,0 +1,40 @@
+---
+id: redirect-status-is-a-caching-decision
+title: 301 vs 302 is a caching decision
+---
+
+The rule is in the [`http-status-codes`](/learn/reference-cards/http-status-codes) reference cards: RFC 9110 makes 301 and 308
+**heuristically cacheable**, and 302 and 307 not. "Heuristically cacheable" means a browser or
+shared cache may store the redirect and reuse it **without asking you again**, even though you
+sent no `Cache-Control` (RFC 9111 lets a cache store a response that carries no caching headers
+at all only when its status code is defined as heuristically cacheable). A 302 or 307 is stored
+only if you add freshness headers.
+
+For a shortener, that rule becomes two product consequences:
+
+- **Clicks disappear.** A returning visitor's browser follows its stored 301 and never reaches
+  your server, so the click count undercounts — silently, and most for your most loyal users.
+- **Destinations stop being yours to change.** If a link is edited or taken down after a
+  phishing report, clients holding a cached 301 keep going to the old target until their cache
+  lets it go. You can purge a CDN; you can't purge a stranger's browser.
+
+A 302 (or 307) without freshness headers isn't stored, so every click comes back through you.
+That's the trade: **you serve every redirect** — exactly the load the estimates planned for — in
+exchange for **counting and controlling every redirect**. A shortener that never edits links and
+doesn't sell analytics could choose 301 and let browsers absorb repeat traffic. That's a
+legitimate answer too, as long as you say what it costs.
+
+Explicit headers override the defaults in both directions: a 302 with
+`Cache-Control: max-age=…` becomes storable, and a 301 with `Cache-Control: no-store` must not be
+stored. Which directive does what, and how a CDN reads `s-maxage`, is the Next.js track's
+[`response-headers-caching-compression`](/learn/nextjs-and-the-network/response-headers-caching-compression) unit. The design-level point to say out loud: **the status
+code is a decision about who may cache, so make it from the requirements** (analytics,
+editability, takedowns) — not from whether "permanent" sounds right.
+
+<!--more-->
+
+Those overrides give you a dial instead of a switch. A 302 with
+`Cache-Control: private, max-age=300` lets each browser absorb its own user's repeat clicks for
+five minutes while keeping shared caches out. A takedown then reaches every browser within five
+minutes, and the count misses only repeats inside that window. "How fast must a takedown take
+effect?" has become a number in a header — and the number comes from the requirements.

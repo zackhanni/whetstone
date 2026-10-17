@@ -55,7 +55,7 @@ buffered and handed over **back to back** afterwards. In a test with a 20 ms int
 the `sleep` loop.
 
 Browsers have no built-in promise `sleep`. There, `new Promise((r) => setTimeout(r, ms))` is the
-idiom, and cancellation is yours to wire up (the `cancellation-and-races` unit).
+idiom, and cancellation is yours to wire up (the [`cancellation-and-races`](/learn/async-javascript/cancellation-and-races) unit).
 
 <!--more-->
 

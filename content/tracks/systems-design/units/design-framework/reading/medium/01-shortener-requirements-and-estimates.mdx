@@ -1,0 +1,54 @@
+---
+id: shortener-requirements-and-estimates
+title: The URL shortener, steps 1 and 2 — requirements and estimates
+---
+
+**Functional requirements** — what a user can do:
+
+- Create a short link for a long URL, optionally with an expiry.
+- Open `https://sho.rt/{code}` and land on the long URL.
+- See how many times a link was clicked.
+
+**Non-functional requirements** — how well. Turn each adjective into a number someone could
+check, and agree it before designing:
+
+| Vague | Checkable |
+| --- | --- |
+| "fast redirects" | p99 redirect latency under 50 ms, measured as close to the user as possible |
+| "always up" | redirects 99.9% available per month (~43 minutes); creating links can be allowed less |
+| "never lose links" | a created link survives the loss of any single machine or disk |
+| "click counts" | counts may lag by a minute — they're analytics, not billing |
+
+Two of those rows are design decisions in disguise. Splitting availability by path (redirect vs
+create) lets the hot path be stricter than the rest. And "counts may lag" is permission to take
+click counting **off the redirect's critical path**: the redirect can emit an event and return,
+and something else counts later (the mechanics of handing work to a queue are the HTTP track's
+[`sync-vs-async-apis`](/learn/http-and-apis/sync-vs-async-apis) unit).
+
+**Estimates**, every assumption labelled:
+
+```
+Creates:   100M links/month (assumption) / 2,592,000 s          ≈ 39/s on average
+Redirects: 100 opens per link created (assumption) × 39/s       ≈ 3,900/s on average
+Peak:      3× average (assumption)                               ≈ 12,000 redirects/s
+Storage:   ~500 B per link (URL, code, timestamps, index overhead — assumption)
+           100M × 12 months × 5 years = 6 × 10⁹ links × 500 B   ≈ 3 TB
+Egress:    a redirect is a few hundred bytes → ~1 MB/s at average load
+```
+
+What those numbers say:
+
+- **Reads outnumber writes 100 to 1**, so the redirect path is where the effort goes.
+- **~40 writes/s is small** for one database primary. Nothing about creating links needs
+  sharding.
+- **3 TB over five years** is a disk-size and backup question, not a reason to shard on day one.
+- **Bandwidth doesn't matter here** — redirects are tiny. (A video service flips this.)
+
+**The latency budget.** 50 ms at p99 sounds generous until you count hops. Redis's latency
+guide puts the typical latency of a 1 Gbit/s network at about 200 µs, so a few cache or
+database round trips inside one region fit easily. Distance doesn't fit: light in optical fibre
+covers roughly 200 km per millisecond (an order-of-magnitude assumption — about two-thirds of
+its speed in a vacuum), so New York ↔ London, about 5,600 km apart, is at least ~56 ms round
+trip before any routing or processing. A 50 ms p99 for users on two continents therefore means
+serving redirects from more than one region. That's a requirement discovered by arithmetic,
+before anyone picked a technology.

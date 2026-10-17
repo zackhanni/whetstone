@@ -1,0 +1,56 @@
+---
+id: rate-limiters-compared
+title: Rate limiters compared, and where their state lives
+---
+
+Redis's rate-limiting tutorial compares the common algorithms; the trade-offs come down to how
+they treat bursts and what they store per client:
+
+| Algorithm | State per client | Bursts | Accuracy |
+| --- | --- | --- | --- |
+| Fixed window | 1 counter per window | up to **2× the limit** across a window edge | approximate |
+| Sliding window log | one timestamp per request in the window | none beyond the limit | exact |
+| Sliding window counter | 2 counters | smoothed across the edge | close, not exact |
+| Token bucket | 2 numbers (tokens, last refill time) | up to `capacity`, on purpose | exact for its definition |
+
+How to choose:
+
+- **Security-sensitive limits** — OTP checks, password-reset attempts — where a 2× burst at a
+  window edge matters, want a sliding window or a token bucket with a small capacity. A fixed
+  window is fine wherever an occasional 2× edge is tolerable; it's the cheapest of the four.
+- **A public API** usually wants a token bucket: an honest steady rate *and* room for the burst a
+  client sends on startup. Publish both numbers.
+- **A sliding log at high limits** is memory you pay per client: 10,000 an hour means up to 10,000
+  timestamps for every active client.
+
+The token bucket's state update, in full:
+
+```ts
+tokens = Math.min(capacity, tokens + elapsedSeconds * refillPerSecond);  // refill, capped
+lastRefill = now;
+if (tokens >= 1) { tokens -= 1; allow(); }
+else deny({ retryAfterMs: Math.ceil(((1 - tokens) / refillPerSecond) * 1000) });
+```
+
+Every line has a way to go wrong, which is this unit's challenge: drop the `Math.min` and an idle
+client saves up an unlimited burst; floor the refill and reset `lastRefill` and frequent callers
+never earn a token; compute the wait as `(capacity - tokens)` and clients wait for a full bucket
+instead of one token. (`Retry-After` is in seconds, so the HTTP layer rounds up.)
+
+**Where the state lives** decides whether the limit is real. Buckets kept in each server's
+memory multiply the limit by the number of servers — the NestJS track's
+[`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit shows it with `@nestjs/throttler` and moves the counts
+to Redis. Sharing the state is half the fix. The other half is that the read-decide-write has to
+be **one step**: a bucket read with one Redis command, updated in Node and written back with
+another lets two concurrent requests both read the last token and both be allowed. Redis's
+tutorial runs every algorithm as a single Lua script for that reason — Redis runs a script
+without interleaving other commands — and its token bucket takes the current time from the
+application rather than from Redis's clock, which keeps it deterministic and testable (the same
+seam this unit's challenge uses).
+
+<!--more-->
+
+AWS's retries article adds a second use for the same algorithm: a client-side token bucket that
+limits *retries*. Calls may retry while tokens last; once the bucket is empty, retries continue
+only at a fixed rate. AWS added this to its SDKs in 2016, so a failing dependency sees a bounded
+trickle of retries instead of a multiplied flood.

@@ -183,7 +183,7 @@ list below is where new roots should go, so that each authoring session doesn't 
 | `testing` — **landed** with `testing-and-quality` | Testing & Quality (Vitest, Playwright) | — |
 | `databases` — **landed** with `databases` | Databases | — |
 | `tooling` — **landed** with `http-and-apis` (`curl`); Terminal, Git & GitHub tags with `developer-tooling` | Terminal, Git & GitHub | — |
-| `system-design`, `infrastructure` | Capstone tracks | `architecture` may gain `system-design` |
+| `system-design` — **landed** with `systems-design`; `infrastructure` — **landed** with `infrastructure` | Capstone tracks | `architecture` gains `system-design` — **done** (and `rate-limiting` too) |
 
 Re-parenting is free: a tag gaining a parent changes no content file, because units store only
 the leaf tag.
