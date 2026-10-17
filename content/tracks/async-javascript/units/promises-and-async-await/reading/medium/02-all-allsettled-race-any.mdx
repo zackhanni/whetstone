@@ -1,0 +1,54 @@
+---
+id: all-allsettled-race-any
+title: all, allSettled, race, any — which one the situation needs
+---
+
+All four take promises that are **already running** and combine their outcomes. None of them
+starts, cancels or stops anything.
+
+| Combinator | Fulfils when | Rejects when | Reach for it when |
+| --- | --- | --- | --- |
+| `Promise.all` | **every** input fulfils (values in input order) | **any** input rejects (the first one) | you need every result; one failure means the whole thing failed |
+| `Promise.allSettled` | **every** input settles, either way | never | each result stands alone; show what worked, report what didn't |
+| `Promise.race` | the **first to settle** fulfils | the first to settle rejects | the first outcome of any kind decides, e.g. a deadline |
+| `Promise.any` | the **first to fulfil** | **every** input rejects (an `AggregateError`) | any one success will do, e.g. the fastest of several mirrors |
+
+`allSettled` (ES2020) gives you one record per input, so a partial failure is data, not an
+exception:
+
+```js
+const results = await Promise.allSettled([getOrders(id), getAlerts(id), getRecs(id)]);
+// [
+//   { status: "fulfilled", value: [...] },
+//   { status: "rejected",  reason: Error("alerts service down") },
+//   { status: "fulfilled", value: [...] },
+// ]
+const panels = results.map((r) =>
+  r.status === "fulfilled" ? { ok: true, items: r.value } : { ok: false, error: r.reason.message },
+);
+```
+
+With `Promise.all` here, one flaky recommendations service would blank the whole dashboard.
+
+**`all` failing fast doesn't stop the others.** When one input rejects, `Promise.all` rejects
+immediately, but the remaining requests keep running and their results are thrown away. MDN:
+"The other operations continue to run, but their outcomes are not available". If they should
+stop, cancel them yourself (the `cancellation-and-races` unit).
+
+**`any` (ES2021) and `AggregateError`.** If every input rejects, `any` rejects with an
+`AggregateError` whose `.errors` array holds each reason, in input order. `Promise.any([])`
+rejects straight away, while `Promise.all([])` fulfils with `[]`.
+
+<!--more-->
+
+### `race` as a timeout, and its catch
+
+```js
+const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms));
+const data = await Promise.race([fetchReport(), timeout(5000)]);
+```
+
+This gives up _waiting_ after 5 s. It doesn't stop `fetchReport`: the request runs to completion
+in the background, and the timer keeps running after the report wins (in Node, it holds the
+process open until it fires). For a real timeout, pass `AbortSignal.timeout(5000)` to the request
+itself, which is covered in the next unit.

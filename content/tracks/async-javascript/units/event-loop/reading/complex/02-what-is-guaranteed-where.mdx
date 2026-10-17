@@ -1,0 +1,62 @@
+---
+id: what-is-guaranteed-where
+title: Which orderings are guaranteed, and which depend on the host
+---
+
+The task/microtask model is shared by browsers and Node, so these hold everywhere:
+
+- Synchronous code finishes before any callback runs.
+- Every microtask (promise reactions, `await` continuations, `queueMicrotask`) runs before the
+  next task, in the order queued.
+- Microtasks queued during a task run before the _following_ task, even one that was already
+  due.
+
+Beyond that, the **host** decides, and the hosts differ.
+
+**Browsers: timers vs `requestAnimationFrame`.** A `requestAnimationFrame` callback runs as part
+of the next rendering update, just before style, layout and paint. When that update comes
+depends on the display's refresh rate and on which task queue the browser picks next (the spec
+leaves that choice to the implementation). So `setTimeout(a, 0)` followed by
+`requestAnimationFrame(b)` can log either order. Use rAF for "just before the next paint", never
+as "soon".
+
+**Node: `setTimeout(fn, 0)` vs `setImmediate(fn)`.** Node's event loop runs in phases (timers,
+poll for I/O, check for `setImmediate`, and so on). From the main module, Node's docs call the
+order "non-deterministic, as it is bound by the performance of the process": either can come
+first, and which one usually wins varies from machine to machine. Inside an I/O callback the order
+is fixed: `setImmediate` always runs first.
+
+```js
+// Node, main module: order varies from run to run
+setTimeout(() => console.log("timeout"), 0);
+setImmediate(() => console.log("immediate"));
+```
+
+**Node: `process.nextTick`.** It has its own queue, drained before the promise microtask queue,
+but "before" depends on the module type. In a CommonJS file, `nextTick` runs ahead of
+already-queued `.then` callbacks. In an ES module, the top-level code already runs as part of
+the microtask queue, so the `.then` callbacks run first:
+
+```js
+Promise.resolve().then(() => console.log("then"));
+process.nextTick(() => console.log("nextTick"));
+// .cjs: nextTick, then
+// .mjs: then, nextTick
+```
+
+Node's docs mark `process.nextTick` as Legacy (since v22.7.0 and v20.18.0) and point to
+`queueMicrotask`, which behaves the same in both hosts.
+
+<!--more-->
+
+### Why there's no "render" in Node
+
+Node has no rendering steps. A long synchronous task there doesn't freeze a UI. It stalls every
+request the process is serving, because the same single thread runs all of them. The fixes are
+the same shape: split the work, or move it to a worker thread (`node:worker_threads`).
+
+### Checking these yourself
+
+Ordering snippets run as-is in Node (`node file.cjs` or `node file.mjs`). If an answer depends
+on `nextTick`, `setImmediate` or rendering, it's a host question, not a language question. Say
+which host you mean before you predict.

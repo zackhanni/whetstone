@@ -19,7 +19,8 @@ in `AGENTS.md` → "Working with this repo".
     `docs/content-review.md` now has no open findings (PR #17).
   - New track **JavaScript & TypeScript Fundamentals** (5 units, 4 challenges), first in the
     catalog (PR #18).
-  - New track **Dates & Time** (4 mastery units + 1 card unit, 1 challenge).
+  - New track **Dates & Time** (4 mastery units + 1 card unit, 1 challenge) (PR #19).
+  - New track **Async JavaScript & Timing** (5 units, 4 challenges), second in the catalog.
 - Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
   Vercel build runs both.
 

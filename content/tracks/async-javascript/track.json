@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 3,
+  "slug": "async-javascript",
+  "title": "Async JavaScript & Timing",
+  "description": "The framework-free mechanics under every async UI: the event loop's tasks and microtasks, timers and why they run late, debounce and throttle built from scratch, promises and async/await (sequential vs parallel, where errors go, the combinators), and cancellation with AbortController. The React units on effects and autosave build on these.",
+  "units": [
+    "event-loop",
+    "timers",
+    "debounce-and-throttle-from-scratch",
+    "promises-and-async-await",
+    "cancellation-and-races"
+  ]
+}

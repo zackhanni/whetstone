@@ -1,0 +1,72 @@
+---
+id: edges-and-maxwait
+title: Leading edges, maxWait, and why throttle is a debounce
+---
+
+Debounce and throttle are two settings of one machine. Lodash (4.x) exposes the knobs on
+`debounce(fn, wait, { leading, trailing, maxWait })`, and its `throttle` is literally
+`debounce(fn, wait, { leading: true, trailing: true, maxWait: wait })`.
+
+**The edges.** For a burst of calls `a b c` with less than `wait` between them:
+
+| Options | Runs |
+| --- | --- |
+| trailing only (debounce's default) | `c`, `wait` ms after the last call |
+| leading only | `a`, immediately; nothing else until `wait` ms of silence |
+| leading + trailing | `a` immediately, then `c` after the silence |
+
+A single call with leading + trailing runs **once**, not twice. Lodash's docs: the trailing run
+happens "only if the debounced function is invoked more than once during the `wait` timeout."
+Leading-only debounce suits "act on the first click, ignore the double-click".
+
+**`maxWait`: a deadline for the burst.** A trailing debounce has one failure mode: input that
+never pauses. Someone typing steadily, or a sensor reporting every 50 ms against a 100 ms
+debounce, gets **no** runs at all until it stops. `maxWait` adds a second timer that starts with
+the burst and is **not** reset by later calls:
+
+```js
+function debounce(fn, wait, { maxWait } = {}) {
+  let timer, maxTimer, lastArgs, lastThis;
+
+  function invoke() {
+    clearTimeout(timer);
+    clearTimeout(maxTimer);
+    timer = maxTimer = undefined;
+    const args = lastArgs, thisArg = lastThis;
+    lastArgs = lastThis = undefined;
+    fn.apply(thisArg, args);
+  }
+
+  return function debounced(...args) {
+    lastArgs = args;
+    lastThis = this;
+    clearTimeout(timer);
+    timer = setTimeout(invoke, wait);         // reset on every call
+    if (maxWait !== undefined && maxTimer === undefined) {
+      maxTimer = setTimeout(invoke, maxWait); // NOT reset: the burst's deadline
+    }
+  };
+}
+```
+
+Calling it every 10 ms for 300 ms with `wait: 50, maxWait: 120` runs at about 120 ms, 240 ms,
+and once more after the input stops. Without `maxWait`, it runs once, at about 350 ms. Lodash
+produces the same pattern.
+
+Now set `maxWait` equal to `wait` and add a leading edge. A run is due at least once per `wait`
+while calls keep coming, with one at the start and one at the end. That's a throttle, which is
+why lodash builds it this way.
+
+<!--more-->
+
+### Choosing the knobs
+
+Whether a UI needs a debounce or a throttle is the `debounced-input-and-autosave` unit's topic.
+The knobs refine that choice:
+
+- **`maxWait`** turns "nothing runs while input continues" into "something runs at least every
+  N ms". An autosave wants a few seconds of it, so a fast typist can't go minutes without a save.
+- **`leading`** answers the first call at once, then goes quiet: the first click of a
+  double-click, the start of a drag.
+- **Visual work during scroll or resize** can use `requestAnimationFrame` as its throttle: at
+  most one run per frame, and it stops in background tabs.

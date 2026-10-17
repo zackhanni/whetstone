@@ -1,0 +1,62 @@
+---
+id: why-timers-run-late
+title: Clamping, throttling, pausing and overflow
+---
+
+Beyond a busy thread, four mechanisms make timers late, or wildly early.
+
+**1. Nested-timeout clamping (browsers).** The HTML spec: "Timers can be nested; after five
+such nested timers, however, the interval is forced to be at least four milliseconds."
+Nesting counts any mix of `setTimeout` and `setInterval` scheduled from inside a timer
+callback, and each repeat of a `setInterval` counts as one more level, so `setInterval(fn, 0)` is
+clamped too. A recursive `setTimeout(step, 0)` runs its first few steps back to back, then
+settles at about 4 ms each. A 1,000-step animation driven that way takes about 4 s. Node does
+not apply this clamp. Its rule is that any delay below 1 (or `NaN`) becomes 1 ms.
+
+**2. Background-tab throttling (browsers, vendor-specific).** Per MDN, Firefox desktop enforces
+at least 1 s in inactive tabs. Chrome checks timers about once a second in hidden pages, and
+since Chrome 88 "intensive throttling" checks chained timers only **once a minute** after a page
+has been hidden for 5 minutes and silent for 30 s. (Firefox for Android goes further: a
+15-minute minimum.) A "session expires in 60 s" countdown in a background tab can fire a minute
+or more late.
+
+**3. Pausing (browsers).** The spec only counts time while the document is _fully active_
+("not necessarily consecutively"). A page in the back/forward cache isn't, so its timers stop
+counting and resume when the user navigates back.
+
+**4. Overflow, which fires early.** The delay is stored as a signed 32-bit integer, so the
+maximum is 2,147,483,647 ms (about 24.8 days):
+
+```js
+const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000; // 2,592,000,000
+setTimeout(sendReminder, THIRTY_DAYS);         // fires almost immediately
+```
+
+In browsers this value wraps to a negative number, which counts as 0 (MDN; much larger values
+wrap to some other, shorter delay). In Node the delay is "set to 1" and a
+`TimeoutOverflowWarning` is printed. Either way the reminder goes out now,
+not in a month.
+
+### What to do instead
+
+- **Long waits:** don't hold a timer for days. Store the deadline (in the database, or
+  `localStorage`) and check it on load, on an interval, or from a scheduled job on the server.
+- **Anything that must be correct after a background period:** recompute from the clock when
+  the page becomes visible again:
+
+```js
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && Date.now() >= sessionExpiresAt) signOut();
+});
+```
+
+- **Smooth animation:** use `requestAnimationFrame` (it runs once per frame, and is paused in
+  hidden tabs on purpose), and compute progress from its timestamp, not from a count of calls.
+
+<!--more-->
+
+### The spec also allows "late on purpose"
+
+After the delay, the user agent may "optionally wait a further implementation-defined length of
+time" so it can align timers to save power. Treat every delay as "at least", and design so that
+"much later than asked" is still correct.
