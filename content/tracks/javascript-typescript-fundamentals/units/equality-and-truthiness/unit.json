@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 3,
+  "slug": "equality-and-truthiness",
+  "title": "Equality, truthiness, null and undefined",
+  "skills": ["javascript", "typescript", "equality", "null-and-undefined"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Predict `===`, `==` and `Object.is` results using the few coercion rules worth knowing, and test for `NaN` correctly",
+    "Recite the falsy values and fix truthiness bugs: `{count && …}` rendering `0`, an empty array being truthy, `filter(Boolean)` dropping zeros",
+    "Explain that objects and arrays compare by identity, and compare by an id or specific fields instead",
+    "Model absence in TypeScript — `?:` vs `| undefined` vs `| null` under `strictNullChecks` — and predict what JSON does to each"
+  ],
+  "sources": [
+    { "title": "MDN: Equality comparisons and sameness", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Equality_comparisons_and_sameness" },
+    { "title": "MDN: Equality (==)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Equality" },
+    { "title": "MDN: Greater than or equal (>=)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Greater_than_or_equal" },
+    { "title": "MDN: Falsy", "url": "https://developer.mozilla.org/en-US/docs/Glossary/Falsy" },
+    { "title": "MDN: JSON.stringify()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify" },
+    { "title": "React docs: Conditional Rendering", "url": "https://react.dev/learn/conditional-rendering" },
+    { "title": "React docs: useState", "url": "https://react.dev/reference/react/useState" },
+    { "title": "TypeScript Handbook: Everyday Types (null and undefined)", "url": "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html" },
+    { "title": "TypeScript 6.0 release notes (strict by default)", "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-6-0.html" },
+    { "title": "TypeScript 5.5 release notes: inferred type predicates", "url": "https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-5.html" }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-equality",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-equality",
+      "questions": [
+        {
+          "id": "loose-true",
+          "prompt": "Which comparison is `true`?",
+          "options": [
+            { "id": "null-undefined-loose", "text": "`null == undefined`" },
+            { "id": "null-undefined-strict", "text": "`null === undefined`" },
+            { "id": "null-zero", "text": "`null == 0`" },
+            { "id": "nan-nan", "text": "`NaN == NaN`" }
+          ],
+          "answer": "null-undefined-loose",
+          "explanation": "Loose equality has a special rule: `null` and `undefined` equal each other and nothing else — which is why `x == null` is a common one-step \"null or undefined\" check, and why `null == 0` is false. Strict equality never converts, and `null` and `undefined` are different types. `NaN` is unequal to everything, itself included, under both `==` and `===`."
+        },
+        {
+          "id": "truthy-values",
+          "prompt": "Which of these values make `if (value) { … }` run its body? Select all that apply.",
+          "options": [
+            { "id": "str-zero", "text": "`\"0\"`" },
+            { "id": "empty-array", "text": "`[]`" },
+            { "id": "str-false", "text": "`\"false\"`" },
+            { "id": "zero", "text": "`0`" },
+            { "id": "empty-string", "text": "`\"\"`" },
+            { "id": "nan", "text": "`NaN`" }
+          ],
+          "answer": ["str-zero", "empty-array", "str-false"],
+          "explanation": "The falsy list is short: `false`, `0`, `-0`, `0n`, `\"\"`, `null`, `undefined`, `NaN` (plus `document.all`). Everything else is truthy — any non-empty string, including `\"0\"` and `\"false\"`, and every object, including an empty array. That's why a query-string flag of `\"false\"` passes an `if`, and `if (!results)` never catches an empty result list."
+        },
+        {
+          "id": "count-and-zero",
+          "prompt": "`{unread && <Badge count={unread} />}` shows a stray `0` in the header when there are no unread messages. Why?",
+          "options": [
+            { "id": "and-returns-zero", "text": "`&&` returns its left side when that side is falsy, so the expression is `0` — and React renders numbers" },
+            { "id": "react-stringifies-falsy", "text": "React renders every falsy value as text; `false` would show up too" },
+            { "id": "badge", "text": "`Badge` renders its `count` prop even when it is `0`" },
+            { "id": "jsx-bug", "text": "JSX evaluates `&&` differently from JavaScript" }
+          ],
+          "answer": "and-returns-zero",
+          "explanation": "`a && b` evaluates to `a` when `a` is falsy — here the number `0`, which React renders as text. React renders nothing for `false`, `null` and `undefined` (it treats them as holes), which is why the bug only appears for numbers. Badge never renders at all. Fix the condition, not the component: `unread > 0 && …`."
+        },
+        {
+          "id": "includes-object",
+          "prompt": "`selected.includes({ id: 3 })` is `false`, though `selected` holds an item with `id: 3`. What's the right fix?",
+          "options": [
+            { "id": "some-id", "text": "`selected.some((s) => s.id === 3)` — objects compare by identity, so compare the id" },
+            { "id": "index-of", "text": "`selected.indexOf({ id: 3 }) !== -1` — `includes` uses `==`, `indexOf` uses `===`" },
+            { "id": "json", "text": "`JSON.stringify(selected).includes(JSON.stringify({ id: 3 }))`" },
+            { "id": "object-is", "text": "`selected.find((s) => Object.is(s, { id: 3 }))`" }
+          ],
+          "answer": "some-id",
+          "explanation": "Every equality check — `===`, SameValueZero in `includes`, `Object.is` — compares objects by identity, and the literal `{ id: 3 }` is a new object, so no search by value can find it. `indexOf` fails the same way (and `includes` doesn't use `==`). The JSON trick happens to work on this exact item but breaks on key order or extra fields. Decide what makes two items the same (the `id`) and compare that."
+        },
+        {
+          "id": "object-is-differs",
+          "prompt": "For which pairs do `Object.is(a, b)` and `a === b` give **different** answers? Select all that apply.",
+          "options": [
+            { "id": "nan", "text": "`NaN` and `NaN`" },
+            { "id": "zeros", "text": "`0` and `-0`" },
+            { "id": "null-undefined", "text": "`null` and `undefined`" },
+            { "id": "string-number", "text": "`\"1\"` and `1`" },
+            { "id": "objects", "text": "`{}` and `{}`" }
+          ],
+          "answer": ["nan", "zeros"],
+          "explanation": "`Object.is` is `===` with two fixes: `NaN` equals itself, and `0` and `-0` are different. Neither converts types, so `\"1\"` vs `1` and `null` vs `undefined` are `false` under both, and two object literals are different objects under every equality check. React uses `Object.is` to compare state and effect dependencies."
+        },
+        {
+          "id": "patch-undefined",
+          "prompt": "To clear a user's nickname you send `PATCH /users/1` with `body: JSON.stringify({ nickname: undefined })`. What does the server receive?",
+          "options": [
+            { "id": "empty", "text": "`{}` — JSON drops properties whose value is `undefined`, so it looks like \"change nothing\"" },
+            { "id": "null", "text": "`{\"nickname\":null}`" },
+            { "id": "undefined-literal", "text": "`{\"nickname\":undefined}`" },
+            { "id": "throws", "text": "Nothing — `JSON.stringify` throws on `undefined`" }
+          ],
+          "answer": "empty",
+          "explanation": "`undefined` isn't a JSON value. In an object, `JSON.stringify` omits the property; in an array it writes `null`. So the server sees no `nickname` key at all and changes nothing. `null` is the JSON way to say \"explicitly empty\" — send `{ nickname: null }` to clear. (`undefined` can never appear in JSON text, so the third option isn't valid JSON.)"
+        },
+        {
+          "id": "optional-strict",
+          "prompt": "In a project with `strict: true` (the default since TS 6.0), what does TypeScript do with `function initial(u: { middle?: string }) { return u.middle[0]; }`?",
+          "options": [
+            { "id": "error", "text": "Compile error: `'u.middle' is possibly 'undefined'`" },
+            { "id": "compiles-undefined", "text": "It compiles, and returns `undefined` when `middle` is missing" },
+            { "id": "compiles-throws", "text": "It compiles; you only find out at runtime, when `middle` is missing" },
+            { "id": "exact-only", "text": "It's only an error with `exactOptionalPropertyTypes` enabled" }
+          ],
+          "answer": "error",
+          "explanation": "`strict` includes `strictNullChecks`, under which reading an optional property gives `string | undefined`, and indexing a possibly-undefined value is an error until you check it (`u.middle?.[0]`, or an `if`). With `strictNullChecks` off — the default before TS 6.0 unless `strict` was set — it compiles and throws at runtime. `exactOptionalPropertyTypes` is a separate flag about whether `?:` accepts an explicit `undefined`."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-equality",
+      "prompts": [
+        {
+          "id": "nullish-check",
+          "prompt": "Return early when `value` is `null` **or** `undefined`, in a single comparison — and only then (keep `0` and `\"\"`).",
+          "code": "if (value ___ null) return fallback;",
+          "blanks": [{ "id": "n1", "accept": ["=="] }],
+          "explanation": "Loose equality's special case: `null` and `undefined` equal each other and nothing else, so `value == null` is true for exactly those two values. `=== null` would miss `undefined`; `!value` would also catch `0`, `\"\"` and `false`."
+        },
+        {
+          "id": "nan-check",
+          "prompt": "Reject a price that failed to parse (`Number(\"abc\")` is `NaN`).",
+          "code": "if (Number.___(price)) throw new Error(\"price is not a number\");",
+          "blanks": [{ "id": "nan1", "accept": ["isNaN"] }],
+          "explanation": "`NaN` is the only value not equal to itself, so `price === NaN` is always `false`. `Number.isNaN` checks for the actual `NaN` value; the global `isNaN` converts its argument first (`isNaN(\"abc\")` is `true`)."
+        },
+        {
+          "id": "count-guard",
+          "prompt": "Render the badge only when there are unread messages — and never render a stray `0`.",
+          "code": "{unread ___ 0 && <Badge count={unread} />}",
+          "blanks": [{ "id": "g1", "accept": [">", "!=="] }],
+          "explanation": "Make the left side of `&&` a boolean. `unread && …` evaluates to `0` when there are none, and React renders numbers; `unread > 0` is `false`, which React skips."
+        },
+        {
+          "id": "compare-by-id",
+          "prompt": "Is `item` already in `selected`? Both hold separately fetched objects.",
+          "code": "const isSelected = selected.___((s) => s.___ === item.id);",
+          "blanks": [
+            { "id": "i1", "accept": ["some"] },
+            { "id": "i2", "accept": ["id"] }
+          ],
+          "explanation": "`includes(item)` compares identity, and a refetched object is a different object. `some` with a predicate lets you say what \"the same item\" means — the same `id`."
+        },
+        {
+          "id": "nullable-field",
+          "prompt": "Type a field the API always sends, using `null` when there is no value.",
+          "code": "type User = { id: string; deletedAt: string ___ };",
+          "blanks": [{ "id": "t1", "accept": ["| null"] }],
+          "explanation": "`| null` describes a key that is always present but may hold `null` — the shape of a nullable database column. `deletedAt?: string` would describe a key that may be missing, which is not what the API sends, and would make a check against `null` look unnecessary."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-equality",
+      "snippets": [
+        {
+          "id": "array-equality",
+          "code": "console.log([1, 2] === [1, 2], [1, 2] == \"1,2\", [] == false);",
+          "question": "What is logged?",
+          "answer": "false true true",
+          "acceptable": ["false, true, true"],
+          "explanation": "Two array literals are two objects, so `===` is `false`. `==` converts an object compared with a primitive into a primitive first: `[1, 2]` becomes `\"1,2\"`, which matches. For `[] == false`, the boolean becomes `0`, `[]` becomes `\"\"`, `\"\"` becomes `0`, and `0 == 0`. Reasoning like this is why the rule is `===`."
+        },
+        {
+          "id": "filter-boolean",
+          "code": [
+            "const scores = [0, 7, null, 3, undefined];",
+            "console.log(scores.filter(Boolean));"
+          ],
+          "question": "What is logged?",
+          "answer": "[7, 3]",
+          "acceptable": ["[ 7, 3 ]", "7, 3"],
+          "explanation": "`filter(Boolean)` keeps truthy values, and `0` is falsy, so a real score of zero disappears along with `null` and `undefined`. Filter on what you mean — `scores.filter((s) => s != null)` gives `[0, 7, 3]` (and, since TS 5.5, is typed `number[]`)."
+        },
+        {
+          "id": "json-undefined",
+          "code": "console.log(JSON.stringify({ a: undefined, b: null, c: [undefined, 1] }));",
+          "question": "What is logged?",
+          "answer": "{\"b\":null,\"c\":[null,1]}",
+          "acceptable": ["{\"b\":null,\"c\":[null,1]}"],
+          "explanation": "`undefined` isn't a JSON value. As an object property it's omitted (`a` is gone); inside an array it becomes `null`, so the other elements keep their positions. `null` is valid JSON and is kept. That asymmetry is why `null` is the way to say \"explicitly empty\" over the wire."
+        },
+        {
+          "id": "nan-includes-indexof",
+          "code": [
+            "const values = [NaN, 0];",
+            "console.log(values.includes(NaN), values.indexOf(NaN), values.includes(-0));"
+          ],
+          "question": "What is logged?",
+          "answer": "true -1 true",
+          "acceptable": ["true, -1, true"],
+          "explanation": "`includes` uses SameValueZero, which treats `NaN` as equal to itself and `-0` as equal to `0`. `indexOf` uses strict equality, under which `NaN` equals nothing, so it can never be found and you get `-1`. Same array, same value, two answers."
+        }
+      ]
+    }
+  ]
+}

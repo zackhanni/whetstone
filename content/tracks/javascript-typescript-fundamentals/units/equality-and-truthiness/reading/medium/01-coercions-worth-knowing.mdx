@@ -1,0 +1,59 @@
+---
+id: coercions-worth-knowing
+title: The coercions worth knowing (so you can read old code)
+---
+
+You won't write `==` on purpose (apart from `== null`), but you will read it, and you will debug
+code that relied on it. MDN summarises the loose-equality algorithm in four steps; these are the
+ones that explain nearly every surprise:
+
+1. **Same type → compare like `===`.** `"a" == "a"`, `NaN == NaN` is still false.
+2. **`null` and `undefined` equal each other, and nothing else.** So `null == 0` is false, and
+   `undefined == ""` is false.
+3. **An object against a primitive → the object becomes a primitive first.** An array becomes its
+   joined string: `[1, 2] == "1,2"` is true, `[] == ""` is true.
+4. **A boolean against anything else → the boolean becomes a number first** (`true` → 1,
+   `false` → 0). Then strings against numbers → the string becomes a number.
+
+Walk through the famous ones with those rules:
+
+```js
+"0" == false;   // false → 0, then "0" → 0:            true
+[] == false;    // false → 0, [] → "", "" → 0:         true
+"2" == true;    // true → 1, "2" → 2:                  false (!)
+"true" == true; // true → 1, "true" → NaN:             false
+null == 0;      // rule 2: null only equals undefined: false
+```
+
+`"2" == true` being false is the one that breaks code like `if (flag == true)` when `flag` came
+from a query string. With `===`, none of these questions arise — the types differ, so the answer
+is `false`.
+
+## Relational operators coerce differently
+
+`<`, `>`, `<=`, `>=` don't have rule 2. Unless both sides are strings, they convert both sides to
+numbers, and `null` becomes `0`:
+
+```js
+null == 0;  // false (equality's special case)
+null >= 0;  // true  (null → 0, and 0 >= 0)
+null > 0;   // false
+"10" < "9"; // true  (two strings compare character by character, not as numbers)
+```
+
+So `if (stock >= 0)` passes for a `stock` of `null`. Check for missing values explicitly before
+comparing sizes.
+
+## NaN needs its own test
+
+`NaN` is the only value not equal to itself, so `x === NaN` is always `false`. Use
+`Number.isNaN(x)`. The older global `isNaN(x)` converts first, so `isNaN("abc")` is `true` —
+fine for "would this parse?", wrong for "is this the `NaN` value?".
+
+Collections don't agree either: `includes` uses SameValueZero (finds `NaN`), while `indexOf` uses
+`===` (never finds it):
+
+```js
+[NaN].includes(NaN); // true
+[NaN].indexOf(NaN);  // -1
+```
