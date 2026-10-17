@@ -1,37 +1,57 @@
 ---
 id: latest-value-ref
-title: The "latest value" ref to escape a stale closure
+title: Reading the latest value from a long-lived callback
 ---
 
 A callback created in one render closes over that render's variables. If it runs much
 later — inside a long-lived interval, a subscription, an event listener you attach
-once — it sees the *old* values. The classic fix is a ref that you keep pointing at
-the current value.
+once — it sees the *old* values. Two bad options come first to mind: add `onMessage` to the
+effect's deps and reconnect the socket every time the parent passes a new function, or
+leave it out and call a stale `onMessage` forever.
+
+**Since React 19.2, the tool for this is `useEffectEvent`.** An Effect Event always sees
+the latest props and state, and it is not a dependency:
 
 ```jsx
-function ChatRoom({ onMessage }) {
-  // Keep a ref that always holds the newest onMessage.
-  const onMessageRef = useRef(onMessage);
-  useEffect(() => {
-    onMessageRef.current = onMessage; // refresh every render — cheap, no re-render
-  });
+function ChatRoom({ roomId, onMessage }) {
+  const onReceive = useEffectEvent((m) => onMessage(m)); // always the newest onMessage
 
   useEffect(() => {
-    const socket = connect();
-    // This listener is attached ONCE, but reads the latest handler each time.
-    socket.on("message", (m) => onMessageRef.current(m));
+    const socket = connect(roomId);
+    socket.on("message", (m) => onReceive(m));
     return () => socket.close();
-  }, []); // stays mounted; not torn down when onMessage changes
+  }, [roomId]); // ✅ reconnects for a new room, not for a new onMessage
 }
 ```
 
-Without the ref you'd have two bad choices: add `onMessage` to the effect's deps and
-reconnect the socket on every render, or omit it and call a stale `onMessage`
-forever. The ref decouples *when the callback runs* from *which version it runs* — a
-mutable box that the effect reads at call time instead of capturing at setup time.
+Effect Events have rules: call them only from inside effects (including callbacks the
+effect sets up, like this listener), never during render, and never pass them to other
+components or hooks. Don't use one to drop a dependency the effect really should react to:
+`roomId` stays in the array.
 
 <!--more-->
 
-This is exactly why a ref, not state, fits here: refreshing `onMessageRef.current`
-must **not** re-run the connection effect. A state update would; a ref write is
-silent, which is the whole point.
+### Before React 19.2: the "latest value" ref
+
+Code written before 19.2 does the same job with a ref that you keep pointing at the newest
+callback. Refresh it in an effect — not in the render body, where react.dev says refs must
+not be written:
+
+```jsx
+const onMessageRef = useRef(onMessage);
+useEffect(() => {
+  onMessageRef.current = onMessage; // after every commit; declared before the socket effect
+});
+
+useEffect(() => {
+  const socket = connect(roomId);
+  socket.on("message", (m) => onMessageRef.current(m)); // read at call time
+  return () => socket.close();
+}, [roomId]);
+```
+
+A ref, not state, fits here because refreshing it must **not** re-run the connection effect:
+a state update would, a ref write is silent. On React 19.2+, prefer `useEffectEvent` for
+this job. Neither tool is needed outside effects: an event handler or a callback prop is
+recreated each render, so it already sees the current props (react.dev points to a plain
+function or `useCallback` there).

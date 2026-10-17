@@ -1,15 +1,16 @@
 {
   "schemaVersion": 3,
   "slug": "use-ref-focus-input",
-  "title": "Auto-focus the search input on mount",
+  "title": "Put focus back in the search box after Clear",
   "skills": ["react", "hooks", "useRef", "refs", "dom"],
   "difficulty": "core",
   "estimatedMinutes": 10,
   "runner": "in-browser",
   "entry": "SearchForm.tsx",
   "acceptanceCriteria": [
-    "On mount, the input is the document's active (focused) element",
-    "The input still renders with its `Search…` placeholder and `data-testid=\"search\"`",
-    "The focus happens once, on mount"
+    "The input renders with its `Search…` placeholder and keeps what the user types",
+    "**Clear** empties the input",
+    "**Clear** moves focus back into the input, even though clicking the button had focused the button — and even when the box was already empty",
+    "With two `SearchForm`s on the page, each **Clear** focuses its own form's input"
   ]
 }

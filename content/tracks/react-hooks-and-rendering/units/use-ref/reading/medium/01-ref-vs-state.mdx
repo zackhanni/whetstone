@@ -17,13 +17,20 @@ function Stopwatch() {
   const intervalId = useRef(null);           // plumbing → ref
 
   function start() {
+    clearInterval(intervalId.current); // a second Start must not leave the first one running
     intervalId.current = setInterval(() => setElapsed((e) => e + 1), 1000);
   }
   function stop() {
     clearInterval(intervalId.current); // read it back later, no render needed
   }
 
-  return <button onClick={start}>{elapsed}s</button>;
+  return (
+    <>
+      <p>{elapsed}s</p>
+      <button onClick={start}>Start</button>
+      <button onClick={stop}>Stop</button>
+    </>
+  );
 }
 ```
 
