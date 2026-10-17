@@ -1,0 +1,55 @@
+---
+id: setup-teardown-and-isolation
+title: Setup, teardown, and tests that leak into each other
+---
+
+When several tests need the same starting point, it's tempting to build it once at the top of the
+file:
+
+```ts
+const cart = new Cart(); // one cart, shared by every test below
+
+it("adds tea to the total", () => {
+  cart.add({ sku: "tea", priceCents: 450 });
+  expect(cart.total()).toBe(450);
+});
+
+it("starts empty", () => {
+  expect(cart.total()).toBe(0); // ✗ expected 450 to be +0
+});
+```
+
+Run alone (`vitest run -t "starts empty"`), the second test passes. Run with the file, it fails —
+the first test left tea in the shared cart. Tests that depend on what ran before them pass or fail
+depending on order and filtering, which makes every failure a puzzle.
+
+**Build fresh state in `beforeEach`; undo outside effects in `afterEach`.**
+
+```ts
+let cart: Cart;
+
+beforeEach(() => {
+  cart = new Cart(); // every test starts from a new cart
+});
+
+afterEach(() => {
+  vi.useRealTimers(); // put back anything a test swapped out globally
+});
+```
+
+- `beforeEach`/`afterEach` run around **every** test in the `describe` (or file) they're in.
+- `beforeAll`/`afterAll` run **once** — for expensive, read-only setup like starting a test server.
+  Never put mutable state there.
+- What needs undoing is anything outside the test's own variables: fake timers, a replaced
+  `globalThis.fetch`, an environment variable, rows in a test database.
+
+## `.only`, `.skip`, `.todo`
+
+- **`it.only`** runs only the marked tests in that file — handy while you're working on one.
+  Vitest 4's `allowOnly` defaults to `!process.env.CI`, so a forgotten `.only` fails the CI run with
+  `Unexpected .only modifier` instead of silently skipping the rest of the file. (Node's runner
+  honours `only` when started with `--test-only`.)
+- **`it.skip`** keeps a test in the file but doesn't run it. Leave a reason next to it, and a
+  ticket — a skipped test is a promise nobody is checking.
+- **`it.todo("refunds a partial order")`** lists a test you haven't written yet. The report counts
+  it separately, so the gap stays visible instead of living in your head.

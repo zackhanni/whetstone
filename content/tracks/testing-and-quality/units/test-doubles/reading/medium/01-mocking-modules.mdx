@@ -1,0 +1,75 @@
+---
+id: mocking-modules
+title: vi.mock is hoisted above your imports
+---
+
+When the code under test imports its collaborator, you can't pass a double in — you replace the
+**module**:
+
+```ts
+// profile.ts
+import { fetchUser } from "./api";
+export async function displayName(id: number) {
+  return (await fetchUser(id)).name.toUpperCase();
+}
+```
+
+```ts
+// profile.test.ts
+import { displayName } from "./profile";
+import { fetchUser } from "./api";
+
+vi.mock("./api"); // written below the imports, but runs before them
+
+it("uppercases the name", async () => {
+  vi.mocked(fetchUser).mockResolvedValue({ id: 1, name: "ada" });
+  expect(await displayName(1)).toBe("ADA");
+});
+```
+
+`profile.ts` imports `./api` before the test body ever runs, so Vitest **hoists** `vi.mock` to the
+top of the file and turns static imports into dynamic ones behind it. That's what makes the
+replacement visible to `profile.ts`. With no factory, Vitest *automocks* the module: every exported
+function becomes a mock returning `undefined`, objects are deeply cloned (their methods mocked too),
+arrays are emptied, and primitives stay as they are — so an enum's values survive.
+
+## The hoisting trap
+
+```ts
+const fetchUserMock = vi.fn();
+vi.mock("./api", () => ({ fetchUser: fetchUserMock }));
+```
+
+Under Vitest 4 the whole file fails to load:
+
+```text
+Error: [vitest] There was an error when mocking a module. If you are using "vi.mock" factory,
+make sure there are no top level variables inside, since this call is hoisted to top of the file.
+Caused by: ReferenceError: Cannot access 'fetchUserMock' before initialization
+```
+
+The factory now runs before `const fetchUserMock` exists. Hoist the variable with it:
+
+```ts
+const { fetchUserMock } = vi.hoisted(() => ({ fetchUserMock: vi.fn() }));
+vi.mock("./api", () => ({ fetchUser: fetchUserMock }));
+```
+
+## A factory replaces the whole module
+
+Whatever the factory returns *is* the module. If `./api` also exports `formatDate` and the factory
+doesn't return it, the code under test gets nothing — Vitest 4 throws
+`No "formatDate" export is defined on the "./api" mock`. Keep the rest of the real module with
+`importOriginal`:
+
+```ts
+vi.mock(import("./api"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  fetchUser: vi.fn(), // replace only this
+}));
+```
+
+One limit no factory fixes: Vitest's docs say *"it is not possible to mock calls to methods that are
+called inside other methods of the same file"*. If `displayName` and `fetchUser` live in one module,
+the internal call always hits the real function. The designing-for-testability unit covers what to
+do instead.

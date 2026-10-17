@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 3,
+  "slug": "test-anatomy",
+  "title": "Anatomy of a test: structure, matchers, async",
+  "skills": ["testing", "vitest", "assertions", "async"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Write a test as arrange-act-assert with `describe`/`it`, and build fresh state in `beforeEach` so tests can't leak into each other",
+    "Choose `toBe`, `toEqual`, `toStrictEqual`, `toMatchObject` or `toBeCloseTo` — or the `node:assert/strict` equivalent — for a given value",
+    "Predict which async tests pass without checking anything in Vitest 4, and fix them with `await`, `.resolves`/`.rejects` or `expect.hasAssertions()`",
+    "Use `.only`, `.skip` and `.todo` deliberately, and explain why a leftover `.only` fails the CI run"
+  ],
+  "sources": [
+    { "title": "Vitest 4 docs: expect", "url": "https://v4.vitest.dev/api/expect" },
+    { "title": "Vitest 4 docs: Writing Tests", "url": "https://v4.vitest.dev/guide/learn/writing-tests" },
+    { "title": "Vitest 4 docs: Testing Async Code", "url": "https://v4.vitest.dev/guide/learn/async" },
+    { "title": "Vitest 4 docs: allowOnly", "url": "https://v4.vitest.dev/config/allowonly" },
+    { "title": "Vitest 4 docs: expect.requireAssertions", "url": "https://v4.vitest.dev/config/expect" },
+    { "title": "Node.js docs: Test runner (node:test)", "url": "https://nodejs.org/api/test.html" },
+    { "title": "Node.js docs: Assert (node:assert)", "url": "https://nodejs.org/api/assert.html" },
+    { "title": "Playwright docs: Best Practices (lint your tests)", "url": "https://playwright.dev/docs/best-practices" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-anatomy", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-anatomy",
+      "questions": [
+        {
+          "id": "shared-fixture",
+          "prompt": "`const cart = new Cart()` sits at the top of a test file and every test uses it. \"starts empty\" passes when run alone but fails when the whole file runs. Why?",
+          "options": [
+            { "id": "leak", "text": "An earlier test mutated the shared cart; build a fresh one in `beforeEach`" },
+            { "id": "parallel", "text": "Tests in one file run in parallel, so they race on the cart" },
+            { "id": "flaky", "text": "The test is flaky; retry it until it passes" },
+            { "id": "before-all", "text": "The cart should be created in `beforeAll` so it's ready before the tests" }
+          ],
+          "answer": "leak",
+          "explanation": "Tests in a file run in order by default, and one object shared between them carries each test's changes into the next. That makes results depend on order and filtering — a deterministic leak, not flake. `beforeEach` gives every test its own cart. `beforeAll` runs once, so it shares the cart exactly like the top-level `const`."
+        },
+        {
+          "id": "tobe-objects",
+          "prompt": "`expect(getUser()).toBe({ id: 1, name: \"Ada\" })` fails with `expected { id: 1, name: 'Ada' } to be { id: 1, name: 'Ada' }`. Why?",
+          "options": [
+            { "id": "identity", "text": "`toBe` uses `Object.is`, which asks whether both sides are the *same object*; two objects with equal contents aren't" },
+            { "id": "order", "text": "The keys are in a different order internally" },
+            { "id": "types", "text": "`getUser()` returns a class instance, and `toBe` checks the class" },
+            { "id": "bug", "text": "It's a Vitest display bug; the values differ in a way the message hides" }
+          ],
+          "answer": "identity",
+          "explanation": "`toBe` is identity for objects — it passes only if both sides are the very same reference. For \"same contents\", use `toEqual` (or `toStrictEqual`). Key order doesn't matter to any of these matchers, and checking the class is `toStrictEqual`'s extra rule, not `toBe`'s."
+        },
+        {
+          "id": "ignore-timestamp",
+          "prompt": "`createUser()` returns `{ name: \"Ada\", role: \"admin\", createdAt: \"…\" }` and `createdAt` changes every run. Which assertion passes while ignoring it?",
+          "options": [
+            { "id": "match-object", "text": "`expect(user).toMatchObject({ name: \"Ada\", role: \"admin\" })`" },
+            { "id": "to-equal", "text": "`expect(user).toEqual({ name: \"Ada\", role: \"admin\" })`" },
+            { "id": "strict", "text": "`expect(user).toStrictEqual({ name: \"Ada\", role: \"admin\" })`" },
+            { "id": "to-be", "text": "`expect(user).toBe({ name: \"Ada\", role: \"admin\" })`" }
+          ],
+          "answer": "match-object",
+          "explanation": "`toMatchObject` checks only the keys you list. `toEqual` is a full structural comparison, so the extra `createdAt` key fails it — it only forgives keys whose value is `undefined`. `toStrictEqual` is stricter still, and `toBe` compares identity."
+        },
+        {
+          "id": "todo-vs-skip",
+          "prompt": "You'll write the partial-refund test next sprint and want the gap to stay visible in every test report until then. Which line?",
+          "options": [
+            { "id": "todo", "text": "`it.todo(\"refunds a partial order\")`" },
+            { "id": "empty", "text": "`it(\"refunds a partial order\", () => {})`" },
+            { "id": "skip", "text": "`it.skip(\"refunds a partial order\", () => {})`" },
+            { "id": "comment", "text": "`// TODO: test partial refunds`" }
+          ],
+          "answer": "todo",
+          "explanation": "`.todo` exists for exactly this: the report counts it separately as a test still to write. An empty `it` is worse than nothing — it has no failing `expect`, so it passes and the gap shows up as green. `.skip` is for a test that exists but is switched off, so it reads as \"disabled\", not \"missing\". A comment never appears in any report."
+        },
+        {
+          "id": "node-assert-legacy",
+          "prompt": "A test does `import assert from \"node:assert\"` and `assert.equal(count, \"1\")` where `count` is the number `1`. What happens?",
+          "options": [
+            { "id": "passes", "text": "It passes — the default import is legacy mode, where `equal` uses `==`; import `node:assert/strict` instead" },
+            { "id": "fails", "text": "It fails — `assert.equal` is always strict" },
+            { "id": "throws-type", "text": "It throws a TypeError because the types differ" },
+            { "id": "deprecated", "text": "It throws because legacy mode was removed in Node 22" }
+          ],
+          "answer": "passes",
+          "explanation": "Node's default `node:assert` is legacy assertion mode: `equal` and `deepEqual` use `==`, so `1 == \"1\"` passes. In strict mode (`node:assert/strict`), `equal` is `Object.is` and `deepEqual` behaves like `deepStrictEqual`. Legacy mode still exists — Node marks it \"Legacy\", not removed."
+        },
+        {
+          "id": "which-false-passes",
+          "prompt": "`load(id)` resolves to `\"Ada\"`. Under **Vitest 4**, which of these tests passes even though it expects the wrong value?",
+          "options": [
+            { "id": "foreach", "text": "`it(\"x\", async () => { [1, 2].forEach(async (id) => { expect(await load(id)).toBe(\"Bo\"); }); })`" },
+            { "id": "awaited-resolves", "text": "`it(\"x\", async () => { await expect(load(1)).resolves.toBe(\"Bo\"); })`" },
+            { "id": "await-value", "text": "`it(\"x\", async () => { expect(await load(1)).toBe(\"Bo\"); })`" },
+            { "id": "dangling-resolves", "text": "`it(\"x\", () => { expect(load(1)).resolves.toBe(\"Bo\"); })`" }
+          ],
+          "answer": "foreach",
+          "explanation": "`forEach` ignores the promises its async callbacks return, so the test's own promise doesn't wait for them and the test is reported as passed. The failing `expect`s throw inside promises nobody awaits: if they settle while the worker is still running, Vitest fails the *run* with unhandled rejections (not attached to any test); if not, nobody ever sees them. The awaited forms obviously fail. The dangling `.resolves` is the subtle one: Vitest 4 auto-awaits it at the end of the test, so it *fails* (with a warning about the missing `await`), and Vitest 5 fails it outright."
+        },
+        {
+          "id": "only-in-ci",
+          "prompt": "A PR leaves an `it.only` in a file. Locally the run is green; in CI the run fails. Why?",
+          "options": [
+            { "id": "allow-only", "text": "Vitest's `allowOnly` defaults to `!process.env.CI`, so CI rejects `.only` with \"Unexpected .only modifier\"" },
+            { "id": "skipped", "text": "CI counts every test that `.only` skipped as a failure" },
+            { "id": "ignored", "text": "CI ignores `.only`, runs everything, and a different test fails" },
+            { "id": "node", "text": "`.only` is a Node-only feature that Vitest doesn't support in CI" }
+          ],
+          "answer": "allow-only",
+          "explanation": "Locally `.only` is a convenience; in CI it would silently skip the rest of the file, so Vitest 4 refuses it by default and fails the run naming the modifier. Skipped tests aren't failures, and CI doesn't ignore the modifier — it rejects it. (Node's runner has its own switch: it honours `only` under `--test-only`.)"
+        },
+        {
+          "id": "to-throw-wrapper",
+          "prompt": "`expect(parse(\"{\")).toThrow(SyntaxError)` — `parse` throws on bad input. What happens?",
+          "options": [
+            { "id": "raw-error", "text": "The test fails with the raw `SyntaxError`: `parse` threw while building the argument, before `expect` ran" },
+            { "id": "passes", "text": "It passes — `toThrow` catches the error" },
+            { "id": "false-pass", "text": "It passes without checking anything, because the error is swallowed" },
+            { "id": "type-error", "text": "`toThrow` throws a TypeError because it received `undefined`" }
+          ],
+          "answer": "raw-error",
+          "explanation": "Arguments are evaluated before the call, so `parse(\"{\")` throws before `expect` or `toThrow` exist. Nothing catches it; the test fails with the parser's own error. Write `expect(() => parse(\"{\")).toThrow(SyntaxError)` so the matcher calls the function inside its own `try`."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-anatomy",
+      "prompts": [
+        {
+          "id": "fresh-fixture",
+          "prompt": "Give every test a fresh cart, and assert the empty total with the matcher for primitives.",
+          "code": [
+            "describe(\"Cart\", () => {",
+            "  let cart: Cart;",
+            "",
+            "  ___(() => {",
+            "    cart = new Cart();",
+            "  });",
+            "",
+            "  it(\"starts empty\", () => {",
+            "    expect(cart.total()).___(0);",
+            "  });",
+            "});"
+          ],
+          "blanks": [
+            { "id": "before-each", "accept": ["beforeEach"] },
+            { "id": "to-be", "accept": ["toBe"] }
+          ],
+          "explanation": "`beforeEach` runs before every test in the `describe`, so no test sees another's changes. `toBe` (`Object.is`) is right for a number; `toEqual` would also pass but signals \"comparing structure\", which a number doesn't have."
+        },
+        {
+          "id": "awaited-rejects",
+          "prompt": "Assert that an async function rejects, in a form that means the same thing in every Vitest version.",
+          "code": [
+            "it(\"rejects an unknown code\", async () => {",
+            "  ___ expect(applyCode(cart, \"NOPE\")).___.toThrow(\"Unknown code\");",
+            "});"
+          ],
+          "blanks": [
+            { "id": "await", "accept": ["await"] },
+            { "id": "rejects", "accept": ["rejects"] }
+          ],
+          "explanation": "`.rejects` unwraps the rejection and applies `toThrow` to it; the assertion is itself a promise, so `await` it. Vitest 4 would auto-await a dangling one with a warning, Vitest 5 fails it even when it's right, and Node's runner marks the test passed before the check runs — only the awaited form means the same thing everywhere."
+        },
+        {
+          "id": "to-throw-function",
+          "prompt": "Make `toThrow` able to catch the synchronous error.",
+          "code": "expect(___ parse(\"{\")).toThrow(SyntaxError);",
+          "blanks": [{ "id": "arrow", "accept": ["() =>"] }],
+          "explanation": "Wrapping the call in a function delays it: `expect` calls it inside a `try` and checks what was thrown. Without the wrapper, the error escapes while the argument is being evaluated."
+        },
+        {
+          "id": "float-matcher",
+          "prompt": "Compare a floating-point result.",
+          "code": "expect(0.1 + 0.2).___(0.3);",
+          "blanks": [{ "id": "close-to", "accept": ["toBeCloseTo"] }],
+          "explanation": "`0.1 + 0.2` is `0.30000000000000004`, so `toBe(0.3)` fails. `toBeCloseTo` compares to a number of decimal places (2 by default)."
+        },
+        {
+          "id": "strict-assert",
+          "prompt": "Use Node's built-in assertions in strict mode, and compare two objects by structure.",
+          "code": [
+            "import assert from \"node:assert/___\";",
+            "",
+            "assert.___(cart.lines(), [{ sku: \"tea\", qty: 2 }]);"
+          ],
+          "blanks": [
+            { "id": "strict", "accept": ["strict"] },
+            { "id": "deep-equal", "accept": ["deepEqual", "deepStrictEqual"] }
+          ],
+          "explanation": "`node:assert/strict` turns the legacy `==` comparisons into strict ones; there, `deepEqual` is the same as `deepStrictEqual`. `assert.equal` would compare the two arrays by identity and fail."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-anatomy",
+      "snippets": [
+        {
+          "id": "equal-vs-strict",
+          "code": [
+            "class User {",
+            "  constructor(public name: string) {}",
+            "}",
+            "",
+            "it(\"A\", () => expect(new User(\"Ada\")).toEqual({ name: \"Ada\" }));",
+            "it(\"B\", () => expect(new User(\"Ada\")).toStrictEqual({ name: \"Ada\" }));",
+            "it(\"C\", () => expect({ name: \"Ada\", nick: undefined }).toEqual({ name: \"Ada\" }));"
+          ],
+          "question": "Which of A, B and C pass?",
+          "answer": "A and C pass; B fails",
+          "acceptable": ["A and C", "A, C pass and B fails", "only B fails"],
+          "explanation": "`toEqual` compares own enumerable structure: it ignores the class (A) and treats an `undefined`-valued key as missing (C). `toStrictEqual` adds both checks, so a `User` instance isn't equal to a plain object (B). Reach for `toStrictEqual` when the class or an explicit `undefined` is part of the contract."
+        },
+        {
+          "id": "async-foreach-passes",
+          "code": [
+            "const fetchUser = async (id: number) => {",
+            "  await new Promise((r) => setTimeout(r, 10));",
+            "  return { id, name: \"Ada\" };",
+            "};",
+            "",
+            "it(\"every user is called Bo\", async () => {",
+            "  [1, 2].forEach(async (id) => {",
+            "    const user = await fetchUser(id);",
+            "    expect(user.name).toBe(\"Bo\");",
+            "  });",
+            "});",
+            "",
+            "// The only test in the file. Run with `vitest run` (Vitest 4)."
+          ],
+          "question": "What does Vitest report for this test, and what is the exit code?",
+          "answer": "✓ passed, exit code 0",
+          "acceptable": ["passes", "it passes, exit 0", "green"],
+          "explanation": "`forEach` calls each async callback and throws away the promise it returns, so the test function's own promise resolves immediately — before either 10 ms timer fires. The test is reported passed, the worker shuts down, and the failing `expect`s never run where anyone is listening. Use `for…of` with `await`, or `await Promise.all(...)`."
+        },
+        {
+          "id": "dangling-resolves-v4",
+          "code": [
+            "const fetchUser = async (id: number) => ({ id, name: \"Ada\" });",
+            "",
+            "it(\"loads Bo\", () => {",
+            "  expect(fetchUser(1)).resolves.toEqual({ id: 1, name: \"Bo\" }); // no await",
+            "});"
+          ],
+          "question": "Under Vitest 4, does this test pass or fail?",
+          "answer": "It fails, with a warning that the assertion wasn't awaited",
+          "acceptable": ["fails", "it fails", "fails (auto-awaited, with a warning)"],
+          "explanation": "Vitest 4 tracks un-awaited `.resolves`/`.rejects` assertions and awaits them when the test ends, so the wrong expectation still fails — alongside a warning that the next major will fail the test for the missing `await` (Vitest 5 does). The safety net is Vitest's, not JavaScript's: Node's runner marks the equivalent un-awaited `assert.rejects` test passed and only reports the failure afterwards, as activity after the test ended. Always write the `await`."
+        }
+      ]
+    }
+  ]
+}

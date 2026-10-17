@@ -1,0 +1,47 @@
+---
+id: setup-globals-and-pools
+title: Setup files, globals, and where your tests actually run
+---
+
+## `setupFiles` vs `globalSetup`
+
+```ts
+test: {
+  setupFiles: ["./test/setup.ts"],        // before EACH test file, inside its worker
+  globalSetup: ["./test/global-setup.ts"], // ONCE, in the main process, before any worker starts
+}
+```
+
+- **`setupFiles`** run in the same process as the tests they precede, so anything they do to the
+  test's world sticks: register matchers, install MSW's `server.listen()`, add an `afterEach`
+  cleanup. Vitest re-runs them for every test file.
+- **`globalSetup`** runs once, before the workers exist, and can return a teardown. Use it for
+  things that are expensive and shared — starting a test database or a server. It can't touch a
+  test's globals, because it doesn't run where the tests run.
+
+## `globals: true`
+
+With the default `false`, every test file imports `describe`, `it`, `expect` from `"vitest"`. Turn
+it on and they're global, Jest-style — and add `"vitest/globals"` to `compilerOptions.types` in
+`tsconfig.json` so TypeScript knows. One practical consequence, from Vitest's docs: *"some libraries,
+e.g., `@testing-library/react`, rely on globals being present to perform auto cleanup"* — unmounting
+what each test rendered. With `globals: false`, call RTL's `cleanup()` in an `afterEach` in a setup
+file.
+
+## Pools: forks vs threads
+
+Vitest runs test files in parallel workers. In Vitest 4 the default `pool` is **`"forks"`** — child
+processes. The alternative, **`"threads"`**, uses worker threads in one process: often faster, but
+the docs say *"you are unable to use process related APIs such as `process.chdir()`"*.
+
+The same limit bites with time zones. A setup file that sets `process.env.TZ = "Asia/Tokyo"` works
+under `forks` and is silently ignored under `threads` — checked under Vitest 4.1: the forks run
+reports `Asia/Tokyo`, the threads run keeps the machine's zone. A suite that tests time-zone
+behaviour that way needs `forks` (and should assert the zone actually changed). The
+[UTC vs local time](/learn/dates-and-time/utc-vs-local) unit covers time zones in tests in full.
+
+## `isolate`
+
+By default (`isolate: true`) each test file gets a fresh copy of every module, so module-level state
+from one file can't leak into another. Turning it off is faster but brings that leak back — within
+a file, modules are always shared, which is why the testability unit moves state out of modules.

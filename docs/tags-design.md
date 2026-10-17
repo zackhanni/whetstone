@@ -180,7 +180,7 @@ list below is where new roots should go, so that each authoring session doesn't 
 | `languages` → `javascript`, `typescript` — **landed** with `javascript-typescript-fundamentals` | JS & TS fundamentals, Async JS & Timing, Dates & Time | `async` gains `javascript` as a parent — **done** with `async-javascript` (and `AbortController` gains `async`) |
 | `web` — **landed** with `data-fetching-tanstack` (with the shared `caching` node under `web` + `backend`) | HTTP & APIs, Next.js & the Network, CORS/caching | `http` gains `web` — **done** with `http-and-apis` |
 | `security` — **landed** with `http-and-apis` | Web Security (XSS, CSP, CSRF, OWASP) | `auth` gains `security` — **done** |
-| `testing` | Testing & Quality (Vitest, Playwright) | — |
+| `testing` — **landed** with `testing-and-quality` | Testing & Quality (Vitest, Playwright) | — |
 | `databases` — **landed** with `databases` | Databases | — |
 | `tooling` — **landed** with `http-and-apis` (`curl`) | Terminal, Git & GitHub | — |
 | `system-design`, `infrastructure` | Capstone tracks | `architecture` may gain `system-design` |

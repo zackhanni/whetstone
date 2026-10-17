@@ -1,0 +1,32 @@
+---
+id: environments
+title: node, jsdom or happy-dom
+---
+
+The `environment` decides what globals a test file has.
+
+| Environment | What exists | Use it for |
+| --- | --- | --- |
+| `node` (default) | Node's globals — `process`, `fetch`, `Buffer`. No `document`, no `window`. | logic, servers, anything without a DOM |
+| `jsdom` | a simulated browser DOM: `document`, `window`, events | components, DOM code |
+| `happy-dom` | the same idea, a different implementation | components, DOM code |
+
+The DOM environments are separate packages you install yourself (`npm i -D jsdom` or
+`npm i -D happy-dom`).
+
+Most projects are mostly logic, so keep `node` as the default and switch the few files that need a
+DOM with a comment at the very top of the file:
+
+```ts
+// @vitest-environment happy-dom
+import { render, screen } from "@testing-library/react";
+// …this file gets document and window; every other file stays in node
+```
+
+A whole folder can get its own environment with **projects** — one config with several entries,
+say a `node` project for `src/server/**` and a `happy-dom` project for `src/components/**`. (Vitest 4
+removed the older `environmentMatchGlobs` option in favour of projects.)
+
+Whichever DOM you pick, it's a simulation. It builds the element tree and runs your event handlers,
+but there's no layout — every size and position is `0` — so it can't tell you a button is hidden
+behind a banner. That's a real-browser job; see [Kinds of tests](/learn/testing-and-quality/kinds-of-tests).

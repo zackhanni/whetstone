@@ -1,0 +1,43 @@
+---
+id: choosing-what-to-test
+title: Choosing what to test in a real feature
+---
+
+The feature: a discount code at checkout. `applyDiscount(cart, code, now)` looks the code up,
+checks it hasn't expired and that the cart meets its minimum, and returns the new total. You can
+think of thirty tests. You have time for eight. Spend them in this order.
+
+**1. The happy path.** A valid code on a qualifying cart lowers the total by the right amount. If
+this breaks, every customer with a code notices — it's the test you'd miss most.
+
+**2. Detail where a mistake does damage.** Money, permissions and data loss earn more tests than
+copy and colour. Here that's the arithmetic:
+
+- a percentage code rounds to whole cents the way finance expects
+- a fixed-amount code never takes the total below zero
+- two codes don't stack unless the rules say so
+
+**3. The boundaries.** Bugs cluster where `<` meets `<=`. If the minimum is $30, test $30.00 and
+$29.99 — not $10 and $100, which pass whichever comparison you wrote. Same for expiry: a code that
+expires at midnight, checked one millisecond either side.
+
+**4. Every bug that already escaped.** When a bug reaches production, write the test that
+reproduces it first, watch it fail, then fix the code. It's cheap insurance against the one bug you
+know is plausible.
+
+**5. The paths in between** — unknown codes, empty carts — if time remains.
+
+## What not to spend tests on
+
+- **Other people's code.** That React re-renders on `setState`, that `JSON.parse` throws on bad
+  input, that your validation library rejects `"not-an-email"`. Test *your* use of them (that your
+  schema marks the field as required), not their guarantees.
+- **Things you don't control.** Playwright's best-practice guide says it plainly: *"Only test what
+  you control"* — not the payment provider's hosted page or a link to someone else's site. Replace
+  them with a double at the boundary.
+- **Private helpers on their own.** If `roundToCents` is only reachable through `applyDiscount`,
+  the rounding tests above already cover it — and a later inline-and-delete refactor won't break
+  anything.
+- **What the type checker already proves.** In strict TypeScript, a test that `applyDiscount`
+  "rejects a number passed as the code" re-checks the compiler. (Data arriving from the network
+  is different: it's untyped at runtime, so validate it at the boundary and test that.)

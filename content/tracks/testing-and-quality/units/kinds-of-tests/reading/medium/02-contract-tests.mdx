@@ -1,0 +1,40 @@
+---
+id: contract-tests
+title: Contract tests — two sides, one agreement, no shared deploy
+---
+
+The web app (the **consumer**) calls the orders API (the **provider**). Two teams, two repos, two
+deploy pipelines. How do you know they still agree?
+
+- **Stub the API in the web app's tests?** That checks the web app against *your memory* of the
+  API. When the provider changes, the stub doesn't.
+- **Run an end-to-end test with both deployed?** That works, but you need both services (and their
+  databases) running together for every change — Pact's docs call this *"expensive and brittle"*.
+
+A contract test splits the check in two. Pact, the common tool for this, describes contract
+testing as *"testing an integration point by checking each application in isolation"*:
+
+1. **Consumer side.** The web app's test runs against a mock provider and records each interaction
+   it actually relies on — "`GET /orders/7` returns 200 with `id` and `totalCents`". The recording
+   is the **contract** (in Pact, a *pact file*).
+2. **Provider side.** The orders API's CI replays every recorded request against its real handlers
+   and checks each response still satisfies what the consumer recorded.
+
+If the provider renames `totalCents`, step 2 fails in the *provider's* pipeline, before deploy —
+naming the consumer it would break. Neither side had to deploy the other.
+
+## Consumer-driven
+
+The consumer writes the contract, so it covers only the fields consumers use. Pact's docs: the
+contract includes *"only parts of the communication that are actually used by the consumer(s)"*.
+The provider can change or delete anything no consumer recorded, freely. That's the difference from
+an API schema (an OpenAPI file, say) — a schema describes everything the provider offers, a
+consumer-driven contract describes what's actually depended on.
+
+```text
+web app test   ── records ──▶  pact: GET /orders/7 → { id, totalCents }
+orders API CI  ── replays ──▶  real handler → does the response still match?
+```
+
+A contract test doesn't check that the API computes `totalCents` correctly — that's the provider's
+own unit and integration tests. It checks the *shape of the agreement*.
