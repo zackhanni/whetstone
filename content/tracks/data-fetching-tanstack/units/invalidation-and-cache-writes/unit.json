@@ -1,0 +1,402 @@
+{
+  "schemaVersion": 3,
+  "slug": "invalidation-and-cache-writes",
+  "title": "Invalidation & cache writes",
+  "skills": [
+    "tanstack-query",
+    "caching",
+    "query-keys"
+  ],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Choose `invalidateQueries`, `setQueryData`, `refetchQueries`, `resetQueries` or `removeQueries` by what each does to the data on screen, to staleness, and to active vs inactive queries",
+    "Write query filters that reach exactly the intended entries: a prefix, `exact: true`, `type`/`refetchType` and a `predicate`",
+    "Write cached data immutably with `setQueryData`/`setQueriesData` updaters, and explain why an in-place edit leaves the screen unchanged",
+    "Decide when to write a response straight into the cache and when to invalidate, and predict what an awaited `invalidateQueries` waits for"
+  ],
+  "sources": [
+    {
+      "title": "TanStack Query v5 docs: Query Invalidation",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/query-invalidation"
+    },
+    {
+      "title": "TanStack Query v5 docs: Filters",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/filters"
+    },
+    {
+      "title": "TanStack Query v5 docs: Updates from Mutation Responses",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/updates-from-mutation-responses"
+    },
+    {
+      "title": "TanStack Query v5 reference: QueryClient",
+      "url": "https://tanstack.com/query/v5/docs/reference/QueryClient"
+    },
+    {
+      "title": "TanStack Query v5 docs: Render Optimizations",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/render-optimizations"
+    },
+    {
+      "title": "TanStack Query docs: Migrating to TanStack Query v5",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/migrating-to-v5"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-cache-calls",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-cache-calls",
+      "questions": [
+        {
+          "id": "have-the-data",
+          "prompt": "A rename's response contains the full updated todo. Which call shows it in the open detail view **without another request**?",
+          "options": [
+            {
+              "id": "set",
+              "text": "`queryClient.setQueryData(todoKeys.detail(id), updatedTodo)`"
+            },
+            {
+              "id": "invalidate",
+              "text": "`queryClient.invalidateQueries({ queryKey: todoKeys.detail(id) })`"
+            },
+            {
+              "id": "refetch",
+              "text": "`queryClient.refetchQueries({ queryKey: todoKeys.detail(id) })`"
+            },
+            {
+              "id": "reset",
+              "text": "`queryClient.resetQueries({ queryKey: todoKeys.detail(id) })`"
+            }
+          ],
+          "answer": "set",
+          "explanation": "`setQueryData` writes the value synchronously and makes no request; components reading that key re-render with it. The other three all end in a fetch: invalidation marks it stale and refetches it because it's on screen, `refetchQueries` refetches it outright, and `resetQueries` first drops it back to its initial state (a spinner, without `initialData`) and then refetches."
+        },
+        {
+          "id": "invalidate-inactive",
+          "prompt": "The open-todos list is on screen; the done-todos list is cached but not mounted. You call `invalidateQueries({ queryKey: ['todos'] })`. What happens to each?",
+          "options": [
+            {
+              "id": "active-now-inactive-later",
+              "text": "The open list refetches now; the done list is marked stale and refetches when it's next shown"
+            },
+            {
+              "id": "both-now",
+              "text": "Both refetch now — invalidation refetches every query that matches the key"
+            },
+            {
+              "id": "open-only",
+              "text": "Only the open list is affected; queries without a mounted component are skipped"
+            },
+            {
+              "id": "done-removed",
+              "text": "The open list refetches now; the done list is removed from the cache to free memory"
+            }
+          ],
+          "answer": "active-now-inactive-later",
+          "explanation": "Invalidation marks **every** match stale (overriding `staleTime`) and, with the default `refetchType: 'active'`, refetches only the matches a component is using. The done list keeps its data, marked stale, and refetches when a component mounts it again. Refetching both now is `refetchType: 'all'` (or `refetchQueries`); nothing is ever removed by an invalidation."
+        },
+        {
+          "id": "remove-active",
+          "prompt": "A logout handler calls `queryClient.removeQueries()` and only then navigates away, so for a moment the dashboard is still mounted. What does that dashboard do?",
+          "options": [
+            {
+              "id": "keeps-then-hard-load",
+              "text": "It keeps the old data on screen (it isn't told), then hard-loads if it re-renders before unmounting"
+            },
+            {
+              "id": "spinner",
+              "text": "It switches to its loading state at once, because the data it was rendering is gone"
+            },
+            {
+              "id": "empty",
+              "text": "It re-renders with `data` undefined and `status: 'success'` until something refetches"
+            },
+            {
+              "id": "throws",
+              "text": "It throws on its next render, because its query no longer exists in the cache"
+            }
+          ],
+          "answer": "keeps-then-hard-load",
+          "explanation": "`removeQueries` deletes cache entries without notifying their observers, so the screen keeps rendering what it had. On its next render, `useQuery` finds no entry, creates a fresh one and fetches — a hard load, possibly as the logged-out user. That's why v5 removed `useQuery`'s own `remove()`. Navigate away first, then clear the cache."
+        },
+        {
+          "id": "refresh-spinner",
+          "prompt": "A **Refresh** button calls `queryClient.resetQueries({ queryKey: todoKeys.lists() })`, and users complain the table flashes a spinner. Why, and what fits better?",
+          "options": [
+            {
+              "id": "reset-drops-data",
+              "text": "Reset puts the lists back to their initial `pending` state before refetching; invalidation refetches behind the table"
+            },
+            {
+              "id": "missing-await",
+              "text": "The call isn't awaited; `await queryClient.resetQueries(...)` keeps the old data until the refetch finishes"
+            },
+            {
+              "id": "stale-time",
+              "text": "`staleTime` is 0, so every refetch is treated as a first load and shows a spinner; raise it"
+            },
+            {
+              "id": "wrong-key",
+              "text": "`todoKeys.lists()` is too broad and resets every list; reset only `todoKeys.list(filters)` instead"
+            }
+          ],
+          "answer": "reset-drops-data",
+          "explanation": "Reset means \"back to how this query started\". With no `initialData`, that is no data at all, so the component renders its pending state until the refetch lands. Invalidation keeps the data and fetches in the background (`success` + fetching). Awaiting changes when *your* code resumes, not what the component renders, and `staleTime` doesn't make background refetches show spinners."
+        },
+        {
+          "id": "in-place-edit",
+          "prompt": "`queryClient.setQueryData(['todos'], (old) => { old.push(newTodo); return old; })` runs while the list is on screen. What happens?",
+          "options": [
+            {
+              "id": "cache-yes-screen-no",
+              "text": "The cache holds the new todo, but the list doesn't re-render: `data` is still the same array"
+            },
+            {
+              "id": "works",
+              "text": "The list shows the new todo: `setQueryData` always notifies every component reading the key"
+            },
+            {
+              "id": "throws",
+              "text": "It throws, because data in the query cache is frozen in development builds"
+            },
+            {
+              "id": "ignored",
+              "text": "The write is skipped, because the updater returned the same value it was given"
+            }
+          ],
+          "answer": "cache-yes-screen-no",
+          "explanation": "The array was changed in place, so the cache really does contain the new todo — but `useQuery` re-renders a component only when a result field it reads has changed, and `data` is the very same reference. The screen stays stale until something else re-renders it. Cached data isn't frozen, and the write isn't skipped (only an `undefined` return is). Return a new array: `(old) => [...(old ?? []), newTodo]`."
+        },
+        {
+          "id": "refetch-type",
+          "prompt": "After creating a todo you want every cached list marked stale, the lists on screen refreshed now, and hidden lists refreshed only when they're shown. Which call?",
+          "options": [
+            {
+              "id": "invalidate-default",
+              "text": "`invalidateQueries({ queryKey: todoKeys.lists() })`"
+            },
+            {
+              "id": "refetch",
+              "text": "`refetchQueries({ queryKey: todoKeys.lists() })`"
+            },
+            {
+              "id": "invalidate-all",
+              "text": "`invalidateQueries({ queryKey: todoKeys.lists(), refetchType: 'all' })`"
+            },
+            {
+              "id": "refetch-active",
+              "text": "`refetchQueries({ queryKey: todoKeys.lists(), type: 'active' })`"
+            }
+          ],
+          "answer": "invalidate-default",
+          "explanation": "That's exactly invalidation's default (`refetchType: 'active'`). `refetchQueries` matches inactive lists too (its `type` defaults to `'all'`) and fetches them all now, as does `refetchType: 'all'`. `refetchQueries` with `type: 'active'` refreshes the visible lists but marks nothing stale — with a long `staleTime`, a hidden list is shown later *without* the new todo."
+        },
+        {
+          "id": "await-invalidate",
+          "prompt": "When does `await queryClient.invalidateQueries({ queryKey: todoKeys.lists() })` resume?",
+          "options": [
+            {
+              "id": "active-settled",
+              "text": "When the active matches it refetched have settled — even if one of them failed"
+            },
+            {
+              "id": "immediately",
+              "text": "Immediately: invalidation only marks queries stale, and refetching happens in the background"
+            },
+            {
+              "id": "all-refetched",
+              "text": "Once every matching list, active and inactive, has been refetched"
+            },
+            {
+              "id": "rejects",
+              "text": "Once the active ones have succeeded; it rejects if any refetch fails"
+            }
+          ],
+          "answer": "active-settled",
+          "explanation": "The promise waits for the refetches it started — by default only the active matches; inactive ones are only marked. Failures are swallowed unless you pass `{ throwOnError: true }` as the second argument, so \"awaited\" does not mean \"fresh\": after a failed refetch, `data` is still the old value. Returning this promise from a mutation's `onSuccess` is how a save stays pending until the list is refreshed."
+        },
+        {
+          "id": "write-or-invalidate",
+          "prompt": "A rename's response has the updated todo, but lists are sorted by title **on the server**. What should the cache update do?",
+          "options": [
+            {
+              "id": "write-detail-invalidate-lists",
+              "text": "Write the detail with `setQueryData`, and invalidate the lists — only the server knows the new order"
+            },
+            {
+              "id": "patch-lists",
+              "text": "Patch the row in every list with `setQueriesData`; no request is needed"
+            },
+            {
+              "id": "invalidate-all",
+              "text": "`invalidateQueries({ queryKey: todoKeys.all })`, which covers the detail and the lists"
+            },
+            {
+              "id": "nothing",
+              "text": "Nothing: the default `staleTime: 0` refetches everything on the next render"
+            }
+          ],
+          "answer": "write-detail-invalidate-lists",
+          "explanation": "You hold the exact new detail, so write it. A row patch is right only when the change can't move the row; a server-side sort can, so let the server recompute the lists. Invalidating `todoKeys.all` also refetches the detail you could have written for free. And stale data doesn't refetch on render — only on a trigger (mount, focus, reconnect, invalidation)."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-cache-calls",
+      "prompts": [
+        {
+          "id": "patch-every-list",
+          "prompt": "Patch the saved todo into every cached list, immutably, leaving entries without data alone.",
+          "code": [
+            "queryClient.___<Todo[]>({ queryKey: todoKeys.lists() }, (old) =>",
+            "  old?.___((t) => (t.id === saved.id ? { ...t, title: saved.title } : t)),",
+            ");"
+          ],
+          "blanks": [
+            {
+              "id": "s1",
+              "accept": [
+                "setQueriesData"
+              ]
+            },
+            {
+              "id": "s2",
+              "accept": [
+                "map"
+              ]
+            }
+          ],
+          "explanation": "`setQueriesData` takes filters and runs the updater on each existing match. `map` returns a new array with a new object for the changed row, so components reading `data` see a new reference; `old?.` returns `undefined` for an entry with no data, which leaves it untouched."
+        },
+        {
+          "id": "write-detail",
+          "prompt": "The mutation response is the full, updated todo. Put it in the detail entry without a request.",
+          "code": "queryClient.___(todoKeys.detail(saved.id), saved);",
+          "blanks": [
+            {
+              "id": "w1",
+              "accept": [
+                "setQueryData"
+              ]
+            }
+          ],
+          "explanation": "`setQueryData` writes one key synchronously and counts as a fresh fetch (`dataUpdatedAt` is now). If no entry exists yet, it creates one — a cheap way to prime a detail page."
+        },
+        {
+          "id": "exact-no-refetch",
+          "prompt": "Mark only the bare `['todos']` entry stale — not the keys under it — and don't refetch anything now.",
+          "code": "queryClient.invalidateQueries({ queryKey: [\"todos\"], ___: true, ___: \"none\" });",
+          "blanks": [
+            {
+              "id": "x1",
+              "accept": [
+                "exact"
+              ]
+            },
+            {
+              "id": "x2",
+              "accept": [
+                "refetchType"
+              ]
+            }
+          ],
+          "explanation": "`exact: true` turns the prefix match into an exact one. `refetchType: 'none'` keeps invalidation to its first half — marking stale — so the entry refetches on its next trigger instead of now."
+        },
+        {
+          "id": "predicate-filter",
+          "prompt": "Invalidate every todo query except details, with a check the key prefix can't express.",
+          "code": [
+            "queryClient.invalidateQueries({",
+            "  ___: (query) => query.queryKey[0] === \"todos\" && query.queryKey[1] !== \"detail\",",
+            "});"
+          ],
+          "blanks": [
+            {
+              "id": "f1",
+              "accept": [
+                "predicate"
+              ]
+            }
+          ],
+          "explanation": "`predicate` receives each `Query` and returns whether it matches; with no other filter, it runs against every query in the cache. Reach for it only when a prefix can't say it — a well-shaped key factory usually can (`todoKeys.lists()`)."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-cache-calls",
+      "snippets": [
+        {
+          "id": "in-place-screen",
+          "code": [
+            "function Todos() {",
+            "  const { data } = useQuery({ queryKey: [\"list\"], queryFn: async () => [\"a\"] });",
+            "  return <p>{data?.join(\",\")}</p>;",
+            "}",
+            "",
+            "// <Todos /> has rendered \"a\". Then, from a button elsewhere:",
+            "queryClient.setQueryData<string[]>([\"list\"], (old) => { old!.push(\"b\"); return old; });",
+            "console.log(queryClient.getQueryData([\"list\"]));"
+          ],
+          "question": "What does the console show, and what does the paragraph show afterwards?",
+          "answer": "The console logs [\"a\", \"b\"], but the paragraph still shows \"a\"",
+          "acceptable": [
+            "[\"a\",\"b\"] in the cache, \"a\" on screen",
+            "cache a,b; screen a"
+          ],
+          "explanation": "The push changed the cached array itself, so reading the cache shows both items. But the updater returned the same reference, and `Todos` reads only `data` — unchanged as far as `useQuery` can tell — so it isn't re-rendered. Run headlessly against v5.104, the paragraph stayed at \"a\"; the immutable version `(old) => [...(old ?? []), \"b\"]` re-rendered it at once."
+        },
+        {
+          "id": "invalidate-vs-refetch-counts",
+          "code": [
+            "// [\"todos\", \"open\"] is on screen; [\"todos\", \"done\"] is cached but unmounted.",
+            "// Each has fetched once: fetchCount is { open: 1, done: 1 }.",
+            "",
+            "await queryClient.invalidateQueries({ queryKey: [\"todos\"] });",
+            "console.log(fetchCount);",
+            "",
+            "await queryClient.refetchQueries({ queryKey: [\"todos\"] });",
+            "console.log(fetchCount);"
+          ],
+          "question": "What are the two logs?",
+          "answer": "{ open: 2, done: 1 } then { open: 3, done: 2 }",
+          "acceptable": [
+            "open 2 done 1, then open 3 done 2"
+          ],
+          "explanation": "Invalidation marks both stale but refetches only the active one (default `refetchType: 'active'`), and its promise waits for that refetch. `refetchQueries` uses the plain filter defaults — `type: 'all'` — so it fetches the unmounted list too. (Run headlessly against v5.104.)"
+        },
+        {
+          "id": "remove-while-mounted",
+          "code": [
+            "function Profile() {",
+            "  const [tick, setTick] = useState(0);",
+            "  const { status, data } = useQuery({ queryKey: [\"me\"], queryFn: fetchMe });",
+            "  return <p onClick={() => setTick(tick + 1)}>{status}: {data?.name}</p>;",
+            "}",
+            "",
+            "// The paragraph shows \"success: Ada\". Then:",
+            "queryClient.removeQueries({ queryKey: [\"me\"] });",
+            "// …a moment later, the user clicks the paragraph."
+          ],
+          "question": "What does the paragraph show right after `removeQueries`, and right after the click?",
+          "answer": "Still \"success: Ada\" after removeQueries; after the click, \"pending:\" while a new fetch runs",
+          "acceptable": [
+            "unchanged, then pending",
+            "success: Ada, then pending: (hard load)"
+          ],
+          "explanation": "`removeQueries` deletes the entry without notifying its observers, so nothing re-renders and the old data stays on screen. The click's re-render makes `useQuery` look up `[\"me\"]` again, find nothing, create a fresh entry and fetch it — `status` is `pending` with no data. That's the \"hard loading state with the next re-render\" the v5 migration guide warns about. (Run headlessly against v5.104.)"
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-cache-sync",
+      "challengeSlug": "cache-sync-handlers"
+    }
+  ]
+}

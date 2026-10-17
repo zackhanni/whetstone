@@ -1,0 +1,65 @@
+---
+id: cache-call-traps
+title: What the cache calls really do at the edges
+---
+
+Each of these was run against TanStack Query v5.104 with a component on screen.
+
+## `removeQueries` on a query someone is showing
+
+```ts
+function logout() {
+  queryClient.removeQueries(); // ❌ the dashboard is still mounted
+  navigate("/login");
+}
+```
+
+The entries are deleted, but **mounted components aren't notified**: the dashboard keeps
+rendering the old user's data. The moment anything re-renders it, its `useQuery` finds no entry,
+creates a new one, and shows a hard loading state while it fetches — possibly as the logged-out
+user. (v5 removed `useQuery`'s own `remove()` for exactly this reason: removing an active query
+"will just trigger a hard loading state with the next re-render.") Leave the screen first, then
+clear the cache (`queryClient.clear()` empties it entirely), or invalidate what should refresh.
+
+## `resetQueries` as a "Refresh" button
+
+`resetQueries` returns matches to their **initial** state before refetching the active ones.
+Without `initialData`, the initial state is `pending` with no data, so the table vanishes behind
+a spinner. A refresh that keeps the table on screen is `invalidateQueries` (or `refetch()` from
+the hook).
+
+## What `await invalidateQueries(...)` waits for
+
+It resolves when the **active** queries it refetched have settled (inactive ones are only marked,
+so there's nothing to wait for). Two consequences:
+
+- **It resolves even if the refetch failed.** Failures are swallowed unless you pass
+  `{ throwOnError: true }` as the second argument; after a failed refetch, `data` is still the old
+  value and `status` is `error`. "Awaited invalidation" does not mean "fresh data".
+- **Returning it from a mutation's `onSuccess` keeps the mutation pending** until the refetch is
+  done, so a "Saving…" state lasts until the list really shows the change. The mutations unit
+  builds on this.
+
+## Invalidating while a fetch is already running
+
+A refetch started *before* your write may return pre-write data. By default
+(`cancelRefetch: true`) an invalidation **cancels** an in-flight refetch of a query that already
+has data and starts a new one, so what lands was requested after the write. A **first** load (no
+data yet) that's in flight is joined rather than restarted.
+
+## Queries that ignore you
+
+- **Disabled queries** (`enabled: false`) aren't refetched by `invalidateQueries` or
+  `refetchQueries`, though they're still marked stale.
+- **`staleTime: "static"`** queries ignore invalidation entirely; `Infinity` ones don't.
+- **`invalidateQueries()` with no filter** marks everything stale and refetches every active
+  query in the app. It's a sledgehammer; aim it with a key.
+
+<!--more-->
+
+**Paused queries.** Offline, a matching query's refetch is paused, and the returned promise
+doesn't wait for it — it resolves straight away and the fetch continues on reconnect.
+
+**`setQueryData` resets the freshness clock.** The write is recorded as if it had just been
+fetched (`dataUpdatedAt` is now), so with a long `staleTime` a written value counts as fresh and
+no trigger will refetch it until that time passes or you invalidate it.

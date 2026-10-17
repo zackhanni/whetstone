@@ -1,0 +1,69 @@
+---
+id: writing-a-response-into-the-cache
+title: Writing a response into the cache, line by line
+---
+
+A rename endpoint returns the full updated todo. The detail view and every cached list show
+that todo. Refetching all of them would work, but the response already *is* the new data. Here
+is the cache update in full:
+
+```ts
+function applyRenamedTodo(queryClient: QueryClient, saved: Todo) {
+  // 1. The detail: we hold its exact new value.
+  queryClient.setQueryData(todoKeys.detail(saved.id), saved);
+
+  // 2. Every cached list: patch the one row, immutably.
+  queryClient.setQueriesData<Todo[]>({ queryKey: todoKeys.lists() }, (old) =>
+    old?.map((todo) => (todo.id === saved.id ? { ...todo, title: saved.title } : todo)),
+  );
+
+  // 3. Lists sorted by title on the server: the row may have moved. Let the server decide.
+  void queryClient.invalidateQueries({ queryKey: todoKeys.lists() });
+}
+```
+
+**Step 1 — `setQueryData` for the one entry you can name.** It writes synchronously and makes
+no request; every component showing that detail re-renders with the new value. If no entry exists
+for the key yet, one is created — handy for priming a detail page before the user opens it.
+
+**Step 2 — `setQueriesData` for a family.** It takes filters instead of a key and runs the
+updater on every **existing** match (it never creates entries). Two details in the updater
+matter:
+
+- **`old` can be `undefined`**, for an entry that exists but has no data yet. Returning
+  `undefined` leaves that entry untouched, which is why `old?.map(...)` is safe.
+- **Return a new array with a new object.** The docs are blunt: don't mutate cached data in
+  place. Here is what happens if you do:
+
+```ts
+queryClient.setQueryData<Todo[]>(todoKeys.list(filters), (old) => {
+  old!.find((t) => t.id === saved.id)!.title = saved.title; // ❌ same array, same object
+  return old;
+});
+```
+
+Run against v5.104 with a list on screen: the cache holds the new title, but **the component
+doesn't re-render**. `useQuery` re-renders a component only when a result field it reads has
+changed ("tracked properties"), and `data` is the very same array as before — so the screen
+keeps the old title until something else re-renders it. An immutable update hands the cache a
+new reference, and that is what it notices.
+
+**Step 3 — invalidate what you can't compute.** If the server sorts lists by title, or the
+rename changes which filter a todo belongs to, a client-side patch could put the row in the
+wrong place. Invalidate the lists and keep step 2 only as an instant preview (or drop it). Note
+the filter: `todoKeys.lists()`, not `todoKeys.all` — the broader one would also refetch the
+detail you wrote in step 1.
+
+The rule of thumb:
+
+| You have… | Do |
+| --- | --- |
+| the exact new value for a key | `setQueryData` |
+| a change you can apply to every cached copy, row by row | `setQueriesData` with an immutable updater |
+| a change whose effect on sorting, filtering or totals only the server knows | `invalidateQueries` |
+
+<!--more-->
+
+With keys from `queryOptions`, `setQueryData` is type-checked:
+`queryClient.setQueryData(todoQueries.detail(5).queryKey, saved)` refuses a value of the wrong
+shape. A hand-written key returns `unknown` from `getQueryData`.

@@ -1,0 +1,41 @@
+---
+id: five-calls
+title: The server changed — five QueryClient calls, five different effects
+---
+
+After a write, the cache holds data the server no longer agrees with. TanStack Query v5 gives
+you five `QueryClient` methods for that moment, and they are not interchangeable. Ask two
+questions: **do I already have the new data?** and **is anyone looking at the old data?**
+
+| Call | Data on screen | Request | Use it when |
+| --- | --- | --- | --- |
+| `invalidateQueries(filters)` | kept | refetches matches **on screen** now; the rest when next used | you don't have the new data |
+| `setQueryData(key, data)` | replaced at once | none | you **do** have the new data |
+| `refetchQueries(filters)` | kept | refetches **every** match now, on screen or not | rarely — usually invalidate instead |
+| `resetQueries(filters)` | dropped back to its initial state (a spinner) | then refetches the ones on screen | you want a hard reset, e.g. a form's `initialData` |
+| `removeQueries(filters)` | entry deleted, mounted views not told | none | cleaning up data no screen is showing |
+
+The everyday pair is the first two:
+
+```ts
+// We created a todo; we don't know where it lands in each sorted, filtered list.
+await queryClient.invalidateQueries({ queryKey: todoKeys.lists() });
+
+// We renamed todo 5 and the server sent back the updated todo.
+queryClient.setQueryData(todoKeys.detail(5), updatedTodo);
+```
+
+**Invalidation is the default answer.** It marks every matching entry stale — overriding
+`staleTime` — and refetches the matching queries that components are using right now, in the
+background, with their data still on screen. An entry nobody is using is only marked; it
+refetches when a component next asks for it. That's why "invalidate the whole family" is
+cheap: you pay for what's visible.
+
+**`setQueryData` is the shortcut when you hold the truth.** It writes synchronously, makes no
+request, and every component reading that key re-renders with the new value. It counts as a
+fresh fetch, so `staleTime` starts again from now.
+
+The other three are specialist tools. `refetchQueries` re-downloads inactive entries too (and
+doesn't mark anything stale). `resetQueries` throws data away first, so the user sees a loading
+state. And `removeQueries` deletes entries without telling mounted components — the screen keeps
+the old data until something re-renders it, then shows a hard load.
