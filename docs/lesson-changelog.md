@@ -15,6 +15,13 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — taxonomy — `xss`, `csp`, `csrf`, `cookies`, `secrets`, `security-headers` and `owasp` under the `security` root for the Web Security track.
+- 2026-10-17 — web-security/xss — why XSS beats session defences; stored/reflected/DOM; what React 19 escapes and blocks (only `javascript:` URLs); escape vs DOMPurify vs a URL-scheme allow-list; the JSON-LD `</script>` breakout. Challenge `xss-safe-profile-card`.
+- 2026-10-17 — web-security/content-security-policy — reading a policy; `default-src` fallback and the directives that don't fall back; nonce vs hash vs `'unsafe-inline'`; `'strict-dynamic'`; Report-Only rollout; Next.js 16 nonces forcing dynamic rendering (vs a static policy or SRI). Challenge `csp-header-builder`.
+- 2026-10-17 — web-security/csrf-and-cookies — CSRF mechanics; SameSite Strict/Lax/None (Lax-by-default is Chromium-only, with its 2-minute POST window); a `Sec-Fetch-Site` + exact-`Origin` guard that fails closed; what Server Actions check; `HttpOnly` cookie vs `localStorage` under XSS. Challenge `csrf-request-guard`.
+- 2026-10-17 — web-security/secrets-and-config — `NEXT_PUBLIC_` inlined and frozen at build; `server-only`; leaks through props and action return values; failing closed on a missing secret; `.env` and `.gitignore`; rotate a leaked secret first; grepping the build output.
+- 2026-10-17 — web-security/security-headers — card unit: HSTS and preload, `nosniff`, `Referrer-Policy`, `frame-ancestors` vs `X-Frame-Options`, `Permissions-Policy`, COOP, CORP, headers to drop, setting them in Next.js.
+- 2026-10-17 — web-security/owasp-top-10 — card unit: the OWASP Top 10:2025, one card per category with a TS/React/Node example and first fix, plus what changed from 2021 (incl. npm 12 blocking dependency install scripts by default).
 - 2026-10-17 — taxonomy — `status-codes` (under `http`), `regex` (under `javascript`) and `terminal` (under `tooling`) for the Reference Cards track.
 - 2026-10-17 — reference-cards/http-status-codes — per-code lookup cards (200–504: redirects by permanence and method, 304, 400 vs 422, 401 vs 403, 404 vs 410, 405, 409, 415, 429, 502/503/504), bloomed with a "which code for this situation?" quiz and a fill-blank on the header each code needs; `request-response-anatomy` now links the deck.
 - 2026-10-17 — reference-cards/common-cli-flags — cards for everyday flags (`ls -la`, `rm -rf` and the empty-variable trap, `grep -rniE`, `cp -R`/`-a`, `mkdir -p`, `tail -F`, `ps aux`, `lsof` port lookup, `kill` vs `-9`, `chmod +x`, `--`, `find`, `xargs -0`) and the macOS-vs-GNU differences that break scripts (all BSD behaviour run on macOS 26).
