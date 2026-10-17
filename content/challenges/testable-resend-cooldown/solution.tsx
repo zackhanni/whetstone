@@ -31,8 +31,14 @@ export function createCodeSender({ now, send }: CodeSenderDeps) {
     const at = now();
     const remainingMs = COOLDOWN_MS - (at - lastSentAt);
     if (remainingMs > 0) return { ok: false, retryInSeconds: Math.ceil(remainingMs / 1000) };
+    const previous = lastSentAt;
     lastSentAt = at; // set before awaiting, so a double click can't send twice
-    await send(email);
+    try {
+      await send(email);
+    } catch (error) {
+      lastSentAt = previous; // no code went out, so there's nothing to wait for
+      throw error; // the caller decides what to tell the user
+    }
     return { ok: true, sentAt: at };
   };
 }
@@ -58,7 +64,13 @@ export function ResendButton({
   }, []);
 
   const onClick = async () => {
-    const result = await requestCode(email);
+    let result: SendResult;
+    try {
+      result = await requestCode(email);
+    } catch {
+      setMessage("Couldn't send the code. Try again.");
+      return;
+    }
     if (!result.ok) return;
     setSentAt(result.sentAt);
     setNow(result.sentAt);

@@ -171,8 +171,9 @@ when it migrates.
 ## Planned dimensions
 
 Roots (dimensions) are the top row of the interest filter, so they should be few and stable.
-Today there are two: `frontend` and `backend`. The backlog in `docs/ROADMAP.md` needs more. The
-list below is where new roots should go, so that each authoring session doesn't invent its own.
+The first two were `frontend` and `backend`; every row marked **landed** below is a root too. The
+backlog in `docs/ROADMAP.md` needs more. The list below is where new roots should go, so that each
+authoring session doesn't invent its own.
 **Add a root only when a lesson needs it** (an unused root is an orphan warning):
 
 | Root (slug) | For tracks like | Re-parent when it lands |

@@ -57,13 +57,13 @@
           "id": "recurring-meeting",
           "prompt": "A stand-up is \"every Monday at 09:00, New York time\". What should you store?",
           "options": [
-            { "id": "wall-time-and-zone", "text": "`{ time: \"09:00\", timeZone: \"America/New_York\" }`, and compute each occurrence's instant when needed" },
+            { "id": "wall-time-and-zone", "text": "`{ weekday: \"monday\", time: \"09:00\", timeZone: \"America/New_York\" }`, and compute each occurrence's instant when needed" },
             { "id": "first-instant", "text": "The first occurrence as a UTC instant; each next one is 7 × 24 hours later" },
-            { "id": "fixed-offset", "text": "`\"09:00-05:00\"`" },
-            { "id": "abbreviation", "text": "`{ time: \"09:00\", zone: \"EST\" }`" }
+            { "id": "fixed-offset", "text": "`{ weekday: \"monday\", time: \"09:00\", offset: \"-05:00\" }`" },
+            { "id": "abbreviation", "text": "`{ weekday: \"monday\", time: \"09:00\", zone: \"EST\" }`" }
           ],
           "answer": "wall-time-and-zone",
-          "explanation": "The meeting is defined by a wall clock in a place, so store that clock time and the place's zone name, whose rules include daylight saving time. Adding 7 × 24 hours to a UTC instant keeps the UTC time fixed, so after the March change the meeting shows up at 10:00. A fixed `-05:00` offset is right only in winter. `EST` names one offset (standard time), not New York's rules, and abbreviations are ambiguous anyway."
+          "explanation": "The meeting is defined by a wall clock in a place, so store the weekday, that clock time and the place's zone name, whose rules include daylight saving time. Adding 7 × 24 hours to a UTC instant keeps the UTC time fixed, so after the March change the meeting shows up at 10:00. A fixed `-05:00` offset is right only in winter. `EST` names one offset (standard time), not New York's rules, and abbreviations are ambiguous anyway."
         },
         {
           "id": "server-component-zone",
@@ -160,7 +160,7 @@
             { "id": "t1", "accept": ["TZ"] },
             { "id": "t2", "accept": ["300"] }
           ],
-          "explanation": "Node reads the zone from `TZ`. Set in the config file, it applies before Vitest starts its workers. New York in January is UTC−5, and `getTimezoneOffset()` is UTC minus local in minutes, so `300`. If the assignment ever stops working (a `threads` pool, a moved line), this test fails instead of the suite silently running in UTC."
+          "explanation": "Node reads the zone from `TZ`. Set in the config file, it applies before Vitest starts its workers, whatever the pool. New York in January is UTC−5, and `getTimezoneOffset()` is UTC minus local in minutes, so `300`. If the assignment ever stops working (moved into a setup file under a `threads` pool, say), this test fails instead of the suite silently running in UTC."
         }
       ]
     },

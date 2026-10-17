@@ -54,8 +54,10 @@ ids.forEach(async (id) => {
 console.log("done", users.length); // done 0
 ```
 
-Use `for…of` with `await` (sequential) or `await Promise.all(ids.map(…))` (parallel). Never use
-`forEach`, `filter` or `reduce` with an async callback unless you collect the promises it returns.
+Use `for…of` with `await` (sequential) or `await Promise.all(ids.map(…))` (parallel). Don't pass
+an async callback to `forEach` (it returns `undefined`, so there's nothing to wait for) or to
+`filter` (it tests the promise, which is always truthy, so it keeps every element). An async
+`reduce` runs in order only if each step `await`s the accumulator first.
 
 <!--more-->
 

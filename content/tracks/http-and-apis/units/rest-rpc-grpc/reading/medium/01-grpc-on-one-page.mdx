@@ -18,6 +18,8 @@ service Orders {
 
 message GetOrderRequest { int64 id = 1; }
 message Order { int64 id = 1; string status = 2; }
+message WatchOrdersRequest { string status = 1; }
+message OrderEvent { Order order = 1; }
 ```
 
 The numbers (`= 1`, `= 2`) are the contract on the wire: a field number "cannot be changed once
@@ -39,8 +41,10 @@ client doesn't mistake a gRPC error for success.
   and bidirectional streaming — both sides sending on one long-lived call.
 - **Deadlines.** The client says how long it will wait (sent as a `grpc-timeout` header);
   past it, the call ends with `DEADLINE_EXCEEDED`.
-- **Cancellation** from either side stops further work immediately — but, as grpc.io warns,
-  "changes made before a cancellation are not rolled back".
+- **Cancellation** from either side ends the call at once. It doesn't stop your server code,
+  though: gRPC "does not have a mechanism to interrupt the application-provided server
+  handler", so a long handler has to check for cancellation and stop itself. And "changes made
+  before a cancellation are not rolled back".
 - **Generated clients** in every supported language, from the one `.proto`.
 
 ## The browser problem

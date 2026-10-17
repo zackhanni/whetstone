@@ -32,6 +32,7 @@ before 2026-10-17 predate this rule.
 - 2026-10-17 — developer-tooling/git-recovery — undo by layer, the three `reset` modes, the empty stash trap, `revert` vs `reset`, `reflog`. Challenge `git-reset-model` (PR #30).
 - 2026-10-17 — developer-tooling/rebase-vs-merge — rebase vs merge, conflicts, force-with-lease, squash-merged stacks with `--onto`. Challenge `rebase-replay-set` (PR #30).
 - 2026-10-17 — developer-tooling/pull-request-workflow — focused PRs, review states, what blocks a merge, required checks, draining a stack bottom-up (PR #30).
+- 2026-10-17 — PR #39/#40 review — CSP nonce bits, a correct bundle secret scan, startup config check, DOMPurify SSR note, outer ORDER BY, .GIF bug, node:test import; resend: failed send retryable.
 - 2026-10-17 — taxonomy — new `testing` root with 8 tags (strategy, assertions, doubles, testability, Vitest, coverage, e2e, Playwright) (PR #29).
 - 2026-10-17 — testing-and-quality/what-to-test — what a test is for, behaviour vs implementation, pyramid vs trophy, tests that can't fail (PR #29).
 - 2026-10-17 — testing-and-quality/kinds-of-tests — each kind of test by what's real vs replaced, which bugs each catches, contract tests (PR #29).
@@ -55,6 +56,7 @@ before 2026-10-17 predate this rule.
 - 2026-10-17 — web-security/secrets-and-config — `NEXT_PUBLIC_` inlining, `server-only`, leaks through props, failing closed, rotating leaked secrets (PR #27).
 - 2026-10-17 — web-security/security-headers — card unit: HSTS, `nosniff`, Referrer-Policy, `frame-ancestors`, Permissions-Policy, COOP/CORP (PR #27).
 - 2026-10-17 — web-security/owasp-top-10 — card unit: the OWASP Top 10:2025, one card per category with a TS/React/Node example (PR #27).
+- 2026-10-17 — PR #24 review — 502/503 and regex `\w`/`\b` cards, Nest versioning snippet; schema rejects `\r`; `.test()` isn't a test name; browser check waits for the runner.
 - 2026-10-17 — taxonomy — `status-codes`, `regex` and `terminal` for the Reference Cards track (PR #26).
 - 2026-10-17 — reference-cards/http-status-codes — per-code lookup cards (200–504) with a "which code?" quiz and a header fill-blank (PR #26).
 - 2026-10-17 — reference-cards/common-cli-flags — cards for everyday CLI flags and the macOS-vs-GNU differences that break scripts (PR #26).
@@ -64,6 +66,7 @@ before 2026-10-17 predate this rule.
 - 2026-10-17 — backend-nestjs/nest-controllers-and-routing — Nest 12 route order and conflict options, default statuses, `@Res()` vs passthrough, versioning traps (PR #24).
 - 2026-10-17 — backend-nestjs/nest-redis-caching-and-rate-limits — cache-aside, CacheModule on cache-manager v7, throttler v6, Redis-down modes. Challenge `nest-cache-aside` (PR #24).
 - 2026-10-17 — backend-nestjs/nest-microservices-and-messaging — send vs emit, errors across the wire, delivery guarantees, idempotent handlers. Challenge `nest-idempotent-event-handler` (PR #24).
+- 2026-10-17 — PR #37/#38 review — query-states error panel gets retry/back; must-revalidate test; null-safe rollback; JWT verifier never throws; poll loop, gRPC, POST-cache, redirect, curl -N fixes.
 - 2026-10-17 — taxonomy — the shared `nextjs` node plus server components/actions, route handlers, caching, compression and streaming tags (PR #23).
 - 2026-10-17 — nextjs-and-the-network/server-components-actions-route-handlers — where code runs in Next 16 and which tool to use. Challenge `proxy-spares-server-actions` (PR #23).
 - 2026-10-17 — nextjs-and-the-network/response-headers-caching-compression — HTTP caching (RFC 9111), compression, headers on Vercel. Challenge `shared-cache-decision` (PR #23).
@@ -83,6 +86,7 @@ before 2026-10-17 predate this rule.
 - 2026-10-17 — data-fetching-tanstack/mutations — `useMutation` in a hook, callback order, staying pending through the invalidation. Challenge `mutation-save-button` (PR #21).
 - 2026-10-17 — data-fetching-tanstack/optimistic-updates — the cache recipe and the v5 `variables` recipe, and their races. Challenge `optimistic-toggle` (PR #21).
 - 2026-10-17 — data-fetching-tanstack/tanstack-router — typed routes, `validateSearch`, `loaderDeps` and a loader filling the query cache. Challenge `router-search-loader` (PR #21).
+- 2026-10-17 — PR #35/#36 review — graders check full parse results, throttle's latest `this`, timeouts by deadline; fixed `Object.is`, `satisfies`, Vitest pools, DST and a dozen more claims.
 - 2026-10-17 — taxonomy — `async` also under `javascript`, `AbortController` also under `async`; new `event-loop` and `promises` tags (PR #20).
 - 2026-10-17 — async-javascript/event-loop — run-to-completion, tasks vs microtasks vs rendering, predicting ordering, long tasks and chunking (PR #20).
 - 2026-10-17 — async-javascript/timers — the delay is a minimum, recursive `setTimeout` vs `setInterval`, handles and `this`. Challenge `polling-loop-stops-cleanly` (PR #20).
@@ -101,6 +105,7 @@ before 2026-10-17 predate this rule.
 - 2026-10-17 — javascript-typescript-fundamentals/equality-and-truthiness — `===`/`==`/`Object.is`, the falsy list, identity vs contents, `null` vs `undefined` (PR #18).
 - 2026-10-17 — javascript-typescript-fundamentals/narrowing-and-unions — narrowing, discriminated unions, enums vs `as const`, `satisfies`. Challenge `narrow-unknown-events` (PR #18).
 - 2026-10-17 — javascript-typescript-fundamentals/immutable-updates — shallow spread, copying array methods, `structuredClone` limits. Challenge `todo-reducer-mutations` (PR #18).
+- 2026-10-17 — PR #16 review — CodeRabbit: fetch solution clears old results on a new search; Nest pipe order scoped per argument; useState/useRef don't promise one creation.
 - 2026-10-17 — backend-nestjs — content-review pass for Nest 12: 11 findings fixed, 1 rejected after testing; `nest-validation-pipe` grader tightened (PR #17).
 - 2026-10-17 — react-hooks-and-rendering — content-review pass: 21 findings fixed (StrictMode, `useEffectEvent`, React Compiler); 6 challenges reject the obvious shortcut (PR #16).
 - 2026-10-17 — state-and-data-flow — content-review pass: 14 findings fixed (Zustand v5 selectors and persist, SSR gating, URL state, TanStack v5); grader tightened (PR #15).

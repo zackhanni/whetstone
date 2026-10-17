@@ -14,9 +14,10 @@ Each built-in collection is good at answering one question:
 
 The difference that bites first is **cost**. `array.includes(x)` and `array.find(…)` walk the
 array from the front until something matches — and on a miss they check every element.
-`set.has(x)` and `map.get(k)` go straight to the entry: the ECMAScript spec requires access times
-that are, on average, "sublinear on the number of elements", and engines use hash tables, so on average a
-lookup doesn't slow down as the collection grows.
+`set.has(x)` and `map.get(k)` don't scan. The ECMAScript spec only promises access times that are,
+on average, "sublinear on the number of elements" (better than a scan, not necessarily constant).
+V8, the engine in Chrome and Node, builds `Map` and `Set` on hash tables, so there a lookup stays
+about as fast as the collection grows.
 
 ```ts
 // 10,000 events × up to 5,000 comparisons each

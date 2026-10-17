@@ -12,6 +12,7 @@
     "A request that carried `Authorization` is stored only when the response says `public`, `s-maxage` or `must-revalidate`",
     "The lifetime is `s-maxage` when present, otherwise `max-age`; an age below it → `fresh`, at or above it → stale",
     "`no-cache` is stored, but every reuse is `revalidate`",
-    "Stale but inside the `stale-while-revalidate` window → `serve-stale-and-refresh`; past it → `revalidate`"
+    "Stale but inside the `stale-while-revalidate` window → `serve-stale-and-refresh`; past it → `revalidate`",
+    "`must-revalidate` forbids serving stale: once stale, it's `revalidate` even inside the window"
   ]
 }

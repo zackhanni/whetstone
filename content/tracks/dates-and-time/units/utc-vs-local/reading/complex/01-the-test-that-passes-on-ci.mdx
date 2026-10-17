@@ -35,8 +35,9 @@ Now the tests mean the same thing on every machine.
 
 **Then run the suite in a zone that isn't UTC**, so any code that still reads the machine's zone
 fails everywhere, not just on some laptops. A zone with daylight saving time and a large offset
-catches the most (`America/New_York`). Two places work in Vitest 4, because they set `TZ` before
-any test worker starts (the `package.json` form is for macOS and Linux shells):
+catches the most (`America/New_York`). Two places work in Vitest 4 whatever the pool, because they
+set `TZ` in the main process before any test worker starts (the `package.json` form is for macOS
+and Linux shells):
 
 ```jsonc
 // package.json
@@ -48,9 +49,10 @@ any test worker starts (the `package.json` form is for macOS and Linux shells):
 process.env.TZ = "America/New_York";
 ```
 
-Setting `TZ` inside a test, in a setup file or through `test.env` only works in Vitest's
-default `forks` pool. Under `pool: "threads"` it silently does nothing: Vitest's docs say
-changing `process.env.TZ` doesn't affect the time zone in a worker thread. So assert that the switch took, or a config
+Setting `TZ` inside a test, in a setup file or through `test.env` runs inside the worker. That
+works in the pools that run tests in child processes, `forks` (the default) and `vmForks`. Under
+`threads` or `vmThreads` it silently does nothing: Vitest's docs say changing `process.env.TZ`
+doesn't affect the time zone in a worker thread. So assert that the switch took, or a config
 change can quietly turn the whole guard off:
 
 ```ts

@@ -288,7 +288,7 @@
           "code": [
             "___: ({ search }) => ({ page: search.page }),",
             "loader: ({ context, ___ }) =>",
-            "  context.queryClient.query({ ...postsQuery(deps.page), staleTime: \"___\" }),"
+            "  context.queryClient.query({ ...postsQuery(deps), staleTime: \"___\" }),"
           ],
           "blanks": [
             {
@@ -353,12 +353,12 @@
             "  path: \"posts\",",
             "  validateSearch: parsePostsSearch,",
             "  loader: ({ context, location }) =>",
-            "    context.queryClient.query({ ...postsQuery(location.search.page), staleTime: \"static\" }),",
+            "    context.queryClient.query({ ...postsQuery(location.search), staleTime: \"static\" }),",
             "  pendingComponent: () => <p>Loading posts…</p>,",
             "  component: () => {",
-            "    const { page } = postsRoute.useSearch();",
-            "    const { data } = useSuspenseQuery(postsQuery(page));",
-            "    return <PostList posts={data} />;",
+            "    const search = postsRoute.useSearch();",
+            "    const { data } = useSuspenseQuery(postsQuery(search));",
+            "    return <PostList posts={data.items} />;",
             "  },",
             "});",
             "// On page 1, the user clicks Next. Page 2 takes 2 seconds to load."

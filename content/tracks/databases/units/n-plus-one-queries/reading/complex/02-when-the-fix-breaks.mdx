@@ -22,10 +22,14 @@ item (the fan-out from the keys-and-joins unit). Page the parent first, then joi
 ```sql
 SELECT o.id, i.sku, i.qty
 FROM (SELECT id FROM orders ORDER BY id DESC LIMIT 50) o
-JOIN order_items i ON i.order_id = o.id;      -- 200 rows, exactly 50 orders
+JOIN order_items i ON i.order_id = o.id
+ORDER BY o.id DESC, i.sku;                    -- 200 rows, exactly 50 orders
 ```
 
-or fetch the 50 orders, then their items with one `WHERE order_id = ANY($1)` batch.
+or fetch the 50 orders, then their items with one `WHERE order_id = ANY($1)` batch. Keep the outer
+`ORDER BY`: the inner one only picks *which* 50 orders. Without a final sort the order "will depend
+on the scan and join plan types and the order on disk" (PostgreSQL docs); in a PostgreSQL 14 run
+with no index on `order_items.order_id`, a hash join returned the oldest of the 50 first.
 
 ## Nested results in one round trip
 

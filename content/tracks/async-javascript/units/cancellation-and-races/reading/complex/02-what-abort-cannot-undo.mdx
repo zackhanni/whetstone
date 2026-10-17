@@ -40,7 +40,8 @@ settle.
 The checks that hold up in production, from most to least reliable:
 
 1. **Compare against your own bookkeeping.** Ask whether this controller is still the current
-   one, or whether `controller.signal.aborted` is true. That works whatever the reason, and
+   one, or whether `controller.signal.aborted` is true; for a deadline, whether the
+   `AbortSignal.timeout()` signal you kept has aborted. That works whatever the reason, and
    whatever error the request wrapped it in.
 2. **`err === signal.reason`.** Exact, but only if every layer rethrows the reason unchanged, as
    the DOM Standard asks of abortable APIs.

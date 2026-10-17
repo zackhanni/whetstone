@@ -15,9 +15,8 @@ function latestOnly(request, { timeoutMs } = {}) {
     current?.abort();                    // 1. the previous call is stale now
     const controller = new AbortController();
     current = controller;
-    const signal = timeoutMs
-      ? AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
-      : controller.signal;
+    const deadline = timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined;
+    const signal = deadline ? AbortSignal.any([controller.signal, deadline]) : controller.signal;
 
     try {
       const value = await request(...args, signal);
@@ -25,13 +24,16 @@ function latestOnly(request, { timeoutMs } = {}) {
       return { status: "ok", value };
     } catch (error) {
       if (controller !== current) return { status: "superseded" }; // 3. aborted by a newer call
-      if (error?.name === "TimeoutError") return { status: "timeout" };
+      if (deadline?.aborted) return { status: "timeout" };         // 4. our deadline passed
       return { status: "error", error };
     }
   };
 }
 
-const search = latestOnly((q, signal) => fetchJson(`/search?q=${q}`, { signal }), { timeoutMs: 5000 });
+const search = latestOnly(
+  (q, signal) => fetchJson(`/search?q=${encodeURIComponent(q)}`, { signal }),
+  { timeoutMs: 5000 },
+);
 const outcome = await search("rea");
 if (outcome.status === "ok") render(outcome.value);
 ```
@@ -45,8 +47,9 @@ does with its signal.
 
 **Why compare controllers instead of checking `error.name`?** "Was this superseded?" is a question
 about _our_ bookkeeping, not about the error. A newer call might abort with a custom reason, and a
-request may wrap the abort in its own error type. The controller identity answers it exactly. The
-error name is only used for the one thing it's good for: telling a timeout from other failures.
+request may wrap the abort in its own error type. The controller identity answers it exactly.
+"Did it time out?" is bookkeeping too: keep the timeout signal and ask whether it aborted (4). A
+wrapped error has no `TimeoutError` name to find.
 
 **Superseded is not an error.** Return it as its own status, and have the UI ignore it. Shown as
 an error, every fast typist sees a "Search failed" flash.

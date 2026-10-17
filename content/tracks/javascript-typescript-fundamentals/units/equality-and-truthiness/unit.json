@@ -145,7 +145,7 @@
           "prompt": "Render the badge only when there are unread messages — and never render a stray `0`.",
           "code": "{unread ___ 0 && <Badge count={unread} />}",
           "blanks": [{ "id": "g1", "accept": [">", "!=="] }],
-          "explanation": "Make the left side of `&&` a boolean. `unread && …` evaluates to `0` when there are none, and React renders numbers; `unread > 0` is `false`, which React skips."
+          "explanation": "Make the left side of `&&` a boolean. `unread && …` evaluates to `0` when there are none, and React renders numbers; `unread > 0` is `false`, which React skips. `unread !== 0` is a boolean too and means the same for a count; `> 0` also keeps a bad value such as `NaN` from showing a badge."
         },
         {
           "id": "compare-by-id",
