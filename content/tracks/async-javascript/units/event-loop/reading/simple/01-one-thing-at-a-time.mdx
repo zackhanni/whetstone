@@ -1,0 +1,43 @@
+---
+id: one-thing-at-a-time
+title: JavaScript runs one thing at a time, to completion
+---
+
+A page's JavaScript runs on **one thread**. At any moment exactly one piece of code is running,
+and once a function starts, nothing else (no timer, no click handler, no promise callback) can
+cut in until the call stack is empty again. MDN calls this **run-to-completion**.
+
+So "asynchronous" never means "runs at the same time". It means "runs **later**, as a separate
+job, after the current code has finished".
+
+```js
+console.log("A");
+setTimeout(() => console.log("B"), 0);
+console.log("C");
+// A
+// C
+// B
+```
+
+`setTimeout(fn, 0)` does not run `fn` now. It hands `fn` to the browser (or Node) with a note:
+"once at least 0 ms have passed, queue this as a job". The current code keeps going, prints
+`C`, and finishes. Only then does the event loop pick up the queued job and print `B`.
+
+The **event loop** is the part of the runtime that does that picking. Its whole job:
+
+1. Take the next job from a queue.
+2. Run it until the call stack is empty.
+3. Repeat. If there's nothing queued, wait.
+
+Everything else in this track (timers, promises, debounce, cancellation) is a way of putting
+jobs on those queues and reasoning about when they come off.
+
+<!--more-->
+
+### Why "never blocks" is mostly true
+
+Waiting for a network response, a timer or a click doesn't occupy the thread: the platform
+waits, and queues a job when the thing happens. That's why a page can respond to input while
+a `fetch` is in flight. The exceptions are code that genuinely keeps the thread busy (a long
+loop, a huge `JSON.parse`) and a few legacy blocking APIs such as `alert()` and synchronous
+XHR. A busy thread means queued jobs, including the browser's own rendering, sit and wait.

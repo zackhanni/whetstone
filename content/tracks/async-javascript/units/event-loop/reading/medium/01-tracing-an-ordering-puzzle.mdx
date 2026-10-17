@@ -1,0 +1,81 @@
+---
+id: tracing-an-ordering-puzzle
+title: Tracing an ordering puzzle, queue by queue
+---
+
+The reliable way to predict output is to keep two lists on paper, **tasks** and
+**microtasks**, and walk the code line by line.
+
+```js
+console.log("script start");
+
+setTimeout(() => console.log("timeout"), 0);
+
+function fetchLike() {
+  console.log("fetchLike called");
+  return Promise.resolve("data");
+}
+
+async function load() {
+  console.log("load: before await");
+  const data = await fetchLike();
+  console.log("load: after await", data);
+}
+
+load();
+
+Promise.resolve()
+  .then(() => console.log("then 1"))
+  .then(() => console.log("then 2"));
+
+console.log("script end");
+```
+
+Walking it:
+
+1. `script start` logs. The timer is handed off; when it expires it queues a **task**.
+   Tasks: `[timeout]`.
+2. `load()` is called. An async function runs **synchronously up to its first `await`**, so
+   `load: before await` logs, then `fetchLike()` runs and logs `fetchLike called`.
+3. `await` gets an already-resolved promise. It still pauses `load` and queues the rest of the
+   function as a **microtask**. `load()` returns a pending promise to the caller.
+   Microtasks: `[rest of load]`.
+4. `Promise.resolve().then(…)` is already resolved, so its callback is queued immediately.
+   Microtasks: `[rest of load, then 1]`. The second `.then` waits: it's attached to the promise
+   that `then 1` _will_ resolve, which is still pending.
+5. `script end` logs. The script, our first task, is done, and the stack is empty.
+6. Drain microtasks: `load: after await data` logs, then `then 1`. Finishing `then 1`
+   resolves its promise, which queues `then 2`, and the drain keeps going until the queue is
+   empty, so `then 2` logs too.
+7. Next task: `timeout`.
+
+```
+script start
+load: before await
+fetchLike called
+script end
+load: after await data
+then 1
+then 2
+timeout
+```
+
+The three habits that make these easy:
+
+- **Synchronous first.** Including the body of an async function up to its first `await`, and
+  a `new Promise` executor, which runs immediately.
+- **A `.then` callback is queued when its promise settles**, not when you write `.then`. A
+  chained `.then` waits for the previous callback to finish.
+- **All microtasks before the next task**, however many get queued along the way.
+
+<!--more-->
+
+### Don't build logic on exact tick counts
+
+Change one word, `function fetchLike` to `async function fetchLike`, and the output becomes
+`… then 1, then 2, load: after await data …`. An async function that returns a promise adopts
+it, and that costs extra microtask hops before the caller's `await` resumes. The ordering is
+deterministic (promise jobs are specified by ECMAScript, so conforming engines agree), but it
+depends on details nobody reviewing your code will track. If one piece of work must happen after another, chain
+it or `await` it explicitly. Never rely on two independent promise chains interleaving in a
+particular order.

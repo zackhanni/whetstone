@@ -1,0 +1,67 @@
+---
+id: long-tasks-freeze-the-page
+title: A long task freezes input and paint, so split it
+---
+
+The browser renders **between** tasks, never in the middle of one. And it renders only at a
+_rendering opportunity_, typically once per display refresh (about every 16.7 ms at 60 Hz). So
+while one task runs, nothing gets painted and no click or keypress is handled. They wait in
+their queues.
+
+```js
+// ❌ One long task
+button.addEventListener("click", () => {
+  status.textContent = "Working…";
+  const report = buildReport(rows); // ~2 s of synchronous work
+  status.textContent = `Done: ${report.length} rows`;
+});
+```
+
+The user never sees "Working…". The DOM _is_ updated immediately (read `status.textContent`
+back and you get "Working…"), but no paint happens until the handler returns, and by then the
+text says "Done". For two seconds the page looks dead, and clicks made during that time are
+handled afterwards, one after another.
+
+Making the function `async` changes nothing: an async function runs synchronously until its
+first `await`, so with no `await` inside the loop it's the same single task.
+
+```js
+// ✅ Split the work, and yield between chunks
+button.addEventListener("click", async () => {
+  status.textContent = "Working…";
+  const report = [];
+  for (let i = 0; i < rows.length; i += 500) {
+    for (const row of rows.slice(i, i + 500)) report.push(summarise(row));
+    status.textContent = `Working… ${i} rows`;
+    await new Promise((resolve) => setTimeout(resolve, 0)); // end this task here
+  }
+  status.textContent = `Done: ${report.length} rows`;
+});
+```
+
+Each `await` on a timer ends the current task. The rest of the loop resumes in a _new_ task, and
+in between the browser can paint the progress text and handle input. Keep each chunk to a few
+milliseconds, well inside one frame.
+
+The yield has to be a **task** boundary:
+
+- `await Promise.resolve()` or `queueMicrotask` is **not** a yield. Microtasks run before
+  rendering, so a loop of them freezes the page just like a plain loop.
+- Yielding gives the browser the _chance_ to render. It doesn't force a paint after every
+  chunk, and doesn't need to.
+
+<!--more-->
+
+### Better yields, and getting off the thread
+
+- **`scheduler.yield()`** ends the task too, but queues your continuation in a "boosted" queue,
+  ahead of other tasks at the same priority (MDN), so a chunked job doesn't go to the back of the
+  line every time it yields. It ships in Chrome 129+ and Firefox 142+ but not Safari (MDN's
+  compatibility data, October 2026: "Limited availability"), so feature-detect it
+  (`globalThis.scheduler?.yield`) and fall back to the `setTimeout` promise.
+- **A timer yield isn't free.** A timer's delay is a minimum, and the next task in line may be
+  someone else's, so each yield can cost a few milliseconds. Size chunks so the work dominates
+  the waiting. (The `timers` unit covers why delays run long.)
+- **Pure computation** (parsing, sorting, hashing a big file) belongs in a Web Worker: its own
+  thread with its own event loop, talking to the page by `postMessage`. Chunking only shares the
+  one main thread more fairly.
