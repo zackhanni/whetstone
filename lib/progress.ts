@@ -105,13 +105,16 @@ export function loadAllProgress(): ProgressMap {
 }
 
 /** Merge one unit's engagement, staying valid even if the unit's question count changed. */
-function nextEntry(
+export function nextEntry(
   prev: UnitProgress | undefined,
   answered: number,
   total: number,
   now: number,
 ): UnitProgress {
-  const effTotal = clampCount(total) || prev?.total || 0;
+  // Always the unit's CURRENT question count, even 0: falling back to the stored total would
+  // leave a unit that became cards-only stuck incomplete. (The only caller, UnitView, always
+  // passes the real count.)
+  const effTotal = clampCount(total);
   // High-water mark so refreshing mid-drill doesn't lose progress — but never above the
   // *current* total, so removing questions can't leave a stale >100% / falsely-complete entry.
   const bestAnswered = Math.min(effTotal, Math.max(prev?.answered ?? 0, clampCount(answered)));
@@ -121,7 +124,9 @@ function nextEntry(
     total: effTotal,
     // Recompute against the current total (not sticky): adding questions correctly reverts a
     // unit to in-progress; removing them can complete it. Never latched to stale content.
-    completed: effTotal > 0 && bestAnswered >= effTotal,
+    // A unit with no questions (only cards) has nothing to answer, so visiting completes it —
+    // otherwise its track could never reach 100% and "Continue" would point at it forever.
+    completed: effTotal > 0 ? bestAnswered >= effTotal : true,
     at: now,
   };
 }

@@ -18,7 +18,9 @@ pnpm test             # Vitest — pure lib/* and learning/* logic, node environ
 pnpm test:challenges  # every challenge grader, headless: starter must fail, solution must pass
 ```
 
-**`pnpm check` and `pnpm build` are gates — a change isn't done until both pass.** The headless
+**`pnpm check` and `pnpm build` are gates — a change isn't done until both pass.** Vercel
+runs both on every push (`vercel.json` → `buildCommand`), so a failing gate also fails the
+preview and blocks the production deploy; the Vercel check on a PR is the gate's result. The headless
 challenge grader runs in happy-dom, not Sandpack, so a new or changed challenge also gets one run
 **in the browser** (starter fails, "Show solution" passes).
 
@@ -33,6 +35,7 @@ challenge grader runs in happy-dom, not Sandpack, so a new or changed challenge 
 - `content/` — all lessons (`tracks/…/units/…/unit.json` + `reading/{simple,medium,complex}/*.mdx`), `challenges/`, and `catalog.json` (track order).
 - `learning/` — the authoring system: `schema.ts` (zod, the shape of content), `validate-content.ts` (the cross-file checks), `taxonomy.ts` (the tag registry), `sandbox.ts` (what a challenge can import, and the pinned versions), `grading.ts` (how fill-blank answers match), `PLAYBOOK.md` (authoring judgment).
 - `scripts/validate.ts` + `scripts/check-challenges.ts` — the content gates' command-line entry points (`vitest.challenges.config.ts` is the headless grader's config).
+- `lib/depth.ts` — a unit's Card / Lesson / Full depth, derived from its blocks (never declared).
 - `lib/feedback.ts` + `components/flag-link.tsx` — "Flag" links that open a prefilled `lesson-feedback` GitHub issue; `/improve-lesson` reads those issues.
 - `lib/content.ts` — file-based content loader (React `cache()`, path-traversal guarded).
 - `lib/progress.ts` + `components/progress-provider.tsx` — the local-first progress store (Context). `lib/stores/interests-store.ts` — the interest filter (Zustand).

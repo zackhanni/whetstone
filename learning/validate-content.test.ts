@@ -106,6 +106,15 @@ async function push(rel: string, keys: (string | number)[], value: unknown) {
 }
 
 const UNIT = "content/tracks/t/units/u/unit.json";
+const CARDS = "content/tracks/t/units/u/cards";
+/** Put a cards block right after the reading, holding `files` (name -> content). */
+async function addCards(files: Record<string, string>) {
+  const unit = JSON.parse(await fs.readFile(path.join(root, UNIT), "utf8")) as { blocks: unknown[] };
+  unit.blocks.splice(1, 0, { type: "cards", id: "deck" });
+  await write(UNIT, json(unit));
+  await fs.mkdir(path.join(root, CARDS), { recursive: true });
+  for (const [name, content] of Object.entries(files)) await write(`${CARDS}/${name}`, content);
+}
 const TRACK = "content/tracks/t/track.json";
 const CATALOG = "content/catalog.json";
 const META = "content/challenges/c/meta.json";
@@ -151,7 +160,10 @@ const ERROR_CASES: [string, () => Promise<unknown>, string][] = [
   ["missing frontmatter", () => write(`${SIMPLE}/02-x.mdx`, "no frontmatter\n"), "missing id/title frontmatter"],
   ["extra frontmatter key", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\ntags: x\n---\nx\n"), 'frontmatter key "tags" is not read'],
   ["quoted frontmatter value", () => write(`${SIMPLE}/02-x.mdx`, '---\nid: e\ntitle: "E"\n---\nx\n'), "wrapped in quotes"],
-  ["duplicate reading id across tiers", () => write("content/tracks/t/units/u/reading/complex/02-x.mdx", "---\nid: a\ntitle: X\n---\nx\n"), 'duplicate reading id "a"'],
+  ["duplicate reading id across tiers", () => write("content/tracks/t/units/u/reading/complex/02-x.mdx", "---\nid: a\ntitle: X\n---\nx\n"), 'duplicate id "a"'],
+  ["cards block with no card files", () => addCards({}), "cards block has no card files"],
+  ["card id that repeats a reading id", () => addCards({ "01-x.mdx": "---\nid: a\ntitle: X\n---\nx\n" }), 'duplicate id "a"'],
+  ["card with MDX syntax", () => addCards({ "01-x.mdx": "---\nid: k\ntitle: K\n---\n<Note />\n" }), '"<Note />" outside code'],
   ["JSX tag in reading prose", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nUse <Callout>this</Callout>.\n"), '"<Callout>" outside code'],
   ["import line in a reading", () => write(`${SIMPLE}/02-x.mdx`, '---\nid: e\ntitle: E\n---\nimport { X } from "y"\n'), 'an "import" line'],
 
@@ -210,6 +222,24 @@ describe("validateContent non-errors", () => {
     const { errors, warnings } = await validateContent(root);
     expect(errors).toEqual([]);
     expect(warnings).toContain("challenge standalone: no unit references it, so learners can't reach it");
+  });
+
+  it("accepts a deck of short cards", async () => {
+    await addCards({
+      "01-a.mdx": "---\nid: k1\ntitle: 429\n---\nToo Many Requests.\n\n```http\nHTTP/1.1 429\n```\n",
+      "02-b.mdx": "---\nid: k2\ntitle: 401 vs 403\n---\nWho you are vs what you may do.\n",
+    });
+    const { errors, warnings } = await validateContent(root);
+    expect(errors).toEqual([]);
+    expect(warnings.filter((w) => w.includes("/cards/"))).toEqual([]);
+  });
+
+  it("warns, without failing, when a card has grown past one idea and one example", async () => {
+    const long = Array.from({ length: 160 }, () => "word").join(" ");
+    await addCards({ "01-a.mdx": `---\nid: k1\ntitle: Long\n---\n${long}\n` });
+    const { errors, warnings } = await validateContent(root);
+    expect(errors).toEqual([]);
+    expect(warnings.some((w) => w.includes("u/cards/01-a.mdx: 160 words"))).toBe(true);
   });
 
   it("allows tags and imports inside code, and the Go deeper marker", async () => {

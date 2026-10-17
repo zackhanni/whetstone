@@ -2,6 +2,7 @@ import Link from "next/link";
 import { loadTrack, listTrackSlugs } from "@/lib/content";
 import { UnitProgress } from "@/components/unit-progress";
 import { TagChips } from "@/components/tag-chips";
+import { DEPTH_LABEL } from "@/lib/depth";
 
 export const dynamicParams = false;
 
@@ -43,7 +44,7 @@ export default async function TrackPage({ params }: { params: Promise<{ track: s
                   <span className="text-slate-500">{i + 1}.</span> {u.title}
                 </h2>
                 <span className="shrink-0 text-xs text-slate-500">
-                  {DIFFICULTY[u.difficulty] ?? u.difficulty} · ~{u.estimatedMinutes} min
+                  {DEPTH_LABEL[u.depth]} · {DIFFICULTY[u.difficulty] ?? u.difficulty} · ~{u.estimatedMinutes} min
                 </span>
               </div>
               <TagChips skills={u.skills} className="mt-2" />

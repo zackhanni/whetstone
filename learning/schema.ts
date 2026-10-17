@@ -57,6 +57,17 @@ export const ReadingBlock = Identified.extend({
   dir: z.string().min(1).default("reading"), // folder (relative to the unit) holding the tiers
 }).strict();
 
+/**
+ * Cards — a deck of short notes, each one idea plus one example: a reminder, not a mastery
+ * ladder. Same folder convention as a reading, minus the tiers: <dir>/*.mdx, ordered by filename,
+ * each with `id` + `title` frontmatter. A unit of only cards is a reference unit; adding
+ * assessments later "blooms" it into a lesson (docs/cards-and-lesson-depth.md).
+ */
+export const CardsBlock = Identified.extend({
+  type: z.literal("cards"),
+  dir: z.string().min(1).default("cards"), // folder (relative to the unit) holding the card files
+}).strict();
+
 /** One multiple-choice question. `answer` references option id(s), so options shuffle freely. */
 export const QuizQuestion = Identified.extend({
   prompt: z.string().min(1),
@@ -135,6 +146,7 @@ export const ChallengeBlock = Identified.extend({
 
 export const Block = z.discriminatedUnion("type", [
   ReadingBlock,
+  CardsBlock,
   QuizBlock,
   FillBlankBlock,
   PredictOutputBlock,
@@ -175,13 +187,17 @@ export const Unit = z
       urls.add(src.url);
     });
 
-    // Rule 3, the part a machine can check: readings open the unit and challenges close it.
-    // (Whether each assessment is harder than the last is still the author's judgment.)
-    const firstNonReading = unit.blocks.findIndex((b) => b.type !== "reading");
+    // Rule 3, the part a machine can check: teaching blocks (readings, cards) open the unit and
+    // challenges close it. (Whether each assessment is harder than the last is still judgment.)
+    const isTeaching = (b: { type: string }) => b.type === "reading" || b.type === "cards";
+    const firstAssessment = unit.blocks.findIndex((b) => !isTeaching(b));
     const firstChallenge = unit.blocks.findIndex((b) => b.type === "challenge");
     unit.blocks.forEach((b, i) => {
-      if (b.type === "reading" && firstNonReading !== -1 && i > firstNonReading)
-        issue(["blocks", i], `reading "${b.id}" comes after an assessment — readings open the unit`);
+      if (isTeaching(b) && firstAssessment !== -1 && i > firstAssessment)
+        issue(
+          ["blocks", i],
+          `${b.type} "${b.id}" comes after an assessment — readings and cards open the unit`,
+        );
       if (b.type !== "challenge" && firstChallenge !== -1 && i > firstChallenge)
         issue(["blocks", i], `"${b.id}" comes after a challenge — challenges close the unit`);
     });
