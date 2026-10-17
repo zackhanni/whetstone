@@ -25,7 +25,7 @@ subdomain and what it serves.
 Three beliefs that don't hold:
 
 - **"CORS protects us."** CORS decides whether a page from another origin may *read* your
-  response (the [`cors-and-preflight`](/learn/http-and-apis/cors-and-preflight) unit). A cross-site form `POST` is sent without any CORS
+  response (the [CORS & preflight](/learn/http-and-apis/cors-and-preflight) unit). A cross-site form `POST` is sent without any CORS
   check, and CSRF never needed the response. A preflight only happens for non-simple requests —
   a JSON `Content-Type` or a custom header — which is why requiring one helps, and why an endpoint
   that also accepts a form-encoded or `text/plain` body is exposed.

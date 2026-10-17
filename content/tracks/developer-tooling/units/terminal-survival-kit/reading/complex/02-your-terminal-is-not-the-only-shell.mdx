@@ -41,7 +41,7 @@ ones), with the same consequence.
 
 `git commit` without `-m` opens an editor, `gh auth login` asks questions, `ssh-keygen` asks for
 a passphrase. All of them expect a human on a **TTY** (a terminal device). Run them where there
-isn't one — a CI job, a script with redirected input, an agent's shell — and they can't ask.
+isn't one — a CI job, a cron job, an agent's shell — and they can't ask.
 Some stop with an error (`git commit` with no editor set, under `TERM=dumb`, prints
 `error: Terminal is dumb, but EDITOR unset`). Others read standard input instead and take
 whatever is there, often nothing — the SSH unit shows `ssh-keygen` quietly creating a key

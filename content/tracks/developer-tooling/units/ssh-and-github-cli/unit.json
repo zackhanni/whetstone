@@ -69,6 +69,10 @@
     {
       "title": "OpenBSD manual: ssh-keygen(1)",
       "url": "https://man.openbsd.org/ssh-keygen"
+    },
+    {
+      "title": "OpenBSD manual: readpassphrase(3) (reads /dev/tty, falls back to standard input)",
+      "url": "https://man.openbsd.org/readpassphrase.3"
     }
   ],
   "blocks": [

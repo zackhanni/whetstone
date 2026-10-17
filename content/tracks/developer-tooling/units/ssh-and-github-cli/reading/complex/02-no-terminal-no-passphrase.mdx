@@ -4,8 +4,8 @@ title: No terminal, no passphrase — what prompts do without a TTY
 ---
 
 Logins and key generation are **interactive**: they print a question and wait for a human at a
-terminal. Run them from somewhere that has no terminal — a setup script with redirected input,
-a CI step, an AI agent's shell tool — and the question has nobody to answer it. What happens
+terminal. Run them from somewhere that has no terminal — a cron job, a CI step, an AI agent's
+shell tool — and the question has nobody to answer it. What happens
 next depends on the program, and the dangerous case is the one that **succeeds**.
 
 ## ssh-keygen takes standard input instead
@@ -50,7 +50,13 @@ the same login session use the agent too.
 <!--more-->
 
 **The same fallback, on purpose.** Because ssh-keygen reads standard input when there's no
-terminal, `printf 'pw\npw\n' | ssh-keygen …` sets a real passphrase from a script. That's
-exactly why it's dangerous by accident: an empty pipe is a valid answer too. To find out
-whether a shell can prompt at all, test whether its standard input is a terminal:
-`[ -t 0 ] && echo tty || echo "no tty"`.
+terminal, `printf 'pw\npw\n' | ssh-keygen …` sets a real passphrase from a script that has no
+terminal. That's exactly why it's dangerous by accident: an empty pipe is a valid answer too.
+
+**Redirecting input isn't the same as having no terminal.** The prompt opens the controlling
+terminal (`/dev/tty`) first and uses standard input only when that fails, so
+`true | ssh-keygen …` typed into your own terminal still asks you there. To find out whether a
+shell can prompt at all, test whether `/dev/tty` opens:
+`( : </dev/tty ) 2>/dev/null && echo tty || echo "no tty"`. `[ -t 0 ]` answers a different
+question — whether standard input is a terminal — and says "no" whenever input comes from a pipe
+or a file.

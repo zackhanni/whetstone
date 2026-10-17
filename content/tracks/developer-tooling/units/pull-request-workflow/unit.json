@@ -279,7 +279,7 @@
             }
           ],
           "answer": "new-commit",
-          "explanation": "GitHub's merge-methods docs warn about exactly this: after a squash merge, continuing on the same head branch makes later PRs list the already-merged commits (and can repeat conflicts). The fix is to start each change from the updated `main` — or `git rebase --onto main <old tip>` to keep only the new commits."
+          "explanation": "GitHub's merge-methods docs warn about exactly this: after a squash merge, continuing on the same head branch makes later PRs list the already-merged commits (and can repeat conflicts). The fix is to start each change from the updated `main` — or `git fetch`, then `git rebase --onto origin/main <old tip>` to keep only the new commits (the squash commit is on GitHub's `main`, not yet in your local one)."
         },
         {
           "id": "drain-order",
@@ -287,7 +287,7 @@
           "options": [
             {
               "id": "retarget-first",
-              "text": "`gh pr edit 2 --base main`, merge #1, `git rebase --onto main feature-a` on `feature-b`, force-push with a lease, then delete `feature-a`"
+              "text": "`gh pr edit 2 --base main`, merge #1, `git fetch`, `git rebase --onto origin/main feature-a` on `feature-b`, force-push with a lease, then delete `feature-a`"
             },
             {
               "id": "merge-delete",
@@ -303,7 +303,7 @@
             }
           ],
           "answer": "retarget-first",
-          "explanation": "Retarget the child **before** its base branch can disappear: GitHub's docs promise a retarget when a merged PR's head branch is deleted, but `gh pr merge --delete-branch` has an open bug report (cli/cli#1168) in which the child PR is closed instead — and a closed PR can't change its base. Merging #2 first lands `b` in `feature-a`, not `main`. After a squash, `--onto` drops `a`'s now-duplicate commits from `feature-b`. GitHub's native stacks (public preview since July 2026) automate this for stacks created as stacks."
+          "explanation": "Retarget the child **before** its base branch can disappear: GitHub's docs promise a retarget when a merged PR's head branch is deleted, but `gh pr merge --delete-branch` has an open bug report (cli/cli#1168) in which the child PR is closed instead — and a closed PR can't change its base. Merging #2 first lands `b` in `feature-a`, not `main`. After a squash, `--onto` drops `a`'s now-duplicate commits from `feature-b`; fetch first and rebase onto `origin/main`, because the squash commit was made on GitHub and your local `main` doesn't have it yet. GitHub's native stacks (public preview since July 2026) automate this for stacks created as stacks."
         }
       ]
     },

@@ -181,6 +181,12 @@ const ERROR_CASES: [string, () => Promise<unknown>, string][] = [
   ["solution identical to the starter", () => write("content/challenges/c/solution.tsx", FIXTURE["content/challenges/c/Thing.tsx"]), "identical to the starter"],
   ["grader imports vitest", () => write("content/challenges/c/Thing.test.tsx", 'import { it } from "vitest";\n'), "jest-style globals, not Vitest"],
   ["undeclared package import", () => write("content/challenges/c/Thing.tsx", 'import x from "lodash";\nexport function Thing() {}\n'), 'imports "lodash"'],
+  [
+    "undeclared import after a multi-line template literal",
+    () => write("content/challenges/c/Thing.tsx", 'const sample = `\nimport x from "lodash";\n`;\nimport y from "left-pad";\nexport function Thing() {}\n'),
+    'imports "left-pad"',
+  ],
+  ["undeclared require inside a template expression", () => write("content/challenges/c/Thing.tsx", 'const s = `pad: ${require("left-pad")}`;\nexport function Thing() {}\n'), 'imports "left-pad"'],
   ["jest-dom matcher", () => write("content/challenges/c/Thing.test.tsx", 'it("x", () => { expect(el).toBeInTheDocument(); });\n'), "jest-dom matcher toBeInTheDocument"],
   ["vi.* helper", () => write("content/challenges/c/Thing.test.tsx", 'it("x", () => { vi.fn(); });\n'), "vi.* / jest.*"],
   ["jest.mock", () => write("content/challenges/c/Thing.test.tsx", 'jest.mock("./Thing");\n'), "uses jest.mock"],
@@ -207,6 +213,11 @@ const ERROR_CASES: [string, () => Promise<unknown>, string][] = [
   ],
   ["invisible character in a reading", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nOne\u2028two.\n"), "invisible character U+2028"],
   ["invisible character in unit.json", () => set(UNIT, ["blocks", 1, "questions", 0, "explanation"], "because\u200b"), "invisible character U+200B"],
+  ["word joiner in a reading", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nOne\u2060two.\n"), "invisible character U+2060"],
+  ["bidi override in unit.json", () => set(UNIT, ["blocks", 1, "questions", 0, "explanation"], "because\u202e"), "invisible character U+202E"],
+  ["invisible character in track.json", () => set(TRACK, ["description"], "D\u200b"), "track t/track.json: contains the invisible character U+200B"],
+  ["invisible character in catalog.json", () => push(CATALOG, ["tracks"], "t\u2060"), "content/catalog.json: contains the invisible character U+2060"],
+  ["invisible character in a challenge file", () => write("content/challenges/c/Thing.tsx", "export function Thing() {\n  return null;\u200b\n}\n"), "challenge c/Thing.tsx: contains the invisible character U+200B"],
   ["link to a unit that doesn't exist", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nSee [the other unit](/learn/t/nope).\n"), "links to /learn/t/nope"],
   ["link to a unit under the wrong track", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nSee [it](/learn/other/u).\n"), "links to /learn/other/u"],
   [
@@ -259,6 +270,14 @@ describe("validateContent non-errors", () => {
     await write(
       "content/challenges/c/Thing.tsx",
       '// the list comes from "the server", not from "lodash"\n/* import x from "lodash" */\nexport function Thing() {\n  return null;\n}\n',
+    );
+    expect((await validateContent(root)).errors).toEqual([]);
+  });
+
+  it("ignores import-looking lines inside a multi-line template literal", async () => {
+    await write(
+      "content/challenges/c/Thing.tsx",
+      'const sample = `\nimport x from "lodash";\nexport * from "left-pad";\nconst y = require("left-pad");\n${"a" + `b`}\n`;\nexport function Thing() {\n  return sample;\n}\n',
     );
     expect((await validateContent(root)).errors).toEqual([]);
   });

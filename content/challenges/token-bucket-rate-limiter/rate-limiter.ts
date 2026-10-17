@@ -8,8 +8,9 @@
  * Four bugs, in the order worth fixing them:
  *   1. Per-key buckets — every key shares one bucket, so one busy client denies everyone.
  *   2. The cap — refill isn't capped at `capacity`, so a long-idle client can burst without limit.
- *   3. Fractional refill — whole tokens are floored away on every call, so a client that polls
- *      faster than one token per interval never gets a token again.
+ *   3. Fractional refill — each call floors the refill to whole tokens and resets the clock, so the
+ *      fraction is thrown away and a client that polls faster than one token per interval never
+ *      gets a token again.
  *   4. retryAfterMs — it reports the time until the bucket is FULL, not until the next token.
  */
 

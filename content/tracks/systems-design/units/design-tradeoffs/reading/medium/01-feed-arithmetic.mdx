@@ -27,7 +27,7 @@ reads:  5,800/s × 200 followed accounts ≈ 1.16 million per-account lookups/s,
 ```
 
 Sending those as 200 separate queries is the N+1 shape from the Databases track's
-[`n-plus-one-queries`](/learn/databases/n-plus-one-queries) unit. Batching them into one `WHERE author_id = ANY($1)` query saves the
+[N+1 queries](/learn/databases/n-plus-one-queries) unit. Batching them into one `WHERE author_id = ANY($1)` query saves the
 round trips, but the database still reads 200 accounts' recent posts for every open.
 
 Write fan-out turns 1.16M lookups/s on the latency-sensitive path (someone is staring at a

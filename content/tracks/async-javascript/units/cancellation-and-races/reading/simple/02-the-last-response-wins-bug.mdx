@@ -25,7 +25,7 @@ async function onQuery(query) {
 
 It's a race, so it slips through testing on a fast local network and shows up for users on
 mobile. Debouncing makes it rarer. It doesn't fix it, because debouncing controls when requests
-start, not when they finish (the [`debounce-and-throttle-from-scratch`](/learn/async-javascript/debounce-and-throttle-from-scratch) unit).
+start, not when they finish (the [Debounce & throttle from scratch](/learn/async-javascript/debounce-and-throttle-from-scratch) unit).
 
 There are two fixes, and they solve different halves of the problem:
 
@@ -64,5 +64,5 @@ parse step after the response. Aborting saves the wasted work. Production code u
 
 Autosave (an older save landing after a newer one), tabs that load data (switching tabs quickly),
 and pagination (page 2's response after page 3's) are all "last response wins". The fix has the
-same shape each time: cancel what's stale, and let only the newest result write. The [`use-effect`](/learn/react-hooks-and-rendering/use-effect)
+same shape each time: cancel what's stale, and let only the newest result write. The [useEffect](/learn/react-hooks-and-rendering/use-effect)
 unit shows the React version: an abort, or an `ignore` flag, in the effect's cleanup.

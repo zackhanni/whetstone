@@ -56,11 +56,14 @@ fails with `No stash entries found.` By hand: read `git stash list` before you p
 compare the top of the stack before and after, and pop only if it changed:
 
 ```sh
-before=$(git rev-parse -q --verify refs/stash)
+before=$(git rev-parse -q --verify refs/stash || true)   # empty stack: prints nothing, exits 1
 git stash push -- app.ts
-after=$(git rev-parse -q --verify refs/stash)
+after=$(git rev-parse -q --verify refs/stash || true)
 if [ "$before" != "$after" ]; then git stash pop; fi
 ```
+
+The `|| true` matters under `set -e`: with no stash entries, `rev-parse` exits 1, and that
+failed assignment would stop the script before it stashed anything.
 
 <!--more-->
 

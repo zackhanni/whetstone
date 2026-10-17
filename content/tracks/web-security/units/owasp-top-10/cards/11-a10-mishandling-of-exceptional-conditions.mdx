@@ -18,7 +18,7 @@ async function canEdit(userId: string, docId: string): Promise<boolean> {
 ```
 
 The `catch` should return `false` and raise an alert. The same shape hides in config: a missing
-secret defaulted to `""` (the [`secrets-and-config`](/learn/web-security/secrets-and-config) unit).
+secret defaulted to `""` (the [Secrets & config](/learn/web-security/secrets-and-config) unit).
 
 OWASP's fixes: catch errors where they happen and handle them meaningfully, keep a global handler
 as a backstop, roll a failed transaction back as a whole ("failing closed"), show users errors

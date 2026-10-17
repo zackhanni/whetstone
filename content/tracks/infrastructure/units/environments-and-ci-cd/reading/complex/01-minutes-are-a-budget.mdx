@@ -25,7 +25,7 @@ Each **job**, not each run. So the same 160 seconds of work costs differently by
 | --- | --- |
 | one job, 160 s | 3 minutes |
 | four parallel jobs, 40 s each | 4 minutes |
-| a 10-job matrix, 20 s each | 10 minutes |
+| an 8-job matrix, 20 s each | 8 minutes |
 
 And each job pays its own setup: a fresh runner, checkout, toolchain, dependency install. A
 job that does 5 seconds of linting after 50 seconds of `install` bills a full minute for 55

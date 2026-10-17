@@ -18,7 +18,7 @@ doesn't, or notices too late). For a `GET` that only costs some wasted work. For
   track covers idempotency keys).
 - **Only retry a timed-out request automatically if repeating it is safe.**
 
-**Abort doesn't order writes.** The [`debounced-input-and-autosave`](/learn/react-hooks-and-rendering/debounced-input-and-autosave) unit's out-of-order saves are
+**Abort doesn't order writes.** The [Debounced input & autosave](/learn/react-hooks-and-rendering/debounced-input-and-autosave) unit's out-of-order saves are
 not fixed by aborting the older save: the older one may already be at the server, queued behind
 nothing. Ordering is the server's job. Send a version or `updatedAt`, and have the server reject
 stale writes. Or serialise the saves on the client, so the next one waits for the current one to

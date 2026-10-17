@@ -4,7 +4,7 @@ title: The two races cache-aside still has
 ---
 
 Updating the database before deleting the key closes one race (the NestJS track's
-[`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit). Two remain, and at fleet scale the fixes have to live
+[Caching & rate limits with Redis](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit). Two remain, and at fleet scale the fixes have to live
 in the shared cache, not in one process.
 
 **The stale set.** A reader that misses can be slower than a writer:
@@ -34,7 +34,7 @@ nothing left in the cache to compare A's old version against. You can build the 
 
 (Versions work if the writer *leaves* its version behind instead of deleting — the new value, or
 a tombstone holding the version — and every fill refuses to overwrite a newer version: the
-version-column idea from [`transactions-and-isolation`](/learn/databases/transactions-and-isolation), applied to the cache.) With neither, the
+version-column idea from [Transactions & isolation](/learn/databases/transactions-and-isolation), applied to the cache.) With neither, the
 TTL is your only bound on how long a stale set survives, so choose it knowing that.
 
 **The stampede across the fleet.** A hot key expires and every request that misses asks the

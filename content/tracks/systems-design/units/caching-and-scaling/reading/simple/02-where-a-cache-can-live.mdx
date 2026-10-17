@@ -18,7 +18,7 @@ Two rules fall out of that table:
 - **Public vs private decides the outer layers.** A response that differs per user must never
   be stored by a shared cache under a URL every user requests. Which headers say that
   (`Cache-Control: private` vs `public`, `s-maxage`) is the Next.js track's
-  [`response-headers-caching-compression`](/learn/nextjs-and-the-network/response-headers-caching-compression) unit; the design decision is *which responses are
+  [Response headers: HTTP caching & compression](/learn/nextjs-and-the-network/response-headers-caching-compression) unit; the design decision is *which responses are
   public at all*.
 - **The further out, the longer a mistake lives.** A wrong value in Redis is one `DEL` from
   fixed. A wrong value in a browser stays until it expires. That's why the outer layers get
@@ -30,4 +30,4 @@ spells out. An in-process cache costs nothing to run, but each server has its ow
 requests can see different values), a new server starts cold, and the load on the database
 grows with the number of servers. A shared cache such as Redis fixes all three — and becomes
 one more fleet that has to stay available. (Cache-aside in Nest, with TTLs and a plan for when
-Redis is down, is the [`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit.)
+Redis is down, is the [Caching & rate limits with Redis](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit.)

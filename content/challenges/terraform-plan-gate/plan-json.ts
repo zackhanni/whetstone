@@ -7,14 +7,15 @@
  */
 
 /**
- * The documented values of `change.actions` are exactly these arrays:
+ * The JSON format reference lists these values of `change.actions`:
  *   ["no-op"]  ["create"]  ["read"]  ["update"]  ["delete"]
  *   ["delete", "create"]   — replace: destroy the old object, then create the new one (the default)
  *   ["create", "delete"]   — replace with `create_before_destroy`: create first, then destroy
- * A replacement is spelled as two actions so that a caller can scan for "delete" and catch every
- * plan that deletes something.
+ * Treat the list as open: Terraform 1.16 also emits ["forget"] for a `removed` block with
+ * `destroy = false`, which the reference doesn't list. A replacement is spelled as two actions so
+ * that a caller can scan for "delete" and catch every plan that deletes something.
  */
-export type Action = "no-op" | "create" | "read" | "update" | "delete";
+export type Action = "no-op" | "create" | "read" | "update" | "delete" | "forget";
 
 export type ResourceChange = {
   address: string; // e.g. "random_pet.server", "module.api.aws_db_instance.this"

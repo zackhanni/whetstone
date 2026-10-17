@@ -3,7 +3,7 @@ id: cache-aside-in-order
 title: Cache-aside, sized — the miss rate is the database's load
 ---
 
-The pattern itself is the NestJS track's [`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit: read the
+The pattern itself is the NestJS track's [Caching & rate limits with Redis](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit: read the
 cache; on a miss, load from the database and leave a copy with a TTL; on a write, update the
 database **first**, then delete the key (deletes, unlike sets, can't land in the wrong order).
 This tier assumes that and asks the design questions around it: what to cache, how big, and what
@@ -39,8 +39,8 @@ the top, read a hit ratio as its complement.
   at once;
 - traffic shifts to keys nobody has asked for lately — a newsletter links to old posts.
 
-And the worst day is the cache being gone altogether: 100% misses. The [`design-framework`](/learn/systems-design/design-framework)
-unit's complex tier does that arithmetic, and AWS's caching article gives the test: run load
+And the worst day is the cache being gone altogether: 100% misses. The complex tier of
+[A framework for any design](/learn/systems-design/design-framework) does that arithmetic, and AWS's caching article gives the test: run load
 tests with the cache disabled.
 
 **The TTL is a requirement, not a tuning knob.** Azure's Cache-Aside guidance is to fit the

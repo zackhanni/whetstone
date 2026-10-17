@@ -4,7 +4,7 @@ title: The URL shortener, steps 3 and 4 — API and data model
 ---
 
 The API is the functional requirements written as requests. (Which *style* — REST, RPC, gRPC —
-is the HTTP track's [`rest-rpc-grpc`](/learn/http-and-apis/rest-rpc-grpc) unit; a public API that anyone calls from any language, plus a
+is the HTTP track's [REST vs RPC vs gRPC](/learn/http-and-apis/rest-rpc-grpc) unit; a public API that anyone calls from any language, plus a
 redirect a browser follows, is resource-shaped HTTP's home ground.)
 
 ```http
@@ -35,7 +35,7 @@ GET /api/links/aZ3kP9q/stats
 Three choices hide in there:
 
 - **`Idempotency-Key` on create.** A client that times out and retries would otherwise mint two
-  codes for one link. How the header works is the HTTP track's [`request-response-anatomy`](/learn/http-and-apis/request-response-anatomy);
+  codes for one link. How the header works is the HTTP track's [Request & response anatomy](/learn/http-and-apis/request-response-anatomy) unit;
   *why it's here* is the requirements: create is a POST, POST isn't idempotent, and mobile
   clients retry.
 - **302, not 301.** The status code decides who may cache the redirect — and so whether you
@@ -59,7 +59,7 @@ CREATE TABLE links (
 Clicks are deliberately **not** a column the redirect bumps with
 `UPDATE links SET clicks = clicks + 1`. At ~4,000 redirects a second that's thousands of row
 writes a second, concentrated on the most popular links, where concurrent updates to one row
-queue behind each other's row lock (the Databases track's [`transactions-and-isolation`](/learn/databases/transactions-and-isolation) unit) —
+queue behind each other's row lock (the Databases track's [Transactions & isolation](/learn/databases/transactions-and-isolation) unit) —
 all on the path with the strictest latency budget. Instead the redirect publishes a click event
 and returns; a consumer adds up counts per minute into a separate table. The trade is
 freshness, which the requirements allowed, for a redirect that does one read and no writes.
@@ -69,5 +69,5 @@ freshness, which the requirements allowed, for a redirect that does one read and
 Most queues deliver at least once, so the consumer can see the same click event twice. For
 analytics that tolerate a lag, a rare double count may be acceptable — but that's a decision to
 state, not an accident to discover. If counts become billing, the consumer has to deduplicate by
-event id (the NestJS track's [`nest-microservices-and-messaging`](/learn/backend-nestjs/nest-microservices-and-messaging) unit covers idempotent
+event id (the NestJS track's [Microservices & messaging](/learn/backend-nestjs/nest-microservices-and-messaging) unit covers idempotent
 handlers).

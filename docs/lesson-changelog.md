@@ -15,6 +15,7 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — PR #41/#42 review — git, ssh, systems-design and CI fixes; unit titles as link text; validator catches all format chars, track/catalog/code text, skips template imports.
 - 2026-10-17 — authoring system — validator rejects invisible characters and unresolved `/learn/` links, scans imports by statement; PLAYBOOK notes; unit slugs in readings become links (PR #33).
 - 2026-10-17 — taxonomy — new `infrastructure` root with 11 tags (Terraform, CI/CD, observability); every planned dimension has now landed (PR #32).
 - 2026-10-17 — infrastructure/terraform-basics — Terraform 1.16: state and locking, reading plans, drift, `moved`/`import`/`removed`. Challenge `terraform-plan-gate` (PR #32).

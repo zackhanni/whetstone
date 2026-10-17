@@ -13,6 +13,11 @@ redirect service 99.9%  ×  database 99.9%  ×  cache 99.9%
   = 0.999³ ≈ 0.997  →  99.7%, about 26 hours of downtime a year instead of 8¾
 ```
 
+The product assumes the parts fail **independently** — AWS's worked example says "independent
+systems". Outages that overlap (one bad deploy taking down all three at once) leave the path
+better off, up to 99.9%; outages that never overlap leave it at 1 − 3 × 0.1% = 99.7%. Until you
+know which, about 99.7% is the number you can promise.
+
 The same page names two ways back up:
 
 - **Redundancy adds nines.** Two independent copies, each 99.9% available, are down together
@@ -31,7 +36,7 @@ gone it sees all of them — **20× its usual read load**. The "soft" dependency
 outage one layer down. The fallback needs a cap (shed load, keep a small in-process cache, serve
 fewer requests well), and the article's advice is to run load tests with caches disabled.
 "We fall back to the database" is a claim to test, not a design. (What each Redis-backed piece
-does when Redis is unreachable is the [`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit's complex tier.)
+does when Redis is unreachable is the [Caching & rate limits with Redis](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit's complex tier.)
 
 <!--more-->
 

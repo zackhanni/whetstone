@@ -23,7 +23,7 @@ Two of those rows are design decisions in disguise. Splitting availability by pa
 create) lets the hot path be stricter than the rest. And "counts may lag" is permission to take
 click counting **off the redirect's critical path**: the redirect can emit an event and return,
 and something else counts later (the mechanics of handing work to a queue are the HTTP track's
-[`sync-vs-async-apis`](/learn/http-and-apis/sync-vs-async-apis) unit).
+[Sync vs async APIs](/learn/http-and-apis/sync-vs-async-apis) unit).
 
 **Estimates**, every assumption labelled:
 

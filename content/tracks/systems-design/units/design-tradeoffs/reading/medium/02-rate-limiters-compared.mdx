@@ -39,7 +39,7 @@ instead of one token. (`Retry-After` is in seconds, so the HTTP layer rounds up.
 
 **Where the state lives** decides whether the limit is real. Buckets kept in each server's
 memory multiply the limit by the number of servers — the NestJS track's
-[`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit shows it with `@nestjs/throttler` and moves the counts
+[Caching & rate limits with Redis](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit shows it with `@nestjs/throttler` and moves the counts
 to Redis. Sharing the state is half the fix. The other half is that the read-decide-write has to
 be **one step**: a bucket read with one Redis command, updated in Node and written back with
 another lets two concurrent requests both read the last token and both be allowed. Redis's

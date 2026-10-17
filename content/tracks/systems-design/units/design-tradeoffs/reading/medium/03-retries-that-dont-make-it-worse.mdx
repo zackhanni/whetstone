@@ -29,19 +29,19 @@ const delayMs = Math.random() * Math.min(10_000, 100 * 2 ** attempt); // capped 
 **Only retry what's safe to repeat.** A timeout doesn't tell you whether the side effect
 happened, so a retried `POST` needs an idempotency key: one id per operation, reused on every
 attempt, recognised by the server. The header and the server's half are the HTTP track's
-[`request-response-anatomy`](/learn/http-and-apis/request-response-anatomy); AWS's idempotent-APIs article describes the same contract with EC2's
+[Request & response anatomy](/learn/http-and-apis/request-response-anatomy) unit; AWS's idempotent-APIs article describes the same contract with EC2's
 `ClientToken`. The design rule that article adds is where the id is recorded: **in the same
 atomic operation as the side effect**, so the server can never have done one without the other.
 In practice that's a row in the same database transaction as the work — not a note in a cache
 written afterwards.
 
 Queues need the same thinking from the other side: most deliver at least once, so a consumer may
-see a message twice and must be idempotent (the NestJS track's [`nest-microservices-and-messaging`](/learn/backend-nestjs/nest-microservices-and-messaging)
-covers the handler side; [`sync-vs-async-apis`](/learn/http-and-apis/sync-vs-async-apis) covers webhooks, which retry too).
+see a message twice and must be idempotent (the NestJS track's [Microservices & messaging](/learn/backend-nestjs/nest-microservices-and-messaging)
+covers the handler side; [Sync vs async APIs](/learn/http-and-apis/sync-vs-async-apis) covers webhooks, which retry too).
 
 <!--more-->
 
-Which failures are worth retrying at all is [`request-response-anatomy`](/learn/http-and-apis/request-response-anatomy)'s table. AWS's article
+Which failures are worth retrying at all is the [Request & response anatomy](/learn/http-and-apis/request-response-anatomy) unit's table. AWS's article
 adds a caveat from experience: client errors usually won't succeed if repeated unchanged, but
 under eventual consistency a client error one moment can be a success the next — a "not found"
 for a record another service has just created. So "never retry a client error" has exceptions,

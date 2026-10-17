@@ -52,4 +52,6 @@ pushed (the Web Security track's secrets unit covers that side).
 
 **Ignored is not the same as safe.** `git add -f` adds an ignored file anyway, and a rule
 written for a directory (`build/`) doesn't match a file named `build`. To see every ignored file
-in a working tree, run `git status --short --ignored` — ignored paths show as `!!`.
+in a working tree, run `git status --short --ignored --untracked-files=all` — ignored paths show
+as `!!`. Without `--untracked-files=all`, a wholly ignored directory shows as one `!! build/` line
+and hides the files inside it.

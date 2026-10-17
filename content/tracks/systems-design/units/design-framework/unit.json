@@ -86,19 +86,19 @@
             { "id": "unknowable", "text": "Nothing until it's been load-tested" }
           ],
           "answer": "product",
-          "explanation": "Each hard dependency's failures are your failures, so the availabilities multiply: 0.999 × 0.999 × 0.999 ≈ 0.997, about 26 hours of downtime a year rather than 8¾. Nines *add* only for **redundant, independent** copies of the same component, where both must fail at once — the opposite arrangement. \"Weakest link\" would be true only if the failures always overlapped, which independent components don't."
+          "explanation": "Each hard dependency's failures are your failures, so the availabilities multiply: 0.999 × 0.999 × 0.999 ≈ 0.997, about 26 hours of downtime a year rather than 8¾. Nines *add* only for **redundant, independent** copies of the same component, where both must fail at once — the opposite arrangement. \"Weakest link\" would be true only if the failures always overlapped. Strictly, the product assumes independent failures (AWS's example says so); overlapping outages only help, and outages that never overlap give 1 − 3 × 0.1% = 99.7% — so about 99.7% is the claim that holds either way."
         },
         {
           "id": "redirect-status",
           "prompt": "Product wants accurate click counts **and** the ability to kill a phishing link immediately. Which redirect should the shortener send?",
           "options": [
-            { "id": "302", "text": "302 (or 307) — not stored by caches unless you add freshness headers, so every click reaches the server" },
+            { "id": "302", "text": "302 (or 307) — not stored by caches unless you add caching headers, so every click reaches the server" },
             { "id": "301", "text": "301 — browsers cache it, so redirects are faster" },
             { "id": "308", "text": "308 — it's permanent and keeps the request method" },
             { "id": "meta", "text": "200 with an HTML meta-refresh, so no redirect status is involved" }
           ],
           "answer": "302",
-          "explanation": "RFC 9110 makes 301 and 308 *heuristically cacheable*: a browser may reuse them without contacting you, so repeat clicks vanish from the count and a cached redirect keeps pointing at the phishing page — you can't purge a stranger's browser. 302 and 307 aren't stored without explicit freshness. 301's speed is real, which is why it's tempting; it's just bought with exactly the two requirements in the prompt. A meta-refresh page adds a full page load to every click, and a 200 is itself heuristically cacheable, so it doesn't escape caching either."
+          "explanation": "RFC 9110 makes 301 and 308 *heuristically cacheable*: a browser may reuse them without contacting you, so repeat clicks vanish from the count and a cached redirect keeps pointing at the phishing page — you can't purge a stranger's browser. 302 and 307 aren't stored unless their headers allow it — a lifetime such as `max-age`, or `Cache-Control: public`, which RFC 9111 says makes even a 302 heuristically cacheable — so send them without either. 301's speed is real, which is why it's tempting; it's just bought with exactly the two requirements in the prompt. A meta-refresh page adds a full page load to every click, and a 200 is itself heuristically cacheable, so it doesn't escape caching either."
         },
         {
           "id": "counter-codes",
@@ -110,7 +110,7 @@
             { "id": "slow", "text": "Lookups get slower as the numbers grow" }
           ],
           "answer": "enumerable",
-          "explanation": "A counter never repeats, so it never collides — it just needs one more character after 62⁷ codes. Its cost is that codes are sequential: increment and you're looking at someone else's link, which is fine for public links and a leak for private ones. Base62 (`0-9a-zA-Z`) is URL-safe by construction, and a primary-key lookup costs the same for the millionth code as the first."
+          "explanation": "A counter never repeats, so it never collides — it just needs one more character after 62⁷ codes. Its cost is that codes are sequential: increment and you're looking at someone else's link, which is fine for public links and a leak for private ones (random codes slow that down without stopping it — a private link needs an authorization check). Base62 (`0-9a-zA-Z`) is URL-safe by construction, and a primary-key lookup costs the same for the millionth code as the first."
         },
         {
           "id": "collision-rate",

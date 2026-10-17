@@ -321,11 +321,14 @@ Sandpack iframe:
   - `App.tsx`, `solution.tsx` and a `*.test.tsx`/`*.test.ts` grader exist
   - the solution differs from the starter
   - every bare import in every sandbox file (in `from` / `import "x"` / `import("x")` /
-    `require("x")` form, comments ignored) resolves to a sandbox package or a declared dependency
+    `require("x")` form; comments and template-literal text ignored) resolves to a sandbox
+    package or a declared dependency
   - the grader uses no jest-dom matcher and nothing from `vi.*` / `jest.*`
   - every test name in a grader file is unique (Sandpack keys its results by name)
-  - (all content) no invisible characters (zero-width, BOM, U+2028/2029, stray control
-    characters), and every `](/learn/…)` link resolves to a real track or unit
+  - (all content, including `catalog.json`, `track.json` and challenge code) no invisible
+    characters (every Unicode format character, such as zero-width spaces, the word joiner, the
+    BOM and bidi controls, plus U+2028/2029 and stray control characters), and every
+    `](/learn/…)` link resolves to a real track or unit
   - every sandbox package is a devDependency at the same pinned version
 - **The headless grader** (`pnpm test:challenges`) checks Rule 4's behaviour: the starter fails
   and the solution passes. `pnpm test:challenges:browser` checks the same in Sandpack itself
