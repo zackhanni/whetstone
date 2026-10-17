@@ -1,0 +1,81 @@
+---
+id: why-the-index-was-ignored
+title: Why the planner ignored your index
+---
+
+The index exists, `EXPLAIN` says `Seq Scan`. Work down this list — every case below except the
+collation one was run on PostgreSQL 18.
+
+## 1. The query wraps the column in a function or cast
+
+```text
+-- index on (email)
+EXPLAIN SELECT * FROM users WHERE lower(email) = 'user42@example.com';
+ Seq Scan on users
+   Filter: (lower(email) = 'user42@example.com'::text)
+
+-- index on (created_at)
+EXPLAIN SELECT * FROM orders WHERE created_at::date = '2025-03-01';
+ Seq Scan on orders
+   Filter: ((created_at)::date = '2025-03-01'::date)
+```
+
+The index holds `email`, not `lower(email)`, so it can't answer a question about `lower(email)`.
+Two fixes: rewrite the condition so the bare column is compared — for dates, a half-open range
+`created_at >= '2025-03-01' AND created_at < '2025-03-02'` gave an `Index Scan` — or index the
+expression itself:
+
+```sql
+CREATE INDEX users_lower_email_idx ON users (lower(email));
+-- now: Index Scan using users_lower_email_idx … Index Cond: (lower(email) = …)
+```
+
+An expression index matches only the same expression: `lower(email)` in the query, not
+`upper(email)` and not `email ILIKE …`.
+
+## 2. `LIKE` with a leading wildcard — or the wrong collation
+
+A B-tree can serve `LIKE 'User42%'` (it becomes a range: `>= 'User42' AND < 'User43'`), never
+`LIKE '%@example.com'` — the beginning of the string is unknown, so there's no place in the sorted
+order to start. For "contains" or "ends with" searches you need a different index type (the
+`pg_trgm` extension's trigram indexes), not a B-tree.
+
+Even the anchored pattern has a catch. In a database whose collation isn't `C` (check
+`SELECT datcollate FROM pg_database`; `en_US.UTF-8` is common), the default B-tree can't serve
+`LIKE` at all. On such a database (tested on PostgreSQL 14 with `en_US.UTF-8`; the rule is the same
+in 18), `LIKE 'User42%'` was a `Seq Scan` until:
+
+```sql
+CREATE INDEX users_email_pattern_idx ON users (email text_pattern_ops);
+```
+
+`text_pattern_ops` compares strictly character by character. Keep the default index too if you
+also run `<`/`>` range queries on the column — the pattern index can't serve those.
+
+## 3. The condition matches most of the table
+
+```text
+-- 95% of orders are 'shipped'; index on (status)
+EXPLAIN SELECT * FROM orders WHERE status = 'shipped';
+ Seq Scan on orders  (cost=0.00..4167.00 rows=190000 width=37)
+```
+
+This isn't a failure. Fetching 190,000 rows through an index means jumping around the table page
+by page; reading the table straight through is cheaper. An index pays off when it's *selective*.
+For a skewed column, the useful index is often a partial one on the rare value
+(`WHERE status = 'open'`).
+
+## 4. The planner's statistics are wrong
+
+The planner chooses by estimated row counts. After a bulk load, or when the data's shape has
+changed, the estimates can be far off. In `EXPLAIN ANALYZE`, compare `rows=` in the estimate with
+`rows=` in the `actual` part of the same node: a 100× miss is the planner working from bad
+information. Run `ANALYZE table_name` and look again.
+
+## Testing the theory
+
+The manual's procedure: run `ANALYZE` first, then, *for testing only*, `SET enable_seqscan = off`
+and re-run `EXPLAIN ANALYZE`. If it still won't use the index, the condition doesn't match the
+index (cases 1 and 2). If it uses it and runs slower, the planner was right (case 3). If it uses
+it and runs faster, the cost estimates are wrong (case 4). `RESET enable_seqscan` afterwards — it
+is a diagnostic, not a fix.

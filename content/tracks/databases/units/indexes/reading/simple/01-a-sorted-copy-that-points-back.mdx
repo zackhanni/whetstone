@@ -1,0 +1,43 @@
+---
+id: a-sorted-copy-that-points-back
+title: An index is a sorted copy that points back at the rows
+---
+
+A table's rows sit in no useful order. To answer `WHERE customer_id = 42` without an index,
+PostgreSQL reads every row and checks each one — a **sequential scan**. Fine for 100 rows; slow for
+10 million, and slower every month.
+
+An **index** is a second structure that keeps a column's values *sorted*, each with a pointer to
+the row it came from:
+
+```sql
+CREATE INDEX orders_customer_id_idx ON orders (customer_id);
+```
+
+The default kind is a **B-tree**: a shallow tree whose leaves hold the sorted values. Finding 42
+means walking down a few levels — a handful of page reads, and only a few more for a hundred
+million rows than for a thousand — then following the pointers to just the matching rows.
+
+Because the values are sorted, a B-tree helps with more than equality:
+
+| Query shape                                | Helped by an index on `created_at`? |
+| ------------------------------------------ | ----------------------------------- |
+| `WHERE created_at = …`                     | yes                                 |
+| `WHERE created_at >= … AND created_at < …` | yes — one contiguous slice          |
+| `ORDER BY created_at DESC LIMIT 20`        | yes — read the end of the index     |
+| `WHERE created_at::date = …`               | no — the index holds `created_at`, not the cast |
+
+**What it costs.** An index isn't free:
+
+- **Every write maintains it.** Each `INSERT` adds an entry to every index on the table (every
+  partial index whose condition the row meets), and
+  most `UPDATE`s do too (the exception: an update that changes no indexed column and fits on the
+  same page). Five indexes means five extra structures touched per write.
+- **Space** — an index on a big table is itself big.
+- **Building it blocks writes.** A plain `CREATE INDEX` lets reads continue but blocks `INSERT`,
+  `UPDATE` and `DELETE` until it finishes (the migrations unit covers `CONCURRENTLY`).
+
+So index for the queries you actually run, and drop indexes nothing uses.
+
+Two indexes you get without asking: every `PRIMARY KEY` and every `UNIQUE` constraint builds a
+unique B-tree index. A foreign key does **not** — `orders.customer_id` above needed its own.

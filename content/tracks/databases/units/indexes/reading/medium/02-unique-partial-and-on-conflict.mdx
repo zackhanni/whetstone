@@ -1,0 +1,76 @@
+---
+id: unique-partial-and-on-conflict
+title: Unique and partial indexes, and the ON CONFLICT trap
+---
+
+## A partial index covers only the rows you query
+
+5% of orders are `open`, and the dashboard only ever asks for open ones:
+
+```sql
+CREATE INDEX orders_open_created_idx ON orders (created_at) WHERE status = 'open';
+```
+
+The index holds entries only for rows that satisfy its predicate. On the 200,000-row table it's
+240 kB, against 4.4 MB for the primary key. The catch: the planner uses it only when the query's
+`WHERE` visibly implies the predicate, and the match is made when the plan is *built*.
+`WHERE status = 'open'` matches. A prepared `WHERE status = $1` matches only in a plan built for a
+specific value; once PostgreSQL switches that statement to a generic plan (one plan for any `$1`),
+the partial index is out. When a query depends on a partial index, write the predicate's literal
+into the SQL.
+
+## A partial *unique* index: unique among some rows
+
+Soft-deleted users keep their row (with `deleted_at` set), and a new account may reuse the email.
+"Unique email among live users" is a unique index with a predicate:
+
+```sql
+CREATE UNIQUE INDEX users_email_live ON users (email) WHERE deleted_at IS NULL;
+```
+
+A second live `ada@x.io` fails with `23505 duplicate key`; any number of deleted ones are fine.
+
+## The trap: `ON CONFLICT` has to name the predicate
+
+`INSERT … ON CONFLICT (cols) DO UPDATE` — an upsert — picks its *arbiter* index by inference:
+a unique index on exactly those columns. A partial unique index qualifies only if the statement
+repeats its predicate:
+
+```sql
+INSERT INTO users (email, name) VALUES ('ada@x.io', 'Ada Lovelace')
+ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name;
+-- ERROR 42P10: there is no unique or exclusion constraint matching
+--              the ON CONFLICT specification
+
+INSERT INTO users (email, name) VALUES ('ada@x.io', 'Ada Lovelace')
+ON CONFLICT (email) WHERE deleted_at IS NULL
+DO UPDATE SET name = EXCLUDED.name;
+-- INSERT 0 1 — updated the live Ada, left the deleted one alone
+```
+
+Two near-misses also fail: `ON CONFLICT ON CONSTRAINT users_email_live` (it's an index, not a
+constraint — `42704 does not exist`), and a predicate the index doesn't satisfy, such as
+`WHERE deleted_at IS NOT NULL` (`42P10` again).
+
+**Where it bites in practice: PostgREST and supabase-js.** `supabase.from('users').upsert(row,
+{ onConflict: 'email' })` sends `on_conflict=email`, and PostgREST builds
+`ON CONFLICT("email") DO UPDATE …` — a column list with no way to add a `WHERE`. Against a partial
+unique index that's the `42P10` error above, every time. Options, best first:
+
+1. If the business rule allows it, make uniqueness unconditional (a plain `UNIQUE` constraint).
+2. Express it as a full unique constraint the column list *can* infer — for soft deletes,
+   `UNIQUE NULLS NOT DISTINCT (email, deleted_at)` (PostgreSQL 15+) treats all live rows'
+   `NULL`s as equal, so `onConflict: 'email,deleted_at'` works. (Two rows deleted at the exact
+   same instant would now collide.)
+3. Put the upsert in a SQL function that writes the full `ON CONFLICT … WHERE` and call it via
+   `rpc()`.
+
+`ON CONFLICT DO NOTHING` *without* a column list handles conflicts on every unique index,
+partial ones included — but PostgREST always sends the column list.
+
+<!--more-->
+
+**Why upsert rather than "select, then insert or update"?** The manual guarantees that
+`ON CONFLICT DO UPDATE` produces an atomic insert-or-update outcome even under high concurrency.
+Two requests that each check "does Ada exist?" and both see "no" will both try to insert, and one
+fails — the check-then-act race the transactions unit covers.

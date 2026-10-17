@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 3,
+  "slug": "indexes",
+  "title": "Indexes & query plans: making the right reads cheap",
+  "skills": ["databases", "postgres", "indexes", "query-performance", "sql"],
+  "difficulty": "core",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Explain what a B-tree index makes cheap (equality, ranges, sorted reads) and what it costs every write",
+    "Read `EXPLAIN` and `EXPLAIN ANALYZE` output — scan types, estimated vs actual rows — and run `EXPLAIN ANALYZE` on a write inside a rolled-back transaction",
+    "Order a composite index's columns for a query: equality columns first, then one range or sort column (leftmost prefix, softened by PostgreSQL 18 skip scan)",
+    "Use partial and unique indexes, and make a partial unique index the `ON CONFLICT` target by repeating its predicate",
+    "Diagnose why an index isn't used: a function or cast on the column, a leading-wildcard or non-C-collation `LIKE`, a condition that matches most rows, stale statistics"
+  ],
+  "sources": [
+    { "title": "PostgreSQL 18 docs: Indexes — Introduction", "url": "https://www.postgresql.org/docs/18/indexes-intro.html" },
+    { "title": "PostgreSQL 18 docs: Index Types", "url": "https://www.postgresql.org/docs/18/indexes-types.html" },
+    { "title": "PostgreSQL 18 docs: Multicolumn Indexes", "url": "https://www.postgresql.org/docs/18/indexes-multicolumn.html" },
+    { "title": "PostgreSQL 18 docs: Partial Indexes", "url": "https://www.postgresql.org/docs/18/indexes-partial.html" },
+    { "title": "PostgreSQL 18 docs: Operator Classes (text_pattern_ops)", "url": "https://www.postgresql.org/docs/18/indexes-opclass.html" },
+    { "title": "PostgreSQL 18 docs: Index-Only Scans and Covering Indexes", "url": "https://www.postgresql.org/docs/18/indexes-index-only-scans.html" },
+    { "title": "PostgreSQL 18 docs: Examining Index Usage", "url": "https://www.postgresql.org/docs/18/indexes-examine.html" },
+    { "title": "PostgreSQL 18 docs: EXPLAIN", "url": "https://www.postgresql.org/docs/18/sql-explain.html" },
+    { "title": "PostgreSQL 18 docs: INSERT (ON CONFLICT)", "url": "https://www.postgresql.org/docs/18/sql-insert.html" },
+    { "title": "PostgreSQL 18 docs: PREPARE (generic vs custom plans)", "url": "https://www.postgresql.org/docs/18/sql-prepare.html" },
+    { "title": "PostgreSQL 18 docs: pg_trgm", "url": "https://www.postgresql.org/docs/18/pgtrgm.html" },
+    { "title": "PostgREST docs: Upsert and on_conflict", "url": "https://docs.postgrest.org/en/stable/references/api/tables_views.html" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-indexes", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-indexes",
+      "questions": [
+        {
+          "id": "index-cost",
+          "prompt": "An `events` table takes thousands of inserts a second. Someone adds six indexes so every dashboard query is fast. What did that cost?",
+          "options": [
+            { "id": "writes", "text": "Every insert now also writes an entry into each of the six indexes, so inserts get slower and the table's total size grows" },
+            { "id": "nothing", "text": "Nothing at write time — indexes are only consulted by reads" },
+            { "id": "reads", "text": "Reads get slower, because the planner has more indexes to choose between" },
+            { "id": "rebuild", "text": "Each index is rebuilt nightly, which locks the table" }
+          ],
+          "answer": "writes",
+          "explanation": "The manual: once an index exists, the system has to keep it synchronized with the table, which adds overhead to data manipulation. An insert touches the table *and* every index on it (every partial index whose predicate the row meets). For a write-heavy table that's the trade to weigh — and the reason to drop indexes nothing uses. Indexes aren't rebuilt on a schedule, and the planner's extra work to consider six more indexes is small next to the write cost."
+        },
+        {
+          "id": "explain-analyze-executes",
+          "prompt": "To see why a cleanup is slow, you run `EXPLAIN ANALYZE DELETE FROM sessions WHERE expires_at < now() - interval '30 days'` on production. What happened?",
+          "options": [
+            { "id": "deleted", "text": "The rows were deleted — `ANALYZE` executes the statement; only a `SELECT`'s output is discarded" },
+            { "id": "plan-only", "text": "Nothing changed; `EXPLAIN` never executes anything" },
+            { "id": "dry-run", "text": "It ran in an automatic dry-run transaction that was rolled back" },
+            { "id": "error", "text": "It failed: `EXPLAIN ANALYZE` only accepts `SELECT`" }
+          ],
+          "answer": "deleted",
+          "explanation": "Plain `EXPLAIN` only plans. With `ANALYZE` the statement really runs so PostgreSQL can measure it, and the manual is explicit that side effects happen as usual. To measure a write safely: `BEGIN; EXPLAIN ANALYZE …; ROLLBACK;`. There is no automatic dry-run."
+        },
+        {
+          "id": "estimate-vs-actual",
+          "prompt": "A plan node says `(cost=… rows=12 …) (actual time=… rows=48210.00 loops=1)`, right after a nightly bulk import. What's the first thing to do?",
+          "options": [
+            { "id": "analyze", "text": "Run `ANALYZE` on the table — the planner is estimating from statistics that predate the import" },
+            { "id": "index", "text": "Add another index on the filtered column" },
+            { "id": "vacuum-full", "text": "Run `VACUUM FULL` to compact the table" },
+            { "id": "nothing", "text": "Nothing — estimates are always rough, so a 4,000× miss is normal" }
+          ],
+          "answer": "analyze",
+          "explanation": "The first numbers are the estimate, the `actual` ones are what happened. A miss that large means the planner chose its plan for 12 rows and got 48,210, so a nested loop or an index scan picked for \"a few rows\" is now doing far more work. The manual's first rule for examining index use is to run `ANALYZE` so the statistics reflect the data. More indexes or a `VACUUM FULL` don't fix estimates."
+        },
+        {
+          "id": "composite-order",
+          "prompt": "The hot query is `WHERE tenant_id = $1 AND created_at >= $2 ORDER BY created_at DESC LIMIT 50`. Which index?",
+          "options": [
+            { "id": "tenant-created", "text": "`(tenant_id, created_at)`" },
+            { "id": "created-tenant", "text": "`(created_at, tenant_id)`" },
+            { "id": "two-singles", "text": "Two separate indexes, one on `tenant_id` and one on `created_at`" },
+            { "id": "created-only", "text": "`(created_at)` alone — the range and the sort are both on it" }
+          ],
+          "answer": "tenant-created",
+          "explanation": "Equality columns first, then the range or sort column. `(tenant_id, created_at)` jumps to this tenant's section, where entries are already in `created_at` order: read the newest 50 and stop. `(created_at, tenant_id)` makes the scan walk every tenant's rows in the date range and filter — in the reading's test the same 13 rows cost 523 pages instead of 16. Two single-column indexes can be combined with a bitmap, but that loses the ordering, so the `ORDER BY` needs a sort."
+        },
+        {
+          "id": "leftmost-prefix",
+          "prompt": "There's an index on `(customer_id, created_at)` with thousands of customers. A new query filters only on `created_at > now() - interval '1 day'`. What should you expect?",
+          "options": [
+            { "id": "poor-fit", "text": "The index is a poor fit — that day's entries are scattered across every customer's section — so expect a different plan; add an index led by `created_at` if the query matters" },
+            { "id": "full-use", "text": "It uses the index fully: an index can be searched on any of its columns" },
+            { "id": "skip-always", "text": "PostgreSQL 18 skip scan makes column order irrelevant, so it's as good as an index on `created_at`" },
+            { "id": "error", "text": "The query errors because it doesn't mention the first indexed column" }
+          ],
+          "answer": "poor-fit",
+          "explanation": "The index is sorted by `customer_id` first; dates are only ordered within each customer. PostgreSQL 18's skip scan can run one search per leading value, but the manual says it's generally chosen only when there are *few* distinct values — with thousands of customers the whole index would have to be read, so the planner usually prefers a sequential scan. Nothing errors: an unsuitable index simply isn't used."
+        },
+        {
+          "id": "upsert-42p10",
+          "prompt": "`users` has `CREATE UNIQUE INDEX users_email_live ON users (email) WHERE deleted_at IS NULL`. `INSERT … ON CONFLICT (email) DO UPDATE …` fails with `42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification`. Why?",
+          "options": [
+            { "id": "needs-predicate", "text": "Inference only picks a partial unique index when the statement repeats its predicate: `ON CONFLICT (email) WHERE deleted_at IS NULL`" },
+            { "id": "needs-constraint", "text": "`ON CONFLICT` only works with constraints, never with indexes; name it with `ON CONSTRAINT users_email_live`" },
+            { "id": "concurrency", "text": "Another transaction is holding a lock on the index" },
+            { "id": "deleted-rows", "text": "A soft-deleted row with the same email exists" }
+          ],
+          "answer": "needs-predicate",
+          "explanation": "The manual: the optional `index_predicate` in the conflict target is what allows inference of partial unique indexes. Without it, PostgreSQL looks for a non-partial unique index on `(email)`, finds none, and raises `42P10`. `ON CONSTRAINT` fails differently — a unique *index* isn't a constraint (`42704 … does not exist`). This is also why PostgREST/supabase-js `onConflict: 'email'` can never target this index: it sends a column list with no `WHERE`."
+        },
+        {
+          "id": "low-selectivity",
+          "prompt": "95% of orders have `status = 'shipped'`. There's an index on `status`, yet `SELECT * FROM orders WHERE status = 'shipped'` uses a Seq Scan. What's going on?",
+          "options": [
+            { "id": "right-choice", "text": "The planner is right: fetching 95% of the rows through an index costs more than reading the table straight through" },
+            { "id": "broken", "text": "The index is corrupt and needs `REINDEX`" },
+            { "id": "text-column", "text": "B-tree indexes don't work on `text` columns" },
+            { "id": "missing-analyze", "text": "The planner never uses an index unless `enable_seqscan` is off" }
+          ],
+          "answer": "right-choice",
+          "explanation": "An index pays off when it's selective. Pulling 190,000 of 200,000 rows via index lookups means visiting nearly every table page anyway, in a worse order. For a skewed column, index the rare values with a partial index (`… WHERE status = 'open'`). `enable_seqscan = off` is a diagnostic for testing, not a setting the planner needs."
+        },
+        {
+          "id": "like-collation",
+          "prompt": "On a database with collation `en_US.UTF-8`, `WHERE email LIKE 'ada%'` does a Seq Scan even though `email` has a plain B-tree index. The fix?",
+          "options": [
+            { "id": "pattern-ops", "text": "`CREATE INDEX … ON users (email text_pattern_ops)` — the default operator class can't serve `LIKE` outside the C collation" },
+            { "id": "leading", "text": "Rewrite it as `LIKE '%ada%'` so the index can match anywhere" },
+            { "id": "hash", "text": "Use a hash index — they're designed for string matching" },
+            { "id": "nothing", "text": "Nothing can help: `LIKE` never uses an index" }
+          ],
+          "answer": "pattern-ops",
+          "explanation": "A B-tree can serve a left-anchored `LIKE`, but per the manual, in a database not using the C locale it needs an index with the `text_pattern_ops` operator class, which compares strictly character by character (keep the default index too if you run `<`/`>` range queries). A leading wildcard rules out any B-tree — that needs `pg_trgm`. Hash indexes handle only equality."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-indexes",
+      "prompts": [
+        {
+          "id": "composite-columns",
+          "prompt": "Index for `WHERE customer_id = $1 AND created_at >= $2 ORDER BY created_at`.",
+          "code": "CREATE INDEX orders_customer_created_idx ON orders (___, ___);",
+          "blanks": [
+            { "id": "a1", "accept": ["customer_id"] },
+            { "id": "a2", "accept": ["created_at"] }
+          ],
+          "explanation": "The equality column leads, so the scan jumps straight to one customer; within that customer the entries are sorted by `created_at`, so the range is one contiguous slice and the `ORDER BY` needs no sort."
+        },
+        {
+          "id": "expression-index",
+          "prompt": "Make `WHERE lower(email) = $1` use an index.",
+          "code": "CREATE INDEX users_lower_email_idx ON users (___(email));",
+          "blanks": [{ "id": "b1", "accept": ["lower"] }],
+          "explanation": "An index on `email` can't answer a question about `lower(email)` — the stored values are different. An expression index stores `lower(email)`, and the planner uses it when the query contains that same expression."
+        },
+        {
+          "id": "partial-unique",
+          "prompt": "Unique email among live users; soft-deleted rows may repeat it.",
+          "code": "CREATE ___ INDEX users_email_live ON users (email) ___ deleted_at IS NULL;",
+          "blanks": [
+            { "id": "c1", "accept": ["UNIQUE"] },
+            { "id": "c2", "accept": ["WHERE"] }
+          ],
+          "explanation": "The `WHERE` clause makes it a partial index: only rows that satisfy the predicate are in it, so uniqueness is enforced among them and nowhere else."
+        },
+        {
+          "id": "upsert-partial-target",
+          "prompt": "Upsert against that partial unique index.",
+          "code": [
+            "INSERT INTO users (email, name) VALUES ($1, $2)",
+            "ON CONFLICT (email) ___ deleted_at IS NULL",
+            "DO UPDATE SET name = ___.name;"
+          ],
+          "blanks": [
+            { "id": "d1", "accept": ["WHERE"] },
+            { "id": "d2", "accept": ["EXCLUDED"] }
+          ],
+          "explanation": "The `WHERE` in the conflict target lets inference choose the partial unique index; leave it out and you get `42P10`. `EXCLUDED` is the row that was proposed for insertion, so `EXCLUDED.name` is the incoming value."
+        },
+        {
+          "id": "safe-explain-analyze",
+          "prompt": "Measure a delete without keeping its effects.",
+          "code": [
+            "___;",
+            "EXPLAIN ANALYZE DELETE FROM sessions WHERE expires_at < now() - interval '30 days';",
+            "___;"
+          ],
+          "blanks": [
+            { "id": "e1", "accept": ["BEGIN", "START TRANSACTION", "BEGIN TRANSACTION", "BEGIN WORK"] },
+            { "id": "e2", "accept": ["ROLLBACK", "ROLLBACK TRANSACTION", "ROLLBACK WORK", "ABORT"] }
+          ],
+          "explanation": "`EXPLAIN ANALYZE` executes the statement. Inside a transaction you then roll back, the plan and timings are real and the rows are untouched — the recipe from the `EXPLAIN` reference page."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-indexes",
+      "snippets": [
+        {
+          "id": "selective-or-not",
+          "code": [
+            "-- orders: 200,000 rows; status is 'shipped' on 95% of them, 'open' on 5%.",
+            "CREATE INDEX orders_status_idx ON orders (status);",
+            "ANALYZE orders;",
+            "EXPLAIN SELECT * FROM orders WHERE status = 'shipped';"
+          ],
+          "question": "What's the top plan node?",
+          "answer": "Seq Scan on orders",
+          "acceptable": ["Seq Scan", "a sequential scan", "seq scan — the index isn't used"],
+          "explanation": "The planner estimates 190,000 matching rows; reading them through the index would visit nearly every page in random order, so a straight sequential read is cheaper. The same index *would* be used for `status = 'open'` (5%). Low selectivity, not a missing index."
+        },
+        {
+          "id": "function-on-column",
+          "code": [
+            "CREATE INDEX users_email_idx ON users (email);   -- 100,000 users",
+            "ANALYZE users;",
+            "EXPLAIN SELECT * FROM users WHERE lower(email) = 'user42@example.com';"
+          ],
+          "question": "Does the plan use `users_email_idx`?",
+          "answer": "No — Seq Scan with Filter: (lower(email) = …)",
+          "acceptable": ["no", "Seq Scan", "no, sequential scan"],
+          "explanation": "The index stores `email` values, and `lower(email)` is a different value for every mixed-case address, so the index can't locate matches. Either compare the bare column (store emails normalised) or create an expression index on `lower(email)` — which the same query then uses with `Index Cond: (lower(email) = …)`."
+        },
+        {
+          "id": "upsert-without-predicate",
+          "code": [
+            "CREATE UNIQUE INDEX users_email_live ON users (email) WHERE deleted_at IS NULL;",
+            "",
+            "INSERT INTO users (email, name) VALUES ('ada@x.io', 'Ada Lovelace')",
+            "ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name;"
+          ],
+          "question": "What happens when a live `ada@x.io` already exists?",
+          "answer": "ERROR 42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification",
+          "acceptable": ["error 42P10", "an error — no matching constraint", "42P10"],
+          "explanation": "Most people expect an update. But the conflict target `(email)` infers only a *non-partial* unique index on `email`, and there isn't one. Adding `WHERE deleted_at IS NULL` after `ON CONFLICT (email)` makes it work. The error happens even when no conflicting row exists — inference fails before any row is checked."
+        }
+      ]
+    }
+  ]
+}
