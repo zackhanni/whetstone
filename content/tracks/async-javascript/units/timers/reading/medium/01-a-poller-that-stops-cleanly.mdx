@@ -62,9 +62,9 @@ that already fired, or on `undefined`, does nothing, so calling it unconditional
 - **Cancel the in-flight request on `stop()`.** The flag stops the _next_ poll, but the current
   `fetch` still completes, and still calls `onStatus` after you've stopped. Check `stopped`
   before calling `onStatus` too, or pass an `AbortController`'s signal to `fetch` and abort it
-  in `stop()`. The `cancellation-and-races` unit covers this.
+  in `stop()`. The [`cancellation-and-races`](/learn/async-javascript/cancellation-and-races) unit covers this.
 - **Pause when nobody's looking.** Background tabs throttle timers anyway. Listen for
   `visibilitychange` and stop while `document.hidden`, then poll immediately when the tab comes
   back.
 - **In a React component**, `stop` is what the effect's cleanup returns. That wiring is the
-  `use-effect` unit's topic.
+  [`use-effect`](/learn/react-hooks-and-rendering/use-effect) unit's topic.

@@ -27,7 +27,7 @@ setup:
 One trap: `.gitignore` only affects files git isn't tracking yet. The git docs: "Files already
 tracked by Git are not affected." If `.env` was committed once, adding it to `.gitignore` changes
 nothing — `git rm --cached .env` stops tracking it. And the secret is still in history, which
-the complex tier deals with. (Git mechanics are the `everyday-git` unit's subject; here it matters
+the complex tier deals with. (Git mechanics are the [`everyday-git`](/learn/developer-tooling/everyday-git) unit's subject; here it matters
 because it's how secrets end up in repositories.)
 
 Detection belongs before the commit: OWASP's Secrets Management cheat sheet suggests running a
