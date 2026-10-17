@@ -1,0 +1,66 @@
+---
+id: first-match-wins
+title: The first route that matches wins
+---
+
+At startup Nest walks your controllers — in the order the module lists them, methods top to
+bottom — and registers one route per handler. On the default Express adapter, a request goes to
+the **first registered route whose pattern matches**. Not the most specific one: the first.
+
+```ts
+@Controller("users")
+export class UsersController {
+  @Get(":id")                         // registered first
+  findOne(@Param("id") id: string) {
+    return this.users.findOne(id);
+  }
+
+  @Get("me")                          // never reached
+  findMe(@Req() req: Request) {
+    return this.users.findOne(req.user.id);
+  }
+}
+```
+
+`:id` matches any single path segment, and `me` is a segment. So `GET /users/me` runs
+`findOne` with `id === "me"`, and `findMe` is dead code. The app boots without a warning; you
+find out when a user gets "user not found" for their own profile.
+
+The fix is ordering: **literal paths above parametric ones.**
+
+```ts
+@Get("me")    findMe() {}       // literal first
+@Get(":id")   findOne() {}      // then the catch-all for one segment
+```
+
+## A pipe can't rescue it
+
+Routing chooses the handler *before* any pipe runs. Put `ParseIntPipe` on the parameter and the
+request still lands in `findOne` — the pipe just rejects it:
+
+```ts
+@Get(":id")
+findOne(@Param("id", ParseIntPipe) id: number) {}
+
+@Get("recent")
+recent() {}
+
+// GET /orders/recent -> 400 "Validation failed (numeric string is expected)"
+```
+
+That 400 looks like a validation bug. It's a routing bug.
+
+## It crosses controllers too
+
+Two controllers can share a prefix, and the module's `controllers` array decides which
+registers first:
+
+```ts
+@Module({ controllers: [UsersController, ProfileController] })
+// UsersController:   @Get(":id")       under "users"
+// ProfileController: @Get("profile")   under "users"  -> GET /users/profile runs findOne("profile")
+```
+
+Nest 12 (the current major) can catch this for you, but only if you ask: the
+`routeConflictPolicy` and `routeResolutionStrategy` options on `NestFactory.create()` are off by
+default. The complex tier covers them.

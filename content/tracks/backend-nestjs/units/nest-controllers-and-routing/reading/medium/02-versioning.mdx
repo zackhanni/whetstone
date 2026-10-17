@@ -1,0 +1,62 @@
+---
+id: versioning
+title: Versioning — two handlers for one path
+---
+
+A breaking change to `GET /cats` can't be shipped to clients that still expect the old shape.
+Versioning lets both live in one app: the request carries a version, and Nest routes on it.
+
+Nothing happens until you switch it on in `main.ts`:
+
+```ts
+app.setGlobalPrefix("api");
+app.enableVersioning({ type: VersioningType.URI });    // the version goes in the path
+```
+
+Then you attach versions to controllers or to single routes:
+
+```ts
+@Controller({ path: "cats", version: "1" })
+export class CatsV1Controller {
+  @Get()          list()   { ... }          // GET /api/v1/cats
+  @Version("2")
+  @Get(":id")     findOne() { ... }         // GET /api/v2/cats/:id  (and NOT /v1/cats/:id)
+}
+
+@Controller({ path: "cats", version: "2" })
+export class CatsV2Controller {
+  @Get()          list()   { ... }          // GET /api/v2/cats
+}
+
+@Controller({ path: "health", version: VERSION_NEUTRAL })
+export class HealthController {
+  @Get()          check()  { ... }          // GET /api/health — no version segment
+}
+```
+
+What each piece does:
+
+- **URI type** puts `v` + the version after the global prefix and before the controller path:
+  `/api/v1/cats`, not `/v1/api/cats`. (`prefix` changes or removes the `v`.)
+- **A route's `@Version()` replaces the controller's**, it doesn't add to it — so
+  `findOne` above answers only under v2.
+- **An array** (`version: ["1", "2"]`) serves one handler for several versions.
+- **`VERSION_NEUTRAL`** opts a route out. Under header or media-type versioning it answers
+  whatever version the request names, or none. Under URI versioning it simply has no version
+  segment: `/api/health` answers, and `/api/v1/health` is a 404.
+- **No route for the requested version is a 404.** `GET /api/v3/cats` doesn't fall back to v2.
+
+## Other places to carry the version
+
+```ts
+app.enableVersioning({ type: VersioningType.HEADER, header: "X-API-Version" });
+// GET /cats  with  X-API-Version: 2
+
+app.enableVersioning({ type: VersioningType.MEDIA_TYPE, key: "v=" });
+// GET /cats  with  Accept: application/json;v=2
+```
+
+The handlers and decorators don't change; only where Nest reads the version does. URI
+versioning is the easiest to see in logs, caches and `curl`. Header and media-type versioning
+keep URLs stable, but a request that forgets the header matches no versioned route at all — it
+404s, whatever the default version is (the complex tier has the details).
