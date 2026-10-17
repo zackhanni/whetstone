@@ -1,0 +1,56 @@
+---
+id: cache-aside-races
+title: The races cache-aside leaves open, and what the TTL is for
+---
+
+Cache-aside looks sequential in the code and isn't in production: reads and writes for the same
+key overlap. Four decisions decide how often you serve wrong data.
+
+## Delete on write — after the write, and not "set the new value"
+
+```ts
+await this.cache.del(key);                 // ✗ delete first...
+await this.db.updatePrice(id, price);      //   ...a read that misses in between reloads the
+                                           //   OLD row and caches it for a full TTL
+
+await this.db.updatePrice(id, price);      // ✓ write, then delete
+await this.cache.del(key);
+```
+
+Why delete instead of `set(key, newProduct)`? Two concurrent price changes can commit in one
+order and reach the cache in the other, leaving the losing price cached until the TTL. A delete
+can't be applied "in the wrong order": the next read loads whatever committed last.
+
+Even write-then-delete leaves a narrow window: a read that loaded the old row just *before* the
+write can finish its `set` just *after* the delete. That's what the **TTL is for** — it puts an
+upper bound on any staleness you didn't prevent. Pick it from the business question ("how long
+may a price be wrong?"), not from a hit-rate target. When the answer is "never", don't cache
+that read, or put a version in the key (`product:p1:v42`) so a new version is a new key.
+
+## Collapse concurrent misses
+
+A popular key expiring sends every in-flight request to the database at once — a stampede. A
+per-process map of in-progress loads (cache-manager's `wrap` has one built in) turns a thousand
+misses into one query per replica. Across replicas it's still one query *per replica*; making it
+one globally needs a lock (`SET key token NX PX 5000`) and a plan for the requests that lose it,
+which is rarely worth it. Two related rules:
+
+- **Never remember a failure.** The in-progress entry must be removed when the load *rejects*
+  too, or every later reader gets the same error without trying again.
+- **Never cache an error as a value.** A timeout isn't an answer. "Not found" can be — caching it
+  briefly (*negative caching*) stops a flood of lookups for ids that don't exist — but give it a
+  short TTL of its own.
+
+## Put every input in the key
+
+The cached value is a function of its key, so anything the result depends on has to be in it:
+the user or tenant, the locale, every query parameter, a feature flag. `CacheInterceptor`
+serving Alice's `/me` to Bob is this rule broken. Prefix keys per application
+(`shop:product:p1`) when several apps share one Redis.
+
+## What comes back is JSON-shaped
+
+A shared store holds bytes. Through Keyv (as `@keyv/redis` does), a class instance comes back as
+a plain object — `product instanceof Product` is false and its methods are gone — and a `Date`
+comes back as an ISO string. Cache plain data (DTOs), and rebuild rich objects after reading if
+you need them.

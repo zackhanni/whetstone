@@ -1,0 +1,71 @@
+---
+id: res-hands-you-the-response
+title: @Res() hands you the response — and the job of sending it
+---
+
+Inject `@Res()` and Nest switches that handler into **library-specific mode**: you get Express's
+own `res` object, and Nest stops sending the response for you.
+
+```ts
+@Controller("users")
+@UseInterceptors(ClassSerializerInterceptor)
+export class UsersController {
+  @Get("me")
+  me(@Res() res: Response) {
+    res.json(this.users.current());          // passwordHash goes out with it
+  }
+}
+```
+
+`User` marks `passwordHash` with `@Exclude()`, and in standard mode the serializer strips it.
+Here it leaks. What changed, checked on Nest 12.1 and 11.2 with Express:
+
+- **You must send.** Nest no longer sends what you return. Write `return user;` with `@Res()`
+  and nothing ever answers — the client waits until its own timeout.
+- **Interceptors still run, but their output is thrown away.** A `{ data }` envelope interceptor's `map`
+  executes and its result goes nowhere; `ClassSerializerInterceptor` never sees your object,
+  because `res.json()` serialized it first. The caching docs add that `CacheInterceptor` can't
+  cache a route that injects `@Res()`.
+- **Exception filters still work.** Throw `NotFoundException` and the client gets the usual 404
+  JSON — errors don't depend on the return value.
+- **The handler is now Express code.** `res.json`/`res.cookie` are Express's API (Fastify's reply
+  differs), and a unit test needs a fake `res`.
+
+## `passthrough: true` — touch the response, keep the rest
+
+Most `@Res()` use is "I need to set one cookie or header". `passthrough: true` gives you `res`
+**and** leaves sending to Nest, so your return value still flows through interceptors and
+serialization:
+
+```ts
+@Post("login")
+@HttpCode(200)
+async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
+  const { token, user } = await this.auth.login(dto);
+  res.cookie("session", token, { httpOnly: true, secure: true, sameSite: "lax" });
+  return user;                     // serialized and sent by Nest, as usual
+}
+```
+
+It's also the clean way to choose a success status at runtime:
+
+```ts
+@Put(":id")
+async upsert(@Param("id") id: string, @Body() dto: OrderDto, @Res({ passthrough: true }) res: Response) {
+  const { order, created } = await this.orders.upsert(id, dto);
+  res.status(created ? 201 : 200);
+  return order;
+}
+```
+
+Rule of thumb: reach for full `@Res()` only when you genuinely produce the bytes yourself — a
+hand-rolled stream, a download with a library that writes to `res`. Everything else is a return
+value, a decorator, an exception, or `passthrough`.
+
+<!--more-->
+
+**`@HttpCode()` and `@Header()` under `@Res()`.** The controllers docs list these two among the
+features `@Res()` loses. Running it says otherwise: Nest 11.2 and 12.1 set the decorator's status
+and headers on `res` *before* calling your handler, so they behave as defaults that your own
+`res.status()` replaces. Don't build on either reading — when you take the response, set the
+status yourself.

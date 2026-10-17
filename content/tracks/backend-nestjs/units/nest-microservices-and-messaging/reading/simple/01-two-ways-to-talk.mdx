@@ -1,0 +1,63 @@
+---
+id: two-ways-to-talk
+title: Two ways for services to talk — ask, or announce
+---
+
+In Nest, a **microservice** is an ordinary Nest app — modules, providers, controllers, DI — that
+listens on a transport other than HTTP: TCP by default, or a broker such as Redis, NATS, RabbitMQ
+or Kafka. Instead of routes, its controller methods match **patterns**, and there are exactly two
+kinds of conversation.
+
+## Ask: request-response
+
+```ts
+// pricing service
+@Controller()
+export class PricingController {
+  @MessagePattern("price.get")
+  getPrice(@Payload() data: { sku: string }) {
+    return this.prices.forSku(data.sku);          // the return value is the reply
+  }
+}
+
+// orders service — the caller
+const price = await lastValueFrom(this.pricing.send<number>("price.get", { sku }));
+```
+
+`send()` waits for an answer. The caller gets the reply or an error — and if nothing ever comes
+back, it waits forever, unless it set a timeout (next reading).
+
+## Announce: events
+
+```ts
+// shipping service (and the email service, and analytics…)
+@Controller()
+export class ShippingController {
+  @EventPattern("order.paid")
+  async onOrderPaid(@Payload() event: OrderPaid) {
+    await this.shipments.bookCourier(event.orderId);  // no reply is sent anywhere
+  }
+}
+
+// orders service
+this.events.emit("order.paid", { eventId: `order-paid:${order.id}`, orderId: order.id });
+```
+
+`emit()` states a fact and moves on. There is no reply: the publisher never learns whether
+anyone handled the event, or whether a handler threw. Several handlers can subscribe to one event
+pattern, and Nest runs them in parallel.
+
+## Which one?
+
+- **The caller can't continue without the answer** — a price, a stock check, a permission
+  decision → `send()` / `@MessagePattern`.
+- **Something happened, and other services may care** → `emit()` / `@EventPattern`. The publisher
+  doesn't know who listens, so adding a fourth consumer changes nothing in the orders service.
+
+A request-response call couples the caller's latency and availability to the callee's: if pricing
+is slow, checkout is slow. An event decouples them — the price of that decoupling is that the
+publisher can't know the outcome.
+
+One rule both share: these decorators work only on **controller** methods. Put `@EventPattern`
+on a method of an `@Injectable()` service and Nest ignores it — the event arrives, and the
+microservice logs "There is no matching event handler defined in the remote service".

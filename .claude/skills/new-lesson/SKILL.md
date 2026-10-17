@@ -77,12 +77,17 @@ then replace the substance. Don't re-derive the conventions from the schema.
 5. **Gate.** Run **`pnpm check`** (lint + typecheck + validate + unit tests + the headless
    challenge grader `pnpm test:challenges`, which proves the starter fails and the solution
    passes) and **`pnpm build`**. Iterate on a challenge with `pnpm test:challenges` alone. Then
-   open the challenge in the browser **once**, because the headless grader is happy-dom, not
-   Sandpack. **`runner: "in-browser"`:** hit _Run tests_ — the starter must FAIL and _Show
-   solution_ must PASS. **`runner: "external"`:** there's no _Run tests_ button, so instead
-   confirm the `externalUrl` loads and that its README/acceptance criteria match the unit's.
-   Reuse the running dev server (check `lsof -ti tcp:3002` first; never blanket-kill ports). If
-   you can't do the browser run yourself, say so explicitly in your summary and list the URLs.
+   run the challenge in Sandpack **once**, because the headless grader is happy-dom, not
+   Sandpack. **`runner: "in-browser"`:** `pnpm test:challenges:browser <slug>` opens the unit in
+   headless Chrome, presses _Run tests_ (the starter must FAIL) and _Show solution_ (it must
+   PASS). It needs the dev server: reuse the running one (check `lsof -ti tcp:3002` first; never
+   blanket-kill ports), and restart it after adding a new track or unit, because a running dev
+   server keeps serving the catalog it started with (new pages 404). **`runner: "external"`:**
+   there's no _Run tests_ button, so instead confirm the `externalUrl` loads and that its
+   README/acceptance criteria match the unit's. If you can't do the browser run yourself, say so
+   explicitly in your summary and list the URLs.
+   Before calling a challenge done, also write the obvious wrong fix for each planted bug and
+   confirm the grader rejects it (PLAYBOOK → "Writing the grader").
    _Ignore_ the IDE's `Cannot find name 'describe'` lints in `content/challenges/**` — that
    folder is outside `tsconfig.json` by design.
 6. **Land it.** Order blocks so difficulty escalates (reading → recognition → recall →

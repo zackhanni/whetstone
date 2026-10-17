@@ -175,6 +175,13 @@ describe("Unit schema", () => {
     );
   });
 
+  it("rejects a line break in a field rendered as inline Markdown", () => {
+    const message = "inline text can't contain a line break (it renders as one run-on line)";
+    expect(issuesAfter((u) => (quizOf(u).questions[0].prompt = "Line one\nline two"))).toContain(message);
+    expect(issuesAfter((u) => (u.objectives[0] = "Explain\nthis"))).toContain(message);
+    expect(issuesAfter((u) => (u.objectives[0] = "Explain\rthis"))).toContain(message);
+  });
+
   it("rejects the v1 challenge `mode` field", () => {
     const issues = issuesAfter((u) => {
       (u.blocks[3] as Record<string, unknown>).mode = "in-browser";

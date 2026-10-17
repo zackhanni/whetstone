@@ -1,0 +1,21 @@
+---
+id: end-of-options
+title: -- — "no more options after this"
+---
+
+A program can't tell an option from a filename that starts with `-`, and quotes don't help: the
+shell strips them first. `--` ends option parsing (POSIX utility guideline 10); everything after it
+is an operand.
+
+```bash
+rm -v                 # usage error: "-v" is read as a flag
+rm -- -v              # removes the file named "-v"
+grep -- -x notes.txt  # searches for the text "-x"
+```
+
+It matters most with globs. In a folder holding a file named `-rf`, `rm *` can expand to
+`rm -rf keep notes.txt` — and recursively delete the directory `keep`. Write `rm -- *` or
+`rm ./*`.
+
+You'll meet it elsewhere too: `git checkout -- app.ts` (a path, not a branch) and
+`npm run test -- --watch` (a flag for the script, not for npm).

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "nest-idempotent-event-handler",
+  "title": "Make the order.paid handler idempotent",
+  "skills": ["backend", "nestjs", "messaging", "idempotency", "redis"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "runner": "in-browser",
+  "entry": "order-paid-handler.ts",
+  "acceptanceCriteria": [
+    "A publisher's retry of an event — same `eventId`, new `messageId` — books no second shipment and is acknowledged as `\"duplicate\"`, even after `CLAIM_TTL_MS` has passed",
+    "Two deliveries of one event arriving at the same time book exactly one shipment",
+    "When booking the shipment fails, the error reaches the broker and the redelivery books it",
+    "If a worker dies mid-delivery, a redelivery after `CLAIM_TTL_MS` books the shipment",
+    "A delivery that arrives while another is still booking the shipment returns `\"retry-later\"`; once the first is done, further deliveries return `\"duplicate\"`"
+  ]
+}

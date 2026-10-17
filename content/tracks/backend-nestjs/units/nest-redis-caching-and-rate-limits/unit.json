@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 3,
+  "slug": "nest-redis-caching-and-rate-limits",
+  "title": "Caching & rate limits with Redis",
+  "skills": ["backend", "nestjs", "caching", "redis", "rate-limiting"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 45,
+  "objectives": [
+    "Write cache-aside that sets a TTL, invalidates after the write, never caches a failed load, and collapses concurrent misses into one load",
+    "Configure `CacheModule` (cache-manager v7) with a Redis store, TTLs in milliseconds and `undefined` misses, and spot when `CacheInterceptor`'s URL key serves one user's response to another",
+    "Configure `@nestjs/throttler` v6 and explain why per-process storage and an untrusted proxy each break the limit",
+    "Choose fail-open or fail-closed for a cache, a rate limit and sessions when Redis is down, and write the fallback"
+  ],
+  "sources": [
+    { "title": "NestJS docs: Caching", "url": "https://docs.nestjs.com/data/caching" },
+    { "title": "NestJS docs: Rate limiting", "url": "https://docs.nestjs.com/security/rate-limiting" },
+    { "title": "NestJS docs: Session", "url": "https://docs.nestjs.com/http/session" },
+    { "title": "cache-manager README", "url": "https://github.com/jaredwray/cacheable/tree/main/packages/cache-manager" },
+    { "title": "@keyv/redis README", "url": "https://github.com/jaredwray/keyv/tree/main/storage/redis" },
+    { "title": "express-session README", "url": "https://github.com/expressjs/session" },
+    { "title": "Express: behind proxies", "url": "https://expressjs.com/en/guide/behind-proxies.html" },
+    { "title": "Redis docs: SET", "url": "https://redis.io/docs/latest/commands/set/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-redis", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-redis",
+      "questions": [
+        {
+          "id": "ttl-units",
+          "prompt": "A service caches with `await this.cache.set(key, report, 60)`, meaning \"for a minute\". The database load hardly drops. Why?",
+          "options": [
+            { "id": "ms", "text": "cache-manager TTLs are milliseconds, so every entry expires after 60 ms" },
+            { "id": "seconds-ok", "text": "60 is a minute, so the cause must be the key — it changes on every request" },
+            { "id": "needs-global", "text": "A per-call TTL is ignored unless `CacheModule` sets a default `ttl`" },
+            { "id": "redis-only", "text": "TTLs only apply to Redis stores; the in-memory store keeps entries forever" }
+          ],
+          "answer": "ms",
+          "explanation": "cache-manager (v7 under Nest 12's `@nestjs/cache-manager`) takes TTLs in milliseconds, so `60` keeps the entry for 60 ms and nearly every request misses. One minute is `60_000`. A per-call TTL overrides the module default rather than depending on one, and the in-memory store honours TTLs too. A key that changes on every request would also cause this — it's just not what's wrong here."
+        },
+        {
+          "id": "falsy-hit",
+          "prompt": "`const stock = await this.cache.get<number>(key); if (stock) return stock;` — what goes wrong?",
+          "options": [
+            { "id": "zero-miss", "text": "A cached stock of `0` is falsy, so out-of-stock products go back to the database on every read" },
+            { "id": "null-miss", "text": "Nothing; cache-manager v7 returns `null` on a miss, and `if (stock)` handles `null`" },
+            { "id": "throws", "text": "`get` throws on a miss, so the `if` is never reached" },
+            { "id": "string", "text": "`get` returns strings, so `stock` is `\"0\"`, which is truthy" }
+          ],
+          "answer": "zero-miss",
+          "explanation": "A miss is `undefined` in cache-manager v7 (v6 returned `null`), so test exactly that: `if (stock !== undefined) return stock;`. Truthiness also rejects `0`, `\"\"` and `false`, which are real cached answers — here the most-requested \"sold out\" products never get the benefit of the cache. `get` doesn't throw on a miss, and the value comes back as the number you stored."
+        },
+        {
+          "id": "delete-not-set",
+          "prompt": "When a price changes, why delete the cached product rather than `set` it to the new value?",
+          "options": [
+            { "id": "order", "text": "Two concurrent updates can commit in one order and reach the cache in the other; a delete can't land in the wrong order, because the next read loads whatever committed last" },
+            { "id": "speed", "text": "`del` is faster than `set`, so the request returns sooner" },
+            { "id": "memory", "text": "Deleting frees memory; setting would keep a cold entry around" },
+            { "id": "ttl-reset", "text": "`set` would reset the TTL, so the entry would never expire" }
+          ],
+          "answer": "order",
+          "explanation": "Writing the new value into the cache is a second write that can race with other writers: update A commits, update B commits, B's `set` lands, then A's — the cache now holds A's older price until the TTL. Deleting is order-independent: whichever request reads next loads the committed truth. (Do it after the database write — deleting first lets a concurrent read put the old row straight back.) Speed and memory aren't the reason, and every `set` with a TTL gets that TTL, so it doesn't make entries immortal."
+        },
+        {
+          "id": "interceptor-me",
+          "prompt": "`CacheInterceptor` is bound globally. Shortly after Alice loads `GET /me`, Bob loads `GET /me` and sees Alice's profile. Why?",
+          "options": [
+            { "id": "url-key", "text": "The interceptor keys entries by request URL, which is the same for both — the user isn't part of the key" },
+            { "id": "singleton", "text": "The controller is a singleton, so it returned the last user it served" },
+            { "id": "session", "text": "Bob's session cookie expired, so he was treated as Alice" },
+            { "id": "post-cache", "text": "The login `POST` was cached and replayed for Bob" }
+          ],
+          "answer": "url-key",
+          "explanation": "For HTTP, `CacheInterceptor` builds its key from the request URL (query string included) — not from headers, cookies or the user. Alice's response was stored under `/me`, and Bob's request within the TTL is a hit that never reaches the handler. Don't put the interceptor on per-user routes, or override `trackBy()` to include the user. It only caches GET by default, so the login POST isn't involved."
+        },
+        {
+          "id": "three-replicas",
+          "prompt": "The API runs 3 replicas with `ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 100 }] })` and the default storage. Requests are spread evenly. How many requests a minute can one client make to one route before seeing a 429?",
+          "options": [
+            { "id": "300", "text": "About 300 — each replica counts in its own memory, so each allows 100" },
+            { "id": "100", "text": "100 — the throttler counts per client, wherever the request lands" },
+            { "id": "33", "text": "About 33 — the limit is divided between the replicas" },
+            { "id": "unlimited", "text": "Unlimited — in-memory storage is disabled when more than one replica runs" }
+          ],
+          "answer": "300",
+          "explanation": "The default `ThrottlerStorageService` is a map inside each process. Three replicas mean three independent counters, each allowing 100 — so the effective limit scales with your replica count, and autoscaling raises it exactly when you're under the most load. A shared store (Redis, via a `ThrottlerStorage` implementation) gives one count. Nothing divides the limit or disables the storage."
+        },
+        {
+          "id": "proxy-tracker",
+          "prompt": "Behind a load balancer, with default settings, every user starts getting 429s at once whenever traffic is busy. What's the cause?",
+          "options": [
+            { "id": "proxy-ip", "text": "`req.ip` is the load balancer's address for every request, so all users share one bucket — set Express's `trust proxy` to the load balancer's address" },
+            { "id": "limit-low", "text": "The limit is simply too low; raise it" },
+            { "id": "trust-true", "text": "The fix is `app.set(\"trust proxy\", true)` on every deployment, so each user is identified by `X-Forwarded-For`" },
+            { "id": "per-route", "text": "Limits are per route, so busy routes run out first" }
+          ],
+          "answer": "proxy-ip",
+          "explanation": "The throttler's default tracker is `req.ip`. Without `trust proxy`, Express reports the address of the hop that connected — the load balancer — so everyone is one client. Trust exactly your proxy (an address, subnet or hop count). `true` trusts the left-most `X-Forwarded-For` entry, and if clients can reach the app without going through a proxy that overwrites that header, they can send any value and get a fresh budget per request. Raising the limit hides the bug; per-route keys aren't why everyone is limited at once."
+        },
+        {
+          "id": "per-route-key",
+          "prompt": "A global `ThrottlerGuard` allows 10 requests per minute. An attacker sends 10 a minute to each of `POST /auth/login`, `POST /auth/login/otp` and `POST /auth/reset`. What happens?",
+          "options": [
+            { "id": "all-pass", "text": "All 30 get through — the default key includes the controller and handler, so each route has its own budget per IP" },
+            { "id": "ten", "text": "The first 10 get through, then everything is 429 — the limit is per IP across the API" },
+            { "id": "first-route", "text": "Only the login route is limited; the other two are unthrottled" },
+            { "id": "blocked", "text": "The IP is blocked for `blockDuration` after the first route's 10th request" }
+          ],
+          "answer": "all-pass",
+          "explanation": "`@nestjs/throttler` v6 keys its counters on the controller class, the handler, the throttler name and the tracker, so limits are per route per client. That's usually what you want for an API, but a guessing attack spread over sibling endpoints gets one budget each. Count on something shared — override `generateKey` to drop the handler for those routes, or track by account rather than by IP."
+        },
+        {
+          "id": "redis-down-choice",
+          "prompt": "Redis is unreachable for ten minutes. Which of these should **fail closed** (refuse the request) rather than fall back?",
+          "options": [
+            { "id": "login-limit", "text": "The rate limit on `POST /auth/login`" },
+            { "id": "product-cache", "text": "The product-page cache" },
+            { "id": "global-limit", "text": "The general per-route rate limit on every endpoint" },
+            { "id": "response-cache", "text": "The `CacheInterceptor` on the catalogue routes" }
+          ],
+          "answer": "login-limit",
+          "explanation": "The login limit is a security control: without it, credential guessing is unthrottled, so refusing those requests for a few minutes is the safer failure. The caches are optimisations — fail open to the database (and watch its load). The general limit is mostly about fairness and abuse, and falling back to per-instance counting keeps a limit without taking the API down; by default a throwing throttler storage makes `ThrottlerGuard` return 500 on every guarded route."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-redis",
+      "prompts": [
+        {
+          "id": "cache-module-redis",
+          "prompt": "Back `CacheModule` with Redis through Keyv, then inject the cache into a service.",
+          "code": [
+            "CacheModule.registerAsync({",
+            "  isGlobal: true,",
+            "  useFactory: () => ({ stores: [___(\"redis://cache:6379\")] }),",
+            "});",
+            "",
+            "constructor(@Inject(___) private readonly cache: Cache) {}"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["createKeyv"] }, { "id": "a2", "accept": ["CACHE_MANAGER"] }],
+          "explanation": "`createKeyv()` from `@keyv/redis` builds the Keyv store cache-manager v7 talks to; leave `stores` out and you get one in-memory cache per process. The cache is injected by the `CACHE_MANAGER` token (a token, not a class — so `@Inject` is required). Both `CACHE_MANAGER` and the `Cache` type come from `@nestjs/cache-manager`."
+        },
+        {
+          "id": "ttl-ms",
+          "prompt": "Cache a product for one minute.",
+          "code": "await this.cache.set(`product:${id}`, product, ___);",
+          "blanks": [{ "id": "b1", "accept": ["60000", "60_000", "60 * 1000", "1000 * 60"] }],
+          "explanation": "cache-manager's TTLs are milliseconds: `60` would be 60 ms. `@nestjs/throttler` v5+ uses milliseconds too, and exports `seconds()`/`minutes()` helpers to make that readable."
+        },
+        {
+          "id": "throttler-wiring",
+          "prompt": "Apply the throttler to every route, tighten it on login, and exempt the health check.",
+          "code": [
+            "providers: [{ provide: ___, useClass: ThrottlerGuard }]",
+            "",
+            "@___({ default: { limit: 5, ttl: 60_000 } })",
+            "@Post(\"login\") login() {}",
+            "",
+            "@___()",
+            "@Controller(\"health\") export class HealthController {}"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["APP_GUARD"] },
+            { "id": "c2", "accept": ["Throttle"] },
+            { "id": "c3", "accept": ["SkipThrottle"] }
+          ],
+          "explanation": "`APP_GUARD` registers the guard globally while keeping it injectable (the lifecycle unit's reason). `@Throttle()` takes an object keyed by throttler name — `default` when you didn't name one — and `@SkipThrottle()` exempts a class or route, so a load balancer's health probe doesn't spend a budget or get a 429."
+        },
+        {
+          "id": "trust-proxy",
+          "prompt": "Behind a reverse proxy on the same host, make `req.ip` the real client address for the throttler's tracker.",
+          "code": "app.set(\"___\", \"loopback\");",
+          "blanks": [{ "id": "d1", "accept": ["trust proxy"] }],
+          "explanation": "Express's `trust proxy` setting tells it which hops may set `X-Forwarded-For`; with it, `req.ip` is the first untrusted address — the client. Name your proxy (`loopback`, an address, a subnet or a hop count) rather than `true`, which takes the left-most `X-Forwarded-For` entry — whatever the client sent, unless every path to the app goes through a proxy that overwrites the header."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-redis",
+      "snippets": [
+        {
+          "id": "naive-aside-redis-down",
+          "code": [
+            "// CacheModule on @keyv/redis; Redis is unreachable. The database is fine.",
+            "async getProduct(id: string) {",
+            "  const key = `product:${id}`;",
+            "  const cached = await this.cache.get<Product>(key);",
+            "  if (cached !== undefined) return cached;",
+            "  const product = await this.db.findProduct(id);",
+            "  await this.cache.set(key, product, 60_000);",
+            "  return product;",
+            "}"
+          ],
+          "question": "`GET /products/p1` calls this. What does the client get?",
+          "answer": "A 500 — `get` reports a miss, the database load succeeds, then `set` rejects",
+          "acceptable": ["500", "500 Internal server error", "an error from set"],
+          "explanation": "cache-manager v7 catches a store error in `get` and returns `undefined`, so the read looks like an ordinary miss. `set` doesn't swallow anything: with `@keyv/redis` 6.1 it rejects with \"Redis client is not connected…\", and that rejection is the handler's error (checked on Nest 12.1 with `@nestjs/cache-manager` 12.0 against a Redis URL with nothing listening). The database answered and the user still gets a 500. Wrap `set` (and `del`) in try/catch and return the product."
+        },
+        {
+          "id": "two-replicas",
+          "code": [
+            "ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 3 }] })   // default storage",
+            "// Two replicas, A and B. One client sends GET /a eight times within a",
+            "// minute, and the load balancer alternates: A, B, A, B, A, B, A, B."
+          ],
+          "question": "Which request is the first to get a 429?",
+          "answer": "The 7th (A's fourth request); the 8th is a 429 too",
+          "acceptable": ["7th", "the seventh", "request 7"],
+          "explanation": "Each replica counts in its own memory: requests 1, 3, 5 use A's three, 2, 4, 6 use B's three, and request 7 is A's fourth. One client got six requests through a \"limit 3\" — the effective limit is the limit times the replica count. A shared `ThrottlerStorage` (Redis) makes it 3, whichever replica answers."
+        },
+        {
+          "id": "wrap-coalesces",
+          "code": [
+            "let loads = 0;",
+            "const load = async () => { loads++; await sleep(20); return { price: 10 }; };",
+            "",
+            "await Promise.all([1, 2, 3, 4, 5].map(() => cache.wrap(\"p:1\", load, 60_000)));",
+            "",
+            "let fails = 0;",
+            "const broken = async () => { fails++; throw new Error(\"db down\"); };",
+            "for (const _ of [1, 2]) await cache.wrap(\"p:2\", broken).catch(() => {});",
+            "",
+            "console.log(loads, fails);"
+          ],
+          "question": "With cache-manager 7.2's in-memory store, what's printed?",
+          "answer": "1 2",
+          "acceptable": ["1, 2", "loads 1, fails 2"],
+          "explanation": "`wrap()` coalesces concurrent calls for the same key inside one process, so five simultaneous misses share one run of `load`. A loader that throws isn't cached, so the second `wrap(\"p:2\")` runs `broken` again. Both are what you'd build by hand for single-flight — and note the limit: across three replicas, a cold key still costs up to three loads."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-cache-aside", "challengeSlug": "nest-cache-aside" }
+  ]
+}

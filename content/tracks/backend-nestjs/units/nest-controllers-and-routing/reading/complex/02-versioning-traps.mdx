@@ -1,0 +1,73 @@
+---
+id: versioning-traps
+title: Versioning traps — defaultVersion versions routes, not requests
+---
+
+The versioning traps all come from one misreading. `defaultVersion` sounds like "requests that
+don't name a version get version 1". What it actually means is "**routes** that don't name a
+version **are** version 1". Every result below was checked by running Nest 12.1.3 on Express.
+
+## Turning it on moves your unversioned routes
+
+```ts
+app.enableVersioning({ type: VersioningType.URI });
+// HealthController has no version:          GET /health     -> 200
+
+app.enableVersioning({ type: VersioningType.URI, defaultVersion: "1" });
+// the same controller is now version 1:      GET /health     -> 404
+//                                            GET /v1/health  -> 200
+```
+
+One added option, and the load balancer's health check — configured for `/health` — starts
+failing, along with every monitor or webhook that calls an unversioned path. Mark those routes
+`version: VERSION_NEUTRAL` so no default can move them.
+
+## Header versioning still needs the header
+
+```ts
+app.enableVersioning({ type: VersioningType.HEADER, header: "X-API-Version", defaultVersion: "1" });
+// CatsV1Controller (version "1"):
+//   GET /cats  with  X-API-Version: 1    -> 200
+//   GET /cats  with no header            -> 404
+```
+
+The default made unversioned *routes* v1; it did nothing for a *request* without the header.
+Clients that never sent one — an old mobile build, a `curl` in a runbook — get a 404. If "no
+header means v1" is the contract you want, write it down as a `CUSTOM` extractor:
+
+```ts
+app.enableVersioning({
+  type: VersioningType.CUSTOM,
+  extractor: (req) => (req as Request).headers["x-api-version"] ?? "1",  // Nest types req as unknown
+});
+```
+
+## A route's version replaces the controller's
+
+```ts
+@Controller({ path: "cats", version: "1" })
+export class CatsController {
+  @Version("2")
+  @Get(":id") findOne() {}      // GET /v2/cats/5 -> 200,  GET /v1/cats/5 -> 404
+}
+```
+
+If v1 clients should keep `findOne`, say so: `@Version(["1", "2"])`.
+
+## Forgetting `enableVersioning()` fails silently
+
+Without it, `version` metadata is ignored. Two controllers marked `"1"` and `"2"` on the same path
+both register `GET /cats`; the first one answers everything and v2 is dead — no error. Nest 12's
+`routeConflictPolicy: { duplicate: "error" }` turns that into a boot failure.
+
+<!--more-->
+
+**Unversioned routes with no `defaultVersion`.** The versioning docs say that once versioning is
+enabled, a route with no version (and no default) answers 404. On Nest 12.1.3 (and 11.2) it
+doesn't: under URI versioning it's served with no version segment, and under header versioning
+it answers requests with or without the header. Treat that as unspecified and don't depend on it — give
+every route an explicit version or `VERSION_NEUTRAL`.
+
+**Custom extractors on Express.** A `CUSTOM` extractor may return several versions, highest
+first, and Nest picks the highest that has a route. The docs warn that this selection doesn't
+work reliably on the Express adapter: return a single version there, or use Fastify.

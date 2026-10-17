@@ -1,0 +1,21 @@
+---
+id: conflict
+title: 409 Conflict — fine on its own, clashes with the current state
+---
+
+The request is well-formed, but it conflicts with the resource as it is **now**, and the client
+may be able to fix that and resubmit. Two everyday cases:
+
+- **Uniqueness:** `POST /users` with an email that's already registered.
+- **Lost update:** a `PUT` carrying `"version": 7` when the stored record is at version 8
+  because someone else saved first.
+
+RFC 9110 asks for enough detail to see what clashed:
+
+```json
+{ "error": "version_conflict", "yourVersion": 7, "currentVersion": 8 }
+```
+
+If the version travels in an `If-Match` header instead of the body, the precise code is
+`412 Precondition Failed`. And versus 422: a 422 body is wrong in itself; a 409 body would succeed
+against a different state.

@@ -1,0 +1,17 @@
+---
+id: split
+title: split with a regex — flexible separators, and groups that sneak in
+---
+
+A regex separator handles messy input that a string separator can't:
+
+```js
+"a, b ,c".split(/\s*,\s*/); // ["a", "b", "c"]
+"a1b2c".split(/\d/);        // ["a", "b", "c"]
+"a1b2c".split(/(\d)/);      // ["a", "1", "b", "2", "c"] — captured groups are spliced in
+"a,b,c".split(",", 2);      // ["a", "b"] — the limit caps the number of entries
+```
+
+When the separator has a capturing group, each captured value lands in the result between the
+pieces. If you only need the group for alternation, make it non-capturing:
+`/\s*(?:,|;)\s*/`.

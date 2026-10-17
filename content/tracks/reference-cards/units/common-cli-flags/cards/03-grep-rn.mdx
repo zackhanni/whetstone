@@ -1,0 +1,24 @@
+---
+id: grep-rn
+title: grep -rn, -i, -E — search a tree, with line numbers
+---
+
+```bash
+grep -rniE 'todo|fixme' src/
+# src/app.ts:1:const a = 1; // TODO: rename
+# src/lib/util.ts:1:// FixMe later
+```
+
+| Flag | Means |
+| --- | --- |
+| `-r` | recurse into directories |
+| `-n` | prefix each match with its line number |
+| `-i` | ignore case |
+| `-E` | extended regex: `\|`, `+`, `?` and `()` work unescaped |
+| `-l` | print only the names of files that match |
+| `-w` | match whole words only |
+| `-F` | fixed string: `.` and `*` are literal characters |
+| `-v` | print the lines that *don't* match |
+
+Without `-E`, `'todo|fixme'` searches for the literal text `todo|fixme` and finds nothing. Keep
+the pattern in single quotes so the shell leaves `|`, `*` and `$` alone.

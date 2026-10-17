@@ -1,0 +1,48 @@
+---
+id: cache-aside
+title: Cache-aside — a copy that's allowed to be a little stale
+---
+
+A cache is a **copy** of data whose real home is somewhere slower — usually your database. The
+most common way to use one is *cache-aside*: your code checks the cache first and, on a miss,
+loads from the database and leaves a copy behind for next time.
+
+```ts
+async getProduct(id: string): Promise<Product> {
+  const key = `product:${id}`;
+  const cached = await this.cache.get<Product>(key);
+  if (cached !== undefined) return cached;               // hit: no database call
+
+  const product = await this.db.findProduct(id);         // miss: ask the source of truth
+  await this.cache.set(key, product, 60_000);            // keep a copy for 60 seconds
+  return product;
+}
+
+async updatePrice(id: string, price: number) {
+  await this.db.updatePrice(id, price);                  // the database changes first
+  await this.cache.del(`product:${id}`);                 // then the copy goes; the next read reloads
+}
+```
+
+Three rules hold the pattern together:
+
+1. **The database is the truth.** The cache never holds anything the database doesn't.
+2. **Every copy expires.** The TTL (time to live) is how stale you're willing to be. It's also
+   the safety net for changes that never pass through `updatePrice` — an admin script, another
+   service, a migration.
+3. **Every write path drops the copy.** Otherwise readers see the old price until the TTL runs
+   out.
+
+## Two details that bite on day one
+
+**TTLs are milliseconds.** In cache-manager — the library behind Nest's `CacheModule`,
+currently v7 — `set(key, value, 60)` keeps the value for 60 *milliseconds*, so the "cache" almost
+never hits. One minute is `60_000`.
+
+**A miss is `undefined`, so compare to `undefined`.** `if (cached)` treats a cached `0`, `""` or
+`false` as a miss: a product with zero stock goes back to the database on every request.
+(cache-manager v6 returned `null` for a miss; v7 returns `undefined`. Code written for v6 that
+checks `cached !== null` treats every v7 miss as a hit and returns `undefined` to the caller.)
+
+The challenge at the end of this unit makes this service safe for production traffic: TTLs,
+invalidation, a burst of misses, and a cache that's down.

@@ -1,0 +1,21 @@
+---
+id: internal-server-error
+title: 500 Internal Server Error — the server's bug, never the client's
+---
+
+A 500 means an **unexpected** condition stopped the server — typically an unhandled exception.
+It's the generic 5xx: use a more specific code when you know one (`503` for overload, a 4xx when
+the client's input is the problem).
+
+Two habits:
+
+- **Don't let bad input become a 500.** A missing field that crashes `body.name.trim()` is a client
+  error you didn't check for — validate it and answer 400 or 422.
+- **Don't send the stack trace.** Log it with a request id and return a generic body:
+
+```json
+{ "error": "internal_error", "requestId": "req_8f2c" }
+```
+
+5xx rates usually drive alerts and error budgets, so a client mistake reported as 500 pages your
+on-call engineer instead of telling the caller what to fix.

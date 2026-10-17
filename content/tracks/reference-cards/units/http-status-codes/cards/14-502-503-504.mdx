@@ -1,0 +1,18 @@
+---
+id: bad-gateway-unavailable-timeout
+title: 502 vs 503 vs 504 — which hop failed
+---
+
+With a proxy, load balancer or CDN in front of your app, read these as **where** it broke:
+
+| Code | Usually sent by | What happened |
+| --- | --- | --- |
+| `502 Bad Gateway` | the proxy | it got an **invalid** response from the app — garbage, or the connection closed before the headers came (a crash) |
+| `503 Service Unavailable` | the app or the proxy | **temporarily** can't serve: overload, maintenance; may send `Retry-After` |
+| `504 Gateway Timeout` | the proxy | the app didn't answer **in time** — the proxy's timeout fired first (a slow query, a hung handler) |
+
+When the app does send a proper error response, the proxy should pass it through, not replace it
+with a 502.
+
+Not `408 Request Timeout`: that's a server giving up on a **client** that didn't finish sending
+its request.

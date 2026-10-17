@@ -1,0 +1,21 @@
+---
+id: ps-aux
+title: ps aux — every process, with its owner and command line
+---
+
+BSD-style letters, no dash: `a` = other users' processes as well as yours, `x` = include processes
+with no terminal (servers, daemons), `u` = user-oriented columns: `USER`, `PID`, `%CPU`, `%MEM`,
+start time and the full `COMMAND`.
+
+Filtering it with `grep` has a catch — the `grep` itself is a process whose command line matches:
+
+```bash
+ps aux | grep 'next dev'   # also lists "grep next dev"
+pgrep -f 'next dev'        # just the PIDs of matching processes
+```
+
+`-f` makes `pgrep` match the whole command line instead of only the process name.
+
+`ps -aux`, with a dash, is a different request: POSIX reads it as "processes with a terminal, plus
+those of a user named x". macOS fails with `ps: No user named 'x'`; on Linux, procps falls back to
+`ps aux` only when no user x exists.

@@ -1,0 +1,20 @@
+---
+id: too-many-requests
+title: 429 Too Many Requests — rate limited, with Retry-After
+---
+
+Defined in RFC 6585, not RFC 9110: **this client** sent too many requests in some window. The
+server decides how it counts — per user, per API key, per IP — and may say when to come back:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 120
+```
+
+`Retry-After` is either a number of seconds or an HTTP date. A well-behaved client waits at least
+that long; a retry loop that ignores it just keeps hitting the limit. Caches **must not** store a
+429.
+
+Its neighbours: `503` is about the **server**, not this client's rate — it's temporarily unable
+to handle the request (overload, maintenance); `403` means the request is refused however slowly
+you send it.

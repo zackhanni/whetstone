@@ -1,0 +1,85 @@
+---
+id: cachemodule
+title: CacheModule on Redis, and what CacheInterceptor keys on
+---
+
+Nest's caching lives in `@nestjs/cache-manager` (12.0 for Nest 12 — it jumped from 3.x to match
+the framework's major) on top of `cache-manager` v7, which stores through **Keyv** adapters. For
+Redis that's `@keyv/redis`:
+
+```ts
+// npm i @nestjs/cache-manager cache-manager @keyv/redis
+@Module({
+  imports: [
+    CacheModule.registerAsync({
+      isGlobal: true,                           // inject it anywhere without importing the module
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        stores: [createKeyv(config.getOrThrow("REDIS_URL"))],
+        ttl: 60_000,                            // default TTL, in milliseconds
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+Leave out `stores` and you get an in-process memory store — fine for one replica, wrong for
+three (the previous reading).
+
+## Using it in a service
+
+```ts
+@Injectable()
+export class ProductsService {
+  constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache, private readonly db: Db) {}
+
+  getProduct(id: string) {
+    return this.cache.wrap(`product:${id}`, () => this.db.findProduct(id), 60_000);
+  }
+}
+```
+
+`get` / `set(key, value, ttlMs)` / `del` are the cache-aside primitives. `wrap(key, fn, ttl)` is
+the whole read path in one call: return the cached value, or run `fn`, store its result and
+return it. Two properties worth knowing, checked against cache-manager 7.2: concurrent `wrap`
+calls for one key **in the same process** share a single run of `fn`, and a `fn` that throws is
+not cached — the next call runs it again.
+
+What goes through Redis comes back as data. Keyv serializes values, so a class instance returns
+as a plain object (its methods are gone) and a `Date` returns as an ISO string.
+
+## `CacheInterceptor` — whole responses, keyed by URL
+
+```ts
+@Controller("products")
+@UseInterceptors(CacheInterceptor)
+export class ProductsController {
+  @Get()           list(@Query() q: ListQuery) { ... }   // cached per URL, query string included
+  @Get(":id")      findOne(@Param("id") id: string) { ... }
+}
+```
+
+The interceptor caches the **response of GET routes**, keyed by the request URL. It skips other
+methods (unless the route sets an explicit `@CacheKey()`), and it can't cache a handler that
+injects `@Res()`. On a hit it returns the stored body without calling the handler — the
+lifecycle unit's short-circuit, so pipes and the handler don't run. In
+`@nestjs/cache-manager` 12 it also sets an `X-Cache: HIT` or `MISS` response header, which is
+the quickest way to see what it's doing.
+
+The key is the whole trap. **The URL doesn't say who is asking:**
+
+```ts
+@Get("me")          // Alice requests it first; her profile is cached under "/me"
+me(@Req() req) {}   // Bob requests it within the TTL and gets Alice's profile
+```
+
+That's a data leak, not a performance bug. Keep the interceptor off anything that depends on the
+user, a header, or a tenant — or subclass it and override `trackBy(context)` to build a key that
+includes them (returning `undefined` from `trackBy` skips caching for that request).
+`@CacheKey()` and `@CacheTTL()` override the key and TTL per route.
+
+Caching the service call instead of the HTTP response is usually the better default: the service
+knows exactly which inputs the result depends on, and it can invalidate on writes. The response
+interceptor can't do either.

@@ -95,8 +95,55 @@ function checkSkills(run: Run, label: string, skills: string[]) {
   }
 }
 
+/**
+ * `src` with its comments blanked out, so a word like `from "the server"` in a comment can't be
+ * read as an import. Strings and template literals are copied through untouched (a `//` inside
+ * a URL string is not a comment). Newlines are kept so line-based checks still line up.
+ */
+export function stripComments(src: string): string {
+  let out = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === "/" && next === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+    } else if (c === "/" && next === "*") {
+      i += 2;
+      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) {
+        if (src[i] === "\n") out += "\n";
+        i++;
+      }
+      i += 2;
+    } else if (c === '"' || c === "'" || c === "`") {
+      const quote = c;
+      out += src[i++];
+      while (i < src.length && src[i] !== quote) {
+        if (src[i] === "\\") out += src[i++];
+        out += src[i++];
+      }
+      out += src[i++] ?? "";
+    } else {
+      out += src[i++];
+    }
+  }
+  return out;
+}
+
+/**
+ * The names of a grader's tests, in order: the first argument of every `it(…)` / `test(…)`
+ * written as a plain string literal. A method call such as a regex's `.test("x")` is not a test.
+ */
+export function testNames(src: string): string[] {
+  const names: string[] = [];
+  for (const m of stripComments(src).matchAll(/(?<![\w$.])(?:it|test)\s*\(\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/g))
+    names.push(m[2]);
+  return names;
+}
+
 /** Module specifiers imported by a file, in any of the four syntaxes we author with. */
-function importedModules(src: string): string[] {
+function importedModules(source: string): string[] {
+  const src = stripComments(source);
   const specifiers: string[] = [];
   const patterns = [
     /\bfrom\s*["']([^"']+)["']/g, // import x from "y" / export * from "y"
@@ -281,6 +328,14 @@ async function checkInBrowserChallenge(
         `${label}/${t}: uses a spy/fake-timer helper (vi.* / jest.*) — unavailable in the sandbox; patch the global by hand or add a settable seam`,
       );
     }
+    // Sandpack keys its results list by test name alone (not describe + name), so a repeated
+    // name across describe blocks logs a React duplicate-key error and can drop a result row.
+    const seen = new Set<string>();
+    for (const name of testNames(src)) {
+      if (seen.has(name))
+        fail(run, `${label}/${t}: two tests are named "${name}" — Sandpack keys its results by test name, so every name in the file must be unique`);
+      seen.add(name);
+    }
     const matcher = jestDom.exec(src);
     if (matcher)
       fail(
@@ -448,6 +503,9 @@ async function checkTrack(
     return;
   }
   info(run, `track: ${track.slug}`);
+  // The description is rendered as plain text on the cards, so Markdown shows up literally.
+  if (/`|\*\*|\]\(/.test(track.description))
+    warn(run, `track ${ts}: description contains Markdown (\`, ** or a link), which is shown as literal text`);
   // Links are built from the slug in the JSON and routes from the folder name, so a
   // mismatch builds fine and then 404s.
   if (track.slug !== ts) fail(run, `track ${ts}: slug "${track.slug}" does not match its folder`);

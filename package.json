@@ -12,6 +12,7 @@
     "validate": "tsx scripts/validate.ts",
     "test": "vitest run",
     "test:challenges": "tsx scripts/check-challenges.ts",
+    "test:challenges:browser": "tsx scripts/check-challenges-browser.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm validate && pnpm test && pnpm test:challenges"
   },
   "dependencies": {
@@ -43,6 +44,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.2.9",
     "happy-dom": "^20.14.5",
+    "playwright-core": "1.63.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.0",

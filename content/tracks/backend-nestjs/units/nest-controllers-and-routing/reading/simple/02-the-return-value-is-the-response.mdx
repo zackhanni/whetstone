@@ -1,0 +1,50 @@
+---
+id: the-return-value-is-the-response
+title: What you return is the response
+---
+
+In Nest's standard mode a handler never touches the response object. It **returns** a value —
+directly, as a `Promise`, or as an RxJS `Observable` — and Nest turns that into the HTTP
+response. Here is what comes out on the default Express adapter (checked against Nest 12.1):
+
+| The handler returns | Status | Body |
+| --- | --- | --- |
+| an object or array | 200 | JSON, `Content-Type: application/json` |
+| a string or a number | 200 | as text (Express labels it `text/html`) |
+| `undefined` or `null` | 200 | empty |
+| anything, from a `@Post()` | **201** | as above — an empty POST is still 201 |
+| it throws an `HttpException` | the exception's status | the error JSON |
+
+Two of those surprise people. **POST defaults to 201**, even for an action that creates nothing,
+like `POST /auth/login`. And **a `@Delete()` that returns nothing is a 200 with an empty body**,
+not a 204 — Nest doesn't look at the body to pick the status.
+
+## Changing the defaults: three decorators
+
+```ts
+@Post("login")
+@HttpCode(200)                                  // not a creation, so not 201
+login(@Body() dto: LoginDto) { ... }
+
+@Delete(":id")
+@HttpCode(204)                                  // "done, nothing to send"
+remove(@Param("id") id: string) { ... }
+
+@Get("report")
+@Header("Cache-Control", "no-store")            // a fixed response header
+report() { ... }
+
+@Get("docs")
+@Redirect("https://docs.example.com", 301)      // Location + 301 (302 if you omit the code)
+docs() {}
+```
+
+Like every decorator (the vocabulary unit's sticky notes), these run once at startup, so their
+arguments are **fixed**. For a status that depends on the request:
+
+- **An error status** — throw: `throw new ConflictException("already paid")` is a 409 with a
+  body. That's the lifecycle unit's territory.
+- **A redirect target or code** — return `{ url, statusCode }` from a `@Redirect()` handler;
+  whatever you return overrides the decorator's arguments.
+- **A success status chosen at runtime** (201 when you created, 200 when it already existed) —
+  that needs the response object, which is the next reading.

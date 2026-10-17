@@ -1,0 +1,17 @@
+---
+id: mkdir-p
+title: mkdir -p — create the whole path, and don't fail if it's there
+---
+
+Plain `mkdir` creates one level, and errors if the directory exists or its parent doesn't. `-p`
+creates every missing parent and succeeds quietly when the directory already exists — so a
+script can run it every time.
+
+```bash
+mkdir a/b/c       # fails: parent a/b doesn't exist
+mkdir -p a/b/c    # creates a, a/b and a/b/c
+mkdir -p a/b/c    # already there: no error, exit status 0
+```
+
+That idempotence is why setup scripts use `mkdir -p` even for a single directory. Add `-v` to
+print each directory it actually creates.

@@ -1,0 +1,18 @@
+---
+id: see-other-post-redirect-get
+title: 303 See Other — Post/Redirect/Get
+---
+
+After a form `POST` succeeds, answer `303` with `Location` set to the result page. The browser
+follows with a `GET`, so the address bar shows `/orders/42` and a refresh reloads that page
+instead of re-submitting the order.
+
+```http
+HTTP/1.1 303 See Other
+Location: /orders/42
+```
+
+303 means "the answer is over there — go `GET` it". The Fetch standard turns **every** method
+except `GET` and `HEAD` into `GET` on a 303 (`PUT` and `DELETE` too), where 302 only converts
+`POST`. That's also why `307` is wrong here: it would re-`POST` the form, body and all, to
+`/orders/42`.

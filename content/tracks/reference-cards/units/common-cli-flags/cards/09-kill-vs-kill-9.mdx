@@ -1,0 +1,19 @@
+---
+id: kill-vs-kill-9
+title: kill vs kill -9 — ask first, force second
+---
+
+`kill PID` sends `SIGTERM` (15): a request to stop. The process can catch it to finish in-flight
+work, flush logs and remove lock files. `kill -9 PID` sends `SIGKILL`, which can't be caught or
+ignored: the process stops wherever it is, with no cleanup.
+
+```bash
+kill 4242                                    # SIGTERM: ask
+sleep 5
+kill -0 4242 2>/dev/null && kill -9 4242     # still running? force it
+```
+
+`kill -0` sends nothing; it only checks that the process exists and that you may signal it. A
+process killed with `-9` shows exit status 137 (128 + 9) in the shell — a number worth
+recognising in CI logs. Ctrl-C in a terminal sends `SIGINT` (2), which most programs treat like
+`SIGTERM`.

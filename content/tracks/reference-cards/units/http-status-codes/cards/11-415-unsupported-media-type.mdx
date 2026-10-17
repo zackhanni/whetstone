@@ -1,0 +1,19 @@
+---
+id: unsupported-media-type
+title: 415 Unsupported Media Type — the body's format, not its contents
+---
+
+The server won't take the body in the format it was sent: its `Content-Type` (or
+`Content-Encoding`) isn't one this endpoint accepts. The classic cause: `curl -d` labels its data
+`application/x-www-form-urlencoded`, even when the data is JSON.
+
+```bash
+curl -d '{"name":"Ada"}' https://api.example.com/users      # sent as a form
+curl --json '{"name":"Ada"}' https://api.example.com/users  # sent as JSON (curl 7.82+)
+```
+
+Keep it apart from its neighbours:
+
+- `406 Not Acceptable` is about what the client asked to **get back** (`Accept`); 415 is about
+  what it **sent** (`Content-Type`).
+- `422` is the step after: format understood, contents wrong.

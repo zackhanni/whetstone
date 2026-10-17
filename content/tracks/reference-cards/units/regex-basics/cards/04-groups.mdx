@@ -1,0 +1,21 @@
+---
+id: groups
+title: Groups — capturing, non-capturing and named
+---
+
+| Syntax | Does |
+| --- | --- |
+| `(abc)` | groups *and* captures — `m[1]`, `$1` |
+| `(?:abc)` | groups only, for a quantifier or alternation; nothing captured |
+| `(?<year>\d{4})` | captures under a name — `m.groups.year`, `$<year>` |
+| `\1`, `\k<year>` | inside the pattern: the same text as that group, again |
+
+```js
+const m = "2026-10-17".match(/(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})/);
+m.groups.year; // "2026"
+m[1];          // "2026" — named groups are numbered too
+m.index;       // 0
+```
+
+Names survive edits: adding a group earlier in the pattern renumbers `$1`, `$2`… but not the names.
+Reach for `(?:…)` whenever you need grouping but not the value, as in `/^(?:https?|ftp):/`.

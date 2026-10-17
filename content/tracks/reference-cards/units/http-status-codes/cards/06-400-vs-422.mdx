@@ -1,0 +1,20 @@
+---
+id: bad-request-vs-unprocessable
+title: 400 vs 422 — can't read it, or read it and it's wrong
+---
+
+- **`400 Bad Request`** — the server can't or won't process the request as sent: malformed JSON,
+  broken framing. The broad client-error fallback.
+- **`422 Unprocessable Content`** — the content type is understood (so not `415`) and the syntax
+  is correct, but the instructions can't be carried out. Valid JSON that breaks a rule:
+
+```json
+{ "start": "2026-05-10", "end": "2026-05-01" }
+```
+
+422 came from WebDAV; RFC 9110 (2022) moved it into core HTTP and renamed it from "Unprocessable
+Entity". Both codes are used for validation errors — NestJS's `ValidationPipe` answers 400 by
+default, plenty of APIs use 422 — so pick one per API and keep it.
+
+What's never right: letting a bad body surface as `500` because `JSON.parse` threw and nothing
+caught it.

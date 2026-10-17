@@ -1,0 +1,45 @@
+---
+id: one-process-is-not-the-app
+title: One process is not the app — why the state moves to Redis
+---
+
+On your laptop the app is one Node process. In production it's usually several — replicas
+behind a load balancer, each with its own memory. Anything you keep in a `Map` inside the process
+exists once **per replica**, and the load balancer decides which copy a request sees.
+
+Three kinds of state go wrong in exactly that way:
+
+| Kept in process memory | With 3 replicas |
+| --- | --- |
+| A cache | 3 separate caches. `updatePrice` deletes the entry on the replica that handled it; the other two keep serving the old price until their TTL. |
+| A rate-limit counter | 3 separate counters. "100 requests a minute" lets a client through 300 times, because each replica counts only what it saw. |
+| Login sessions | The session lives on the replica that logged you in. The next request lands elsewhere and you're logged out. |
+
+These aren't hypotheticals: `@nestjs/throttler`'s default storage is an in-memory map in each
+process, `CacheModule.register()` with no store is in-memory, and the `express-session` docs
+say its default `MemoryStore` "does not scale past a single process" and is meant for
+development.
+
+**Redis** is the usual fix: one in-memory key-value server that every replica talks to over the
+network. It has what this state needs built in — a TTL on every key, atomic counters (`INCR`),
+and atomic "set only if absent" (`SET key value NX PX 60000`). Now there is one cache, one
+counter, one session per user, whichever replica answers.
+
+```
+        ┌───────────── load balancer ─────────────┐
+   replica A              replica B              replica C
+        └──────────────────── Redis ──────────────┘
+          cache entries · rate-limit counters · sessions
+```
+
+The trade is a network hop on every access, and **a new dependency that can go down**. Each kind
+of state needs a different answer to "Redis is unreachable — now what?": a cache can be skipped,
+a login rate limit probably shouldn't be, and sessions can't be. The complex tier works through
+each one.
+
+<!--more-->
+
+Running a single replica doesn't make this go away. A rolling deploy starts the new process
+before the old one stops, a crash restart wipes the memory, and autoscaling adds replicas at
+exactly the moment traffic is highest. Plan for "more than one" from the start, or know which
+of these you're accepting.

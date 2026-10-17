@@ -1,0 +1,64 @@
+---
+id: dual-write-and-outbox
+title: Saving and publishing — the dual-write problem
+---
+
+The publisher has its own version of the same problem. Paying an order means two writes to two
+systems — the order row in your database and the event on the transport — and no transaction
+spans both:
+
+```ts
+async markPaid(orderId: string) {
+  await this.orders.update(orderId, { status: "paid" });
+  this.events.emit("order.paid", { eventId: `order-paid:${orderId}`, orderId });
+}
+```
+
+Every ordering fails somewhere:
+
+- **Save, then publish** (above). A crash, a deploy or a down broker between the two lines leaves a
+  paid order that nobody ships. And because `emit()` isn't awaited, a failed publish isn't even
+  noticed — it throws nothing.
+- **Publish, then save.** If the update fails, shipping books a courier for an unpaid order.
+- **Retry the publish on error.** A timeout after a send that actually arrived looks like a
+  failure, so the retry publishes twice.
+
+Awaiting `emit()` helps less than it looks: on TCP, Redis or core NATS, "published" means the
+bytes left your process, not that a consumer stored or handled them.
+
+## The transactional outbox
+
+Make the event a **row**, written in the same database transaction as the change it describes:
+
+```ts
+// Drizzle syntax; any ORM's transaction has the same shape.
+await this.db.transaction(async (tx) => {
+  await tx.update(orders).set({ status: "paid" }).where(eq(orders.id, orderId));
+  await tx.insert(outbox).values({ id: `order-paid:${orderId}`, topic: "order.paid", payload: { orderId } });
+});
+// A relay process reads committed outbox rows, publishes them, retries failures with backoff,
+// and marks each row sent.
+```
+
+Now both writes commit or neither does. The relay can still publish a row and die before marking
+it sent — so it publishes again, and the outbox deliberately turns "maybe lost" into "maybe
+twice". That's why the two patterns travel together: **an outbox on the publishing side, an
+inbox (idempotent handler) on every consuming side.** The overall guarantee is at least once,
+with the inboxes absorbing the duplicates.
+
+The Nest 12 docs describe this setup with a new `@nestjs/outbox` package (0.1.x as of October
+2026), which runs the relay, retries with backoff, and moves messages that keep failing to a
+dead-letter table. Whether you use it or hand-roll the table, the design questions are the same:
+how long a downstream outage your retries cover, who watches the dead letters, and how old a
+payload version a consumer must still accept after a deploy.
+
+<!--more-->
+
+**When the event id is fixed.** The relay's retry and the consumer's dedupe both depend on every
+copy of an event carrying the same id, so the id must be fixed when the event is *recorded*, not
+when it's *sent*. An id stored in the outbox row works even if it's random — `@nestjs/outbox` gives
+each row a UUIDv7, and every relay retry reuses it. A `randomUUID()` minted at publish time gives
+each retry a fresh identity, and every inbox downstream lets it through. Deriving the id from the
+data (`order-paid:ord_1001`) goes one step further: if the publishing code itself runs twice — a
+retried HTTP request, a double click — both rows carry the same id, and the inboxes still see one
+event.

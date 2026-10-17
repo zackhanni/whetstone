@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 3,
+  "slug": "regex-basics",
+  "title": "Regex basics in JavaScript",
+  "skills": ["javascript", "regex"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "objectives": [
+    "Read classes (`[^…]`, `\\d \\w \\s`), quantifiers, anchors (`^ $ \\b`), groups and alternation, and predict what a greedy vs a lazy quantifier matches",
+    "Choose the flag a job needs, telling `m` from `s` and knowing when text needs `u` (or `v`)",
+    "Pick `test`, `match`, `matchAll` or `replace` (with `$1` and `$<name>`), and predict what `match` and `replace` return with and without `g`",
+    "Explain and fix the `lastIndex` trap of a `g` regex reused with `test`",
+    "Escape user input with `RegExp.escape` (ES2025) before building a regex from it"
+  ],
+  "sources": [
+    { "title": "MDN: Regular expressions (guide, flags)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions" },
+    { "title": "MDN: Character classes", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Character_classes" },
+    { "title": "MDN: Quantifiers", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Quantifiers" },
+    { "title": "MDN: Assertions (anchors and word boundaries)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Assertions" },
+    { "title": "MDN: Groups and backreferences", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Groups_and_backreferences" },
+    { "title": "MDN: RegExp.prototype.test() — using test() with the global flag", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/test" },
+    { "title": "MDN: String.prototype.match()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/match" },
+    { "title": "MDN: String.prototype.matchAll()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/matchAll" },
+    { "title": "MDN: String.prototype.replace()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/replace" },
+    { "title": "MDN: String.prototype.split()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/split" },
+    { "title": "MDN: RegExp.prototype.unicodeSets (the v flag)", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/unicodeSets" },
+    { "title": "MDN: RegExp.escape()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/escape" },
+    { "title": "TC39: Finished proposals (publication year of each feature)", "url": "https://github.com/tc39/proposals/blob/main/finished-proposals.md" }
+  ],
+  "blocks": [
+    { "type": "cards", "id": "cards-regex", "dir": "cards" },
+    {
+      "type": "quiz",
+      "id": "quiz-regex",
+      "questions": [
+        {
+          "id": "anchored-validation",
+          "prompt": "Which pattern accepts `\"12345\"` but rejects both `\"123456\"` and `\"zip 12345\"`?",
+          "options": [
+            { "id": "both-anchors", "text": "`/^\\d{5}$/`" },
+            { "id": "unanchored", "text": "`/\\d{5}/`" },
+            { "id": "start-only", "text": "`/^\\d{5}/`" },
+            { "id": "end-only", "text": "`/[0-9]{5}$/`" }
+          ],
+          "answer": "both-anchors",
+          "explanation": "Only both anchors pin the whole input. `/\\d{5}/` is satisfied by five digits anywhere — `\"123456\"` contains `\"12345\"`. `/^\\d{5}/` checks only the start, so `\"123456\"` passes; `/[0-9]{5}$/` checks only the end, so `\"zip 12345\"` and `\"123456\"` both pass. (`[0-9]` and `\\d` are the same class.)"
+        },
+        {
+          "id": "alternation-precedence",
+          "prompt": "Which strings does `/^cat|dog$/` match?",
+          "options": [
+            { "id": "either-side", "text": "Anything that starts with `cat` or ends with `dog` — `catalog` and `hotdog` included" },
+            { "id": "exactly", "text": "Only `cat` and `dog`" },
+            { "id": "catdog", "text": "Only `catdog`" },
+            { "id": "contains", "text": "Any string that contains `cat` or `dog`" }
+          ],
+          "answer": "either-side",
+          "explanation": "`|` has the lowest precedence, so the pattern is `(^cat)` or `(dog$)`, and each anchor applies to its own side only. To mean \"exactly cat or dog\", group the alternation: `/^(?:cat|dog)$/`. \"Contains\" would need no anchors at all — `\"a cat\"` fails here, because `^cat` wants `cat` at the start."
+        },
+        {
+          "id": "dot-across-lines",
+          "prompt": "`/BEGIN.*END/.test(\"BEGIN\\nbody\\nEND\")` returns `false`. Which flag makes it `true`?",
+          "options": [
+            { "id": "s", "text": "`s`" },
+            { "id": "m", "text": "`m`" },
+            { "id": "g", "text": "`g`" },
+            { "id": "u", "text": "`u`" }
+          ],
+          "answer": "s",
+          "explanation": "`.` doesn't match line terminators unless the `s` (`dotAll`) flag is set. `m` is the usual wrong guess: it changes what `^` and `$` match (each line's start and end), not what `.` matches. `g` only changes how many matches are found, and `u` changes how characters are counted, not whether `.` accepts a newline."
+        },
+        {
+          "id": "unicode-flag",
+          "prompt": "`/^.$/.test(\"😀\")` returns `false`. Why, and what makes it `true`?",
+          "options": [
+            { "id": "u", "text": "Without `u` (or `v`) the regex sees the emoji as two UTF-16 code units, so `.` matches only half — add `u`" },
+            { "id": "s", "text": "`.` skips special characters like emoji unless the `s` flag is set" },
+            { "id": "class", "text": "`.` doesn't match emoji — write `[\\s\\S]` instead" },
+            { "id": "i", "text": "Emoji have no case, so the `i` flag is needed" }
+          ],
+          "answer": "u",
+          "explanation": "`\"😀\".length` is 2: outside Unicode mode a regex works on UTF-16 code units, and this emoji is a surrogate pair. `u` (or `v`) makes the regex work on code points, so `.` takes the whole character. `[\\s\\S]` has the same problem as `.` — it matches one code unit — and `s` only adds line terminators to what `.` accepts. Any pattern that runs on human text, with `.`, quantifiers or `\\p{…}`, wants `u` or `v`."
+        },
+        {
+          "id": "every-match-with-groups",
+          "prompt": "From `\"a=1&b=two&c=3\"` you need every pair, each with its `key` and `value` groups. Which call gives you that?",
+          "options": [
+            { "id": "matchall", "text": "`[...str.matchAll(/(?<key>\\w+)=(?<value>\\w+)/g)]`" },
+            { "id": "match-g", "text": "`str.match(/(?<key>\\w+)=(?<value>\\w+)/g)`" },
+            { "id": "match", "text": "`str.match(/(?<key>\\w+)=(?<value>\\w+)/)`" },
+            { "id": "matchall-no-g", "text": "`[...str.matchAll(/(?<key>\\w+)=(?<value>\\w+)/)]`" }
+          ],
+          "answer": "matchall",
+          "explanation": "`matchAll` yields one full match object per hit, each with its `groups` and `index`. `match` with `g` returns only the matched strings — `[\"a=1\", \"b=two\", \"c=3\"]` — and without `g` only the first match. `matchAll` requires the `g` flag; without it, it throws a `TypeError`."
+        },
+        {
+          "id": "replacement-syntax",
+          "prompt": "With `s = \"2026-10-17\"` and `p = /(?<y>\\d{4})-(?<m>\\d{2})-(?<d>\\d{2})/`, which calls produce `\"17/10/2026\"`? Select all that work.",
+          "options": [
+            { "id": "named", "text": "`s.replace(p, \"$<d>/$<m>/$<y>\")`" },
+            { "id": "numbered", "text": "`s.replace(p, \"$3/$2/$1\")`" },
+            { "id": "template", "text": "`` s.replace(p, `${d}/${m}/${y}`) ``" },
+            { "id": "dollar-name", "text": "`s.replace(p, \"$d/$m/$y\")`" }
+          ],
+          "answer": ["named", "numbered"],
+          "explanation": "`$<name>` inserts a named group, and named groups are numbered too, so `$3/$2/$1` works as well. A template literal is evaluated *before* `replace` is called, so `${d}` looks up a JavaScript variable named `d` — a `ReferenceError` here. `$d` isn't a replacement pattern at all, so it's inserted literally and the result is `\"$d/$m/$y\"`."
+        },
+        {
+          "id": "shared-global-regex",
+          "prompt": "A module has `const SLUG = /^[a-z0-9-]+$/g;` and `export const isSlug = (s) => SLUG.test(s);`. `isSlug(\"post-1\")` returns `true`, then `isSlug(\"post-2\")` returns `false`. Why?",
+          "options": [
+            { "id": "lastindex", "text": "With `g`, `test` resumes at `SLUG.lastIndex` (6 after the first match), where `^` can't match — drop the `g`" },
+            { "id": "cached", "text": "A regex literal caches its first result — build the regex inside the function" },
+            { "id": "multiline", "text": "`^` and `$` match only once per regex unless the `m` flag is set" },
+            { "id": "sticky", "text": "`test` needs the `y` flag to start from index 0" }
+          ],
+          "answer": "lastindex",
+          "explanation": "The first `test` succeeds and leaves `SLUG.lastIndex` at 6. The second call searches `\"post-2\"` from index 6, where `^` can never match, so it fails — and resets `lastIndex` to 0, so a third call would succeed. Nothing is cached: building the regex inside the function hides the bug only because each call then starts with a fresh `lastIndex`. `m` is about line breaks, and `y` makes things stricter, not better: a sticky regex must match exactly at `lastIndex`."
+        },
+        {
+          "id": "escape-user-input",
+          "prompt": "A search box runs `new RegExp(query, \"i\")` on whatever the user typed. Someone searches for `c++`. What happens, and what's the fix?",
+          "options": [
+            { "id": "escape", "text": "It throws `SyntaxError: … Nothing to repeat`; build the pattern from `RegExp.escape(query)` (ES2025)" },
+            { "id": "literal", "text": "It matches the text `c++`; nothing to fix" },
+            { "id": "u-flag", "text": "It matches `c` followed by anything; adding the `u` flag makes the input literal" },
+            { "id": "encode", "text": "It throws; pass the query through `encodeURIComponent` first" }
+          ],
+          "answer": "escape",
+          "explanation": "The query is parsed as a pattern, and the second `+` has nothing to repeat, so the constructor throws. `RegExp.escape(\"c++\")` returns `\\x63\\+\\+` (the leading letter is escaped too), which matches the text literally. `encodeURIComponent` escapes for URLs, not regexes: it turns `+` into `%2B`, which never matches `c++`. The `u` flag makes the parser stricter, not literal. On runtimes older than Node 24, Chrome 136, Firefox 134 or Safari 18.2, use a `RegExp.escape` polyfill."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-regex",
+      "snippets": [
+        {
+          "id": "test-alternates",
+          "code": [
+            "const re = /a/g;",
+            "console.log(re.test(\"a\"));",
+            "console.log(re.test(\"a\"));",
+            "console.log(re.test(\"a\"));"
+          ],
+          "question": "What do the three lines print?",
+          "answer": "true, then false, then true",
+          "acceptable": ["true false true"],
+          "explanation": "With `g`, the first `test` matches and sets `re.lastIndex` to 1. The second call searches `\"a\"` from index 1, finds nothing, returns `false` and resets `lastIndex` to 0, so the third call matches again. The regex carries state between calls — even across different strings. Without the `g`, every call prints `true`."
+        },
+        {
+          "id": "greedy-vs-lazy",
+          "code": [
+            "const html = \"<b>bold</b> and <i>it</i>\";",
+            "console.log(html.match(/<.+>/)[0]);",
+            "console.log(html.match(/<.+?>/)[0]);"
+          ],
+          "question": "What do the two lines print?",
+          "answer": "<b>bold</b> and <i>it</i>, then <b>",
+          "explanation": "`.+` is greedy: it runs to the end of the string, then backs off only until a `>` can match — the *last* `>`. `.+?` is lazy: it stops at the first `>` that lets the match finish. `/<[^>]+>/` gets `<b>` without relying on laziness, because the class can't cross a `>`."
+        },
+        {
+          "id": "replace-first-only",
+          "code": [
+            "console.log(\"a-b-c\".replace(\"-\", \"+\"));",
+            "console.log(\"a-b-c\".replace(/-/, \"+\"));",
+            "console.log(\"a-b-c\".replace(/-/g, \"+\"));"
+          ],
+          "question": "What do the three lines print?",
+          "answer": "a+b-c, a+b-c, a+b+c",
+          "explanation": "A string pattern is replaced once, and so is a regex without `g`: only the `g` flag makes `replace` change every match. For a plain string, `\"a-b-c\".replaceAll(\"-\", \"+\")` is the readable alternative."
+        },
+        {
+          "id": "match-g-drops-groups",
+          "code": [
+            "const s = \"2026-10-17\";",
+            "const one = s.match(/(\\d+)-/);",
+            "const all = s.match(/(\\d+)-/g);",
+            "console.log(one[1], all[1]);"
+          ],
+          "question": "What does the last line print?",
+          "answer": "2026 10-",
+          "explanation": "Without `g`, `match` returns the first match *with* its groups, so `one[1]` is the first capture group: `\"2026\"`. With `g`, it returns only the matched strings — `[\"2026-\", \"10-\"]` — so `all[1]` is the second whole match, and the groups are gone. Use `matchAll` when you need every match and its groups."
+        }
+      ]
+    }
+  ]
+}

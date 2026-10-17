@@ -1,0 +1,66 @@
+---
+id: route-conflicts-in-nest-12
+title: Making route conflicts loud (Nest 12)
+---
+
+"Literal before parametric" is a convention, and conventions drift — one controller added to the
+wrong end of a `controllers` array and `/users/profile` quietly runs `findOne("profile")`.
+Nest 12 adds two `NestFactory.create()` options that turn this into something a machine checks.
+Both are **off by default**, so upgrading changes nothing until you set them, and Nest 11 has
+neither.
+
+## `routeConflictPolicy` — report conflicts at boot
+
+```ts
+const app = await NestFactory.create(AppModule, {
+  routeConflictPolicy: { duplicate: "error", shadow: "error" },
+});
+```
+
+Each kind takes `"off"` (default), `"warn"` or `"error"`:
+
+- **`shadow`** — two patterns can match the same request, and the first registered wins:
+  `/users/:id` before `/users/me`.
+- **`duplicate`** — the same method, path, host and version registered twice.
+
+With `"warn"` you get one log line per pair at startup:
+
+```
+Route GET /users/me (UsersController#findMe) is shadowed by GET /users/:id
+(UsersController#findOne). The first-registered route will match all matching requests on
+order-sensitive adapters.
+```
+
+With `"error"`, every offending pair is collected into a single `RouteConflictException`,
+thrown from `app.init()` (or `app.listen()`), so the app doesn't start and you see all the
+conflicts at once. Set it in every environment and the e2e suite's boot is the check: a shadowed
+route fails CI instead of production.
+
+`duplicate` catches a quieter mistake too. Two controllers that carry `version: "1"` and
+`version: "2"` on the same path are a duplicate when versioning was never enabled — the version
+metadata is ignored, both register `GET /cats`, and v2 is dead. `duplicate: "error"` refuses to
+boot; with `enableVersioning()` in place, the same two controllers pass.
+
+## `routeResolutionStrategy` — let Nest order them
+
+```ts
+NestFactory.create(AppModule, { routeResolutionStrategy: "specificity" });
+```
+
+`"specificity"` registers literal segments before parametric ones and parametric before
+wildcards, whatever order you declared them in. `/users/me` then reaches `findMe`, and the `shadow`
+policy stops reporting that pair. It still reports what sorting can't fix: `:id` declared above
+`:slug` are equally specific, so `:slug` stays unreachable. The default, `"declaration"`, keeps
+the old first-declared behaviour.
+
+Which to choose: `specificity` makes the router forgiving; the policy makes the codebase honest.
+On an existing app, turn on `shadow: "warn"` first and read the list — any shadow that some
+client relies on today is a behaviour change waiting to happen when you flip the strategy.
+
+<!--more-->
+
+**Adapters.** Only order-sensitive adapters need any of this. Express (the default) matches in
+registration order. Fastify's router, `find-my-way`, already ranks routes by specificity, so on
+Fastify `shadow` is a no-op and `"specificity"` changes nothing — only `duplicate` applies to
+both. The `RouteConflictPolicy` and `RouteResolutionStrategy` types are exported from
+`@nestjs/common`.

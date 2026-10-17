@@ -16,13 +16,14 @@ pnpm check            # lint + typecheck + validate + test + test:challenges —
 pnpm validate         # schema + catalog + reading files + slugs + taxonomy + challenge contract (learning/validate-content.ts)
 pnpm test             # Vitest — pure lib/* and learning/* logic, node environment
 pnpm test:challenges  # every challenge grader, headless: starter must fail, solution must pass
+pnpm test:challenges:browser [slug…]  # the same, in real Sandpack (needs `pnpm dev` + Chrome)
 ```
 
 **`pnpm check` and `pnpm build` are gates — a change isn't done until both pass.** Vercel
 runs both on every push (`vercel.json` → `buildCommand`), so a failing gate also fails the
 preview and blocks the production deploy; the Vercel check on a PR is the gate's result. The headless
 challenge grader runs in happy-dom, not Sandpack, so a new or changed challenge also gets one run
-**in the browser** (starter fails, "Show solution" passes).
+**in the browser** (starter fails, "Show solution" passes): `pnpm test:challenges:browser <slug>`.
 
 ## Stack
 

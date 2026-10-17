@@ -1,0 +1,82 @@
+---
+id: idempotent-handlers
+title: Idempotent event handlers — the inbox, step by step
+---
+
+An **idempotent** handler has the same effect whether a message arrives once or five times. For
+a handler with a real side effect — booking a courier — that takes a record of which events it
+has handled: an *inbox*, kept somewhere every replica can see (Redis, or a table in the
+consumer's own database). Four decisions make it correct.
+
+## 1. Dedupe on an id that's the same for every delivery
+
+```ts
+const key = `shipping:${event.eventId}`;     // ✓ "order-paid:ord_1001", set by the publisher
+const key = `shipping:${messageId}`;          // ✗ new on every publish — a retry looks new
+const key = `shipping:${hash(payload)}`;      // ✗ breaks the moment the payload has a timestamp
+```
+
+The id comes from the **data**: an order is paid once, so `order-paid:<orderId>` names the event
+however many times it's sent. The `shipping:` prefix is the consumer's name. Two services
+consuming `order.paid` (shipping books a courier, email sends a receipt) each need to handle every
+event once, so each keeps its own records.
+
+## 2. Claim it atomically
+
+```ts
+// ✗ check-then-act: two concurrent deliveries can both see "absent"
+if ((await inbox.get(key)) === undefined) await inbox.set(key, "in-progress", CLAIM_TTL_MS);
+
+// ✓ one atomic step — Redis: SET key in-progress NX PX 60000
+const claimed = await inbox.setIfAbsent(key, "in-progress", CLAIM_TTL_MS);
+```
+
+Between the `get` and the `set`, another delivery — on this replica or another — can run the same
+check and also see "absent". `SET … NX` checks and writes inside Redis as one command, so exactly
+one delivery wins the claim.
+
+## 3. Two states, two TTLs, and release on failure
+
+```ts
+try {
+  await this.shipments.bookCourier(event.orderId);
+} catch (err) {
+  await inbox.delete(key);                     // let the redelivery do the work
+  throw err;                                   // and make sure there IS a redelivery
+}
+await inbox.set(key, "done", DONE_TTL_MS);
+```
+
+- **`in-progress` with a short TTL.** If the worker dies holding the claim, it expires and a
+  redelivery takes over.
+- **`done` only after the side effect,** kept longer than anything could be redelivered — days, if
+  dead-lettered messages can be replayed. Marking it done *first* is at-most-once by accident: one
+  failure, and every redelivery is skipped.
+- **Release on failure,** or the redelivery waits out the claim for nothing.
+
+## 4. Don't acknowledge an in-flight duplicate
+
+A delivery that loses the claim reads the state. `done`: acknowledge it, it's a true duplicate.
+`in-progress`: **don't** acknowledge it as handled — send it back. If you ack it and the first
+attempt then fails, no copy of the event is left to retry. How you send it back depends on the
+transport: on Kafka, throw (event-handler errors are retriable, so the offset isn't committed);
+on RabbitMQ with manual acks, `nack` it with requeue — a delivery that's simply never acked
+only returns when its channel closes. A requeued message can be redelivered immediately, so a
+short delay before requeueing keeps one slow attempt from becoming a redelivery loop.
+
+<!--more-->
+
+**The gap that remains.** If the worker books the courier and dies before writing `done`, the
+claim expires and a redelivery books a second courier. A Redis inbox narrows that window; it
+can't close it, because the side effect and the record are two writes to two systems. To close
+it, make the side effect itself idempotent — pass the event id as an idempotency key to the
+courier or payment API, or insert the event id under a unique constraint **in the same database
+transaction** as the work.
+
+**The packaged version.** The Nest docs now have a reliability section, including
+`@nestjs/idempotency`: `@Idempotent({ required: true, keyFrom: { payload: "eventId" } })` on an
+`@EventPattern` handler implements these rules — records keyed per handler, the key released when
+the handler fails, in-flight duplicates rejected with `IDEMPOTENCY_KEY_IN_USE` (the docs say not to
+acknowledge that delivery), and completed ones skipped. It was first published in
+September 2026 and is still 0.0.x as of October, so pin the exact version and read its changelog
+before you upgrade it.

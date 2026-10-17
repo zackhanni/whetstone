@@ -1,0 +1,85 @@
+---
+id: when-redis-is-down
+title: When Redis is down — fail open or fail closed, per use
+---
+
+"What happens when Redis is unreachable?" has a different right answer for each thing you put in
+it, and the libraries have already made some of those choices for you. The cache behaviour below
+was checked on Nest 12.1 with `@nestjs/cache-manager` 12.0, cache-manager 7.2 and `@keyv/redis`
+6.1, pointed at a Redis URL with nothing listening; the rate-limiter behaviour was checked
+with `@nestjs/throttler` 6.7 and a storage whose `increment()` throws.
+
+## The cache: reads fail open, writes don't
+
+The app still boots. Then:
+
+- `cache.get()` resolves `undefined` within milliseconds — cache-manager catches the store's error
+  and reports **a miss**. Nothing is logged unless you listen for its events.
+- `cache.set()`, `cache.del()` and `cache.wrap()` (after running your loader) **reject**: "Redis
+  client is not connected or has failed to connect".
+
+So the straightforward cache-aside service — `get`, miss, load from the database, `await set` —
+turns a database read that *succeeded* into a 500. Catch around `set` and `del`, log, and return
+what the database gave you: the cache is an optimisation, and losing it should cost latency, not
+correctness. (`CacheInterceptor` already does this: it falls through to the handler and only
+logs a failed `set`.)
+
+Failing open has a cost to plan for: every read now reaches the database. A hot key that was
+served from cache thousands of times a second becomes thousands of queries. Collapsing
+concurrent misses (the challenge's single-flight) and keeping database pool limits sane are what
+stop a cache outage from becoming a database outage.
+
+## The rate limiter: the guard fails closed — for every route
+
+When the throttler's storage throws, `ThrottlerGuard` throws, and the client gets a **500**.
+Registered with `APP_GUARD`, that's every guarded route: Redis being down takes the whole API
+with it. Owning the storage lets you choose per throttler:
+
+```ts
+class FallbackThrottlerStorage implements ThrottlerStorage {
+  private readonly logger = new Logger(FallbackThrottlerStorage.name);
+  private readonly local = new ThrottlerStorageService();      // the built-in in-memory one
+
+  constructor(private readonly shared: ThrottlerStorage) {}
+
+  async increment(key: string, ttl: number, limit: number, blockDuration: number, name: string) {
+    try {
+      return await this.shared.increment(key, ttl, limit, blockDuration, name);
+    } catch (err) {
+      this.logger.warn(`rate-limit store unavailable, limiting per instance: ${String(err)}`);
+      return this.local.increment(key, ttl, limit, blockDuration, name);
+    }
+  }
+}
+```
+
+Falling back to per-process counting keeps a limit in place — N replicas, so N times looser —
+instead of either "no limit" or "no API". For a **login, OTP or password-reset** limit, where the
+limit *is* the security control against guessing, failing closed is defensible — but only for
+those routes: refuse them with a 503 while Redis is down, and keep the rest of the API up.
+
+## Sessions: there's no fail-open
+
+A session stored only in Redis can't be read without Redis. `express-session` 1.19 passes a store
+error to `next(err)` — a 500 — and if the store reports itself disconnected it skips sessions
+entirely, so `req.session` is `undefined` and your guard sees nobody logged in. Either way users
+are logged out for the duration. The choices are architectural: run Redis with replication and
+failover, or authenticate with something that doesn't need a server-side lookup on every request
+(a signed token), and accept what that costs you in revocation.
+
+| Kept in Redis | When Redis is down | Usual choice |
+| --- | --- | --- |
+| Read cache | `get` misses, `set`/`del` reject | Fail open to the database; protect the database |
+| General rate limit | Guard throws → 500 everywhere | Fail open to per-instance limits |
+| Login / OTP limit | Same | Fail closed on that route only |
+| Sessions | Nobody is logged in | Make Redis highly available |
+
+<!--more-->
+
+**Fast failure isn't guaranteed.** The cache results above are `createKeyv(url)` as the Nest
+docs wire it, with nothing listening for the Keyv instance's `error` event. The `@keyv/redis`
+README recommends attaching a listener, so that a failed call returns a fallback instead of
+rejecting. In the same setup with a listener attached, `cache.get()` never failed at all: it was
+still waiting after 20 seconds while the client retried the connection. Check how your client
+behaves with Redis unreachable, and bound the wait (`@keyv/redis` has a `connectionTimeout`
+option) so a request can't hang behind the cache.

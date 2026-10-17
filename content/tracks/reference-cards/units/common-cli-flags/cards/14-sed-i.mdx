@@ -1,0 +1,22 @@
+---
+id: sed-in-place
+title: sed -i — same flag, different argument on macOS and Linux
+---
+
+`-i` edits a file in place, but the two `sed`s disagree about what follows it:
+
+| | GNU (Linux) | macOS (BSD) |
+| --- | --- | --- |
+| no backup | `sed -i 's/a/b/' f` | `sed -i '' 's/a/b/' f` |
+| keep `f.bak` | `sed -i.bak 's/a/b/' f` | `sed -i.bak 's/a/b/' f` |
+
+macOS `sed` *requires* a backup extension after `-i` (empty means none); GNU's is optional and must
+be attached. So each habit breaks on the other system:
+
+```bash
+sed -i 's/3000/3002/' app.env   # macOS: the script becomes the suffix → error
+sed -i -e 's/x/y/' f            # macOS: works, but leaves a backup named f-e
+sed -i '' 's/x/y/' f            # GNU: '' is read as the script, 's/x/y/' as a file
+```
+
+Portable: `sed -i.bak 's/x/y/' f && rm f.bak`.

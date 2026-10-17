@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 3,
+  "slug": "nest-microservices-and-messaging",
+  "title": "Microservices & messaging: patterns, delivery, idempotent handlers",
+  "skills": ["backend", "nestjs", "microservices", "messaging", "idempotency"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 45,
+  "objectives": [
+    "Choose `@MessagePattern` + `send()` or `@EventPattern` + `emit()` (on a controller) for a call, and predict what the caller gets back — a reply, an error payload, or nothing",
+    "Predict when a `ClientProxy` message leaves — `send()` is cold, `emit()` is hot — and bound `send()` with `timeout()` without assuming the remote work stops",
+    "Match a transport to its delivery guarantee (at most once vs at least once) and name where duplicate messages come from",
+    "Write an idempotent event handler: a stable event id, an atomic claim, release on failure, and in-flight duplicates sent back for redelivery"
+  ],
+  "sources": [
+    { "title": "NestJS docs: Microservices overview", "url": "https://docs.nestjs.com/microservices/basics" },
+    { "title": "NestJS docs: Microservice exception filters", "url": "https://docs.nestjs.com/microservices/exception-filters" },
+    { "title": "NestJS docs: Redis transporter", "url": "https://docs.nestjs.com/microservices/redis" },
+    { "title": "NestJS docs: NATS transporter", "url": "https://docs.nestjs.com/microservices/nats" },
+    { "title": "NestJS docs: RabbitMQ transporter", "url": "https://docs.nestjs.com/microservices/rabbitmq" },
+    { "title": "NestJS docs: Kafka transporter", "url": "https://docs.nestjs.com/microservices/kafka" },
+    { "title": "NestJS docs: Idempotency keys", "url": "https://docs.nestjs.com/reliability/idempotency" },
+    { "title": "NestJS docs: Outbox", "url": "https://docs.nestjs.com/reliability/outbox" },
+    { "title": "Redis docs: Pub/sub", "url": "https://redis.io/docs/latest/develop/pubsub/" },
+    { "title": "Redis docs: SET", "url": "https://redis.io/docs/latest/commands/set/" },
+    { "title": "RabbitMQ docs: Consumer acknowledgements", "url": "https://www.rabbitmq.com/docs/confirms" },
+    { "title": "NATS docs: Core NATS", "url": "https://docs.nats.io/nats-concepts/core-nats" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-messaging", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-messaging",
+      "questions": [
+        {
+          "id": "which-style",
+          "prompt": "After checkout, the orders service must let shipping, email and analytics know an order was paid. It needs nothing back. Which fits?",
+          "options": [
+            { "id": "event", "text": "`emit(\"order.paid\", …)`, with an `@EventPattern(\"order.paid\")` handler in each consumer" },
+            { "id": "send-each", "text": "`send()` to each of the three services in turn, so checkout knows they all succeeded" },
+            { "id": "one-message", "text": "One `@MessagePattern(\"order.paid\")` handler that calls the other two" },
+            { "id": "http", "text": "Three HTTP calls from the orders service — messaging is for streaming data" }
+          ],
+          "answer": "event",
+          "explanation": "It's a fact other services react to, and the publisher needs no answer: an event. The orders service doesn't know or care who listens, so a fourth consumer needs no change to it, and checkout's speed no longer depends on the slowest consumer. `send()` to each couples checkout to all three services' latency and uptime; routing everything through one handler recreates that coupling one hop later."
+        },
+        {
+          "id": "send-not-subscribed",
+          "prompt": "A service ends with `this.audit.send(\"audit.record\", entry); return order;`. Audit records never show up, and nothing errors. Why?",
+          "options": [
+            { "id": "cold", "text": "`send()` returns a cold Observable: nothing is sent until something subscribes, and nothing did" },
+            { "id": "no-handler", "text": "The audit service has no handler, and that error is swallowed" },
+            { "id": "async", "text": "The service returned before the message finished sending, so it was cancelled" },
+            { "id": "lazy", "text": "The client connects lazily, and the first message is always dropped" }
+          ],
+          "answer": "cold",
+          "explanation": "`send()` builds a request that runs per subscription. Unsubscribed, it never leaves — no error, no log. `await lastValueFrom(this.audit.send(...))` sends it and waits for the reply; if no reply is needed, `emit()` with an `@EventPattern` handler fits better, because `emit()` dispatches immediately. A missing handler would surface as an error once something subscribed, and the lazy connection is made on the first message, not instead of it."
+        },
+        {
+          "id": "http-exception-across-wire",
+          "prompt": "The pricing microservice throws `new NotFoundException(\"no such sku\")`. The HTTP gateway does `return await lastValueFrom(this.pricing.send(\"price.get\", { sku }))` with no `catch`. What does the gateway's HTTP client get?",
+          "options": [
+            { "id": "500", "text": "A 500: the gateway receives `{ status: \"error\", message: \"Internal server error\" }`, a plain object that isn't an `HttpException`" },
+            { "id": "404", "text": "A 404 with \"no such sku\" — the exception's status travels with it" },
+            { "id": "200-null", "text": "A 200 with an empty body, because the reply was an error" },
+            { "id": "hang", "text": "No response: the gateway waits for a reply that never comes" }
+          ],
+          "answer": "500",
+          "explanation": "HTTP exceptions don't cross the wire: any non-`RpcException` error in a microservice handler reaches the caller as `{ status: \"error\", message: \"Internal server error\" }` (checked on Nest 12.1 over TCP). The gateway's default filter sees a plain object and answers 500. Throw `RpcException({ code: \"SKU_NOT_FOUND\", … })` in the microservice and translate that code into `NotFoundException` in the gateway. The error does come back promptly, so nothing hangs."
+        },
+        {
+          "id": "rabbit-default-ack",
+          "prompt": "A consumer uses the RabbitMQ transporter with default options. It crashes halfway through handling a message. What happens to that message?",
+          "options": [
+            { "id": "lost", "text": "It's lost: with the default `noAck: true`, RabbitMQ treated it as delivered the moment it was sent" },
+            { "id": "redelivered", "text": "RabbitMQ redelivers it to another consumer, because it was never acknowledged" },
+            { "id": "dead-letter", "text": "It moves to the dead-letter queue for inspection" },
+            { "id": "retried-by-nest", "text": "Nest retries the handler in-process once it restarts" }
+          ],
+          "answer": "lost",
+          "explanation": "Nest's RabbitMQ transporter defaults to `noAck: true` — automatic acknowledgement, which RabbitMQ's docs describe as fire-and-forget: the message counts as delivered when it's sent. Redelivery after a crash needs manual acknowledgements: `noAck: false`, and `channel.ack()` only after the work is done. That turns at-most-once into at-least-once — and makes duplicates your handler's problem."
+        },
+        {
+          "id": "redis-scale-out",
+          "prompt": "An `@EventPattern(\"order.paid\")` consumer runs on the Redis transporter. You scale it from one replica to three. What changes?",
+          "options": [
+            { "id": "triplicated", "text": "Each replica receives every event — Redis pub/sub delivers to all subscribers — so every order is handled three times" },
+            { "id": "shared", "text": "Redis spreads events across the three replicas, so each handles about a third" },
+            { "id": "first-wins", "text": "The first replica to subscribe receives everything; the other two sit idle" },
+            { "id": "nothing", "text": "Nothing — Nest elects one replica as the consumer" }
+          ],
+          "answer": "triplicated",
+          "explanation": "The Redis transporter is built on Redis pub/sub, which pushes each message to every subscribed client (and drops it if there are none — at most once). Scaling out multiplies the work instead of sharing it. To share work between replicas, use a transport with queues or groups: RabbitMQ queues, NATS queue groups, Kafka consumer groups. (From the Redis and Nest docs; it needs a Redis server to observe.)"
+        },
+        {
+          "id": "dedupe-key",
+          "prompt": "Which value should an `order.paid` consumer's inbox use as its dedupe key?",
+          "options": [
+            { "id": "event-id", "text": "An event id derived from the data, like `order-paid:ord_1001`, prefixed with the consumer's name" },
+            { "id": "message-id", "text": "The transport's message id, which is unique per message" },
+            { "id": "payload-hash", "text": "A hash of the whole payload" },
+            { "id": "received-at", "text": "The order id plus the time the message was received" }
+          ],
+          "answer": "event-id",
+          "explanation": "The key must be identical on every delivery of the same event. A publisher's retry is a new message with a new message id, so keying on it lets the retry through. A payload hash breaks as soon as the payload carries a timestamp or a retry counter, and anything involving receive time is new every time. Prefixing the consumer's name lets two services that both consume `order.paid` each handle every event once."
+        },
+        {
+          "id": "in-flight-duplicate",
+          "prompt": "A second delivery of an event arrives while the first is still booking the courier. The inbox shows `in-progress`. What should the handler do?",
+          "options": [
+            { "id": "retry-later", "text": "Not acknowledge it as handled — send it back for redelivery later (throw on Kafka, nack with requeue on RabbitMQ)" },
+            { "id": "ack", "text": "Acknowledge it as a duplicate: the first delivery is handling the event" },
+            { "id": "process", "text": "Process it anyway, in case the first attempt fails" },
+            { "id": "wait", "text": "Block until the first attempt finishes, then acknowledge" }
+          ],
+          "answer": "retry-later",
+          "explanation": "`in-progress` isn't `done`. Ack this copy, and if the first attempt then fails, the event has no copy left to retry — it's lost. Processing it anyway books two couriers. Blocking ties up a consumer slot for as long as the slowest attempt, and a crashed first attempt would leave it waiting until the claim expires. Returning it to the broker costs a redelivery, which later finds `done` and is acked."
+        },
+        {
+          "id": "provider-handler",
+          "prompt": "`@EventPattern(\"user.created\")` is on a method of `@Injectable() EmailService`, which is in the module's `providers`. Events are published. What happens?",
+          "options": [
+            { "id": "ignored", "text": "The handler never runs; the microservice logs that there's no matching event handler" },
+            { "id": "runs", "text": "It runs — any provider method can handle events" },
+            { "id": "boot-error", "text": "Nest refuses to start: event handlers must be in controllers" },
+            { "id": "first-only", "text": "It runs only for the first event, then unsubscribes" }
+          ],
+          "answer": "ignored",
+          "explanation": "Nest collects `@MessagePattern` and `@EventPattern` handlers from **controllers** only; on a provider the decorator is ignored silently at boot. Each event then logs \"There is no matching event handler defined in the remote service\" on the consumer, while the publisher sees no error at all. Move the method to a controller that calls `EmailService`."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-messaging",
+      "prompts": [
+        {
+          "id": "patterns",
+          "prompt": "A pricing service answers questions; a shipping service reacts to announcements.",
+          "code": [
+            "@___(\"price.get\")",
+            "getPrice(@Payload() data: { sku: string }) { return this.prices.forSku(data.sku); }",
+            "",
+            "@___(\"order.paid\")",
+            "async onOrderPaid(@Payload() event: OrderPaid) { await this.shipments.book(event.orderId); }"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["MessagePattern"] }, { "id": "a2", "accept": ["EventPattern"] }],
+          "explanation": "`@MessagePattern` handlers return a reply to a `send()`; `@EventPattern` handlers return nothing anyone receives, and several can listen to one pattern. Both work only on controller methods."
+        },
+        {
+          "id": "send-bounded",
+          "prompt": "Send the request, wait for the reply as a promise, and give up after two seconds.",
+          "code": "const price = await ___(this.pricing.send<number>(\"price.get\", { sku }).pipe(___(2000)));",
+          "blanks": [{ "id": "b1", "accept": ["lastValueFrom", "firstValueFrom"] }, { "id": "b2", "accept": ["timeout"] }],
+          "explanation": "`lastValueFrom` subscribes — which is what actually sends a cold `send()` — and resolves with the last value when the stream completes; `firstValueFrom` works too for a single reply, resolving with the first value. RxJS's `timeout` errors the stream with `TimeoutError` if no value arrives in time; there's no default, so without it the call can wait forever. It doesn't cancel the remote handler."
+        },
+        {
+          "id": "rpc-exception",
+          "prompt": "In the microservice, report a failure the gateway can map to a 404.",
+          "code": "throw new ___({ code: \"SKU_NOT_FOUND\", message: `no price for ${sku}` });",
+          "blanks": [{ "id": "c1", "accept": ["RpcException"] }],
+          "explanation": "`RpcException`'s payload is what the caller receives — an object passes through as is, a string becomes `{ status: \"error\", message }`. Any other error, `HttpException` included, arrives as \"Internal server error\", so the gateway can't tell a missing sku from a crash."
+        },
+        {
+          "id": "atomic-claim",
+          "prompt": "Claim an event in Redis so that exactly one of several concurrent deliveries wins, and the claim expires if its holder dies.",
+          "code": "SET inbox:shipping:order-paid:ord_1001 in-progress ___ PX 60000",
+          "blanks": [{ "id": "d1", "accept": ["NX"] }],
+          "explanation": "`NX` sets the key only if it doesn't exist, checking and writing as one command, so one delivery gets `OK` and the rest get nil. `PX 60000` is the claim's TTL in milliseconds. A `GET` followed by a `SET` is two round trips with a gap another delivery can slip through."
+        },
+        {
+          "id": "rabbit-manual-ack",
+          "prompt": "Switch the RabbitMQ transporter to manual acknowledgements, and acknowledge a message after the work is done.",
+          "code": [
+            "options: { urls: [\"amqp://broker:5672\"], queue: \"shipping\", noAck: ___ }",
+            "",
+            "@EventPattern(\"order.paid\")",
+            "async onOrderPaid(@Payload() event: OrderPaid, @Ctx() context: RmqContext) {",
+            "  await this.shipping.handle(event);",
+            "  context.getChannelRef().___(context.getMessage());",
+            "}"
+          ],
+          "blanks": [{ "id": "e1", "accept": ["false"] }, { "id": "e2", "accept": ["ack"] }],
+          "explanation": "The default `noAck: true` acknowledges on delivery, so a crash mid-handler loses the message. With `noAck: false`, RabbitMQ keeps it until you `ack` and requeues it if the channel closes first — at least once, which is why `this.shipping.handle` must be idempotent."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-messaging",
+      "snippets": [
+        {
+          "id": "cold-and-hot",
+          "code": [
+            "// Nest 12, TCP. The remote service has @MessagePattern(\"sum\") and @EventPattern(\"user.created\").",
+            "this.client.send(\"sum\", [1, 2]);",
+            "this.client.emit(\"user.created\", { id: 1 });",
+            "",
+            "const sum$ = this.client.send(\"sum\", [1, 2]);",
+            "await lastValueFrom(sum$);",
+            "await lastValueFrom(sum$);"
+          ],
+          "question": "How many times does the remote `sum` handler run, and does the `user.created` handler run?",
+          "answer": "`sum` runs twice; `user.created` runs once",
+          "acceptable": ["2 and yes", "sum twice, user.created once", "twice; yes"],
+          "explanation": "The first `send()` is never subscribed, so it never leaves. `emit()` is hot: it dispatches immediately whether or not anyone subscribes. `sum$` is cold, and each `lastValueFrom` is a new subscription — a new request — so the handler runs twice. (Checked on Nest 11.2 and 12.1.) Reusing an Observable from `send()` is a way to send a message twice by accident."
+        },
+        {
+          "id": "stream-reply",
+          "code": [
+            "// pricing service",
+            "@MessagePattern(\"price.history\")",
+            "history() {",
+            "  return from([1199, 1249, 1299]);",
+            "}",
+            "",
+            "// caller",
+            "const price = await lastValueFrom(this.pricing.send<number>(\"price.history\", {}));",
+            "console.log(price);"
+          ],
+          "question": "What's logged?",
+          "answer": "1299",
+          "acceptable": ["1299 (the last value)"],
+          "explanation": "A handler that returns an Observable responds once per emitted value — three replies here — and the client's stream completes after the last. `lastValueFrom` resolves with the final value; `firstValueFrom` would give `1199`, and `.pipe(toArray())` all three. If you wanted the array, return the array: a plain value is one reply."
+        },
+        {
+          "id": "timeout-remote-continues",
+          "code": [
+            "// stock service",
+            "@MessagePattern(\"stock.reserve\")",
+            "async reserve(@Payload() data: { sku: string }) {",
+            "  await sleep(300);                      // a slow database",
+            "  console.log(\"reserved\", data.sku);",
+            "  return true;",
+            "}",
+            "",
+            "// gateway",
+            "await lastValueFrom(this.stock.send(\"stock.reserve\", { sku: \"TEA-1\" }).pipe(timeout(100)));"
+          ],
+          "question": "What happens on each side?",
+          "answer": "The gateway's await rejects with TimeoutError after ~100 ms; the stock service still logs \"reserved TEA-1\" about 200 ms later",
+          "acceptable": ["TimeoutError, and the stock is reserved anyway", "gateway times out, handler still finishes"],
+          "explanation": "`timeout()` errors the caller's stream and unsubscribes; nothing is sent to the stock service to stop it, so the handler finishes and the reservation stands (checked on Nest 12.1 over TCP). The gateway now believes the call failed while the stock is reserved — and a retry would reserve it again. Treat a timeout as \"unknown outcome\", not \"failed\"."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-idempotent-handler", "challengeSlug": "nest-idempotent-event-handler" }
+  ]
+}

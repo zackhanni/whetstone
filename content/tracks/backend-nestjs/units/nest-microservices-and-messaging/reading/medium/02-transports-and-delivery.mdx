@@ -1,0 +1,58 @@
+---
+id: transports-and-delivery
+title: Transports, and the delivery guarantee each one gives you
+---
+
+Nest hides each transport behind the same `send` / `emit` / `@MessagePattern` / `@EventPattern`
+API, so switching from TCP to RabbitMQ is mostly configuration. What does **not** stay the same
+is what happens when something crashes — and that decides how you must write handlers.
+
+Every messaging system gives one of two guarantees:
+
+- **At most once** — a message is delivered once or not at all. A crash at the wrong moment
+  *loses* it.
+- **At least once** — a message is redelivered until someone acknowledges it. Nothing is lost,
+  but a crash at the wrong moment *repeats* it.
+
+What you can't buy is exactly-once *handling* of a side effect. Kafka's exactly-once features
+(the idempotent producer and transactions) cover reading, processing and writing *Kafka topics*;
+its docs say exactly-once delivery to other systems "generally requires cooperation with such
+systems". No broker can stop your handler from booking a courier, crashing before its
+acknowledgement, and booking again on redelivery. You get the *effect* of exactly once by pairing
+at-least-once delivery with handlers that can safely run twice.
+
+Only the TCP row below was run for this unit (Nest 12.1); the broker rows summarise the Nest
+transporter docs and each broker's own documentation.
+
+| Transport (Nest 12) | Shape | Guarantee |
+| --- | --- | --- |
+| **TCP** (default) | Point to point, no broker | At most once. Nothing is stored: the consumer must be up when you send. |
+| **Redis** | Pub/sub channels | At most once — the Redis docs say so, and the Nest docs call it fire-and-forget: a message with no subscriber is dropped. |
+| **NATS** | Subjects; `queue` groups share the work | At most once on core NATS, which is what the transporter uses for events. (NATS JetStream adds at-least-once.) |
+| **RabbitMQ** | Queues; consumers of one queue share the work | Depends on `noAck`. Nest's default, `true`, is RabbitMQ's automatic acknowledgement: the message counts as delivered once it's sent, so a crash mid-handler loses it. With `noAck: false` you call `channel.ack()` after the work; if the consumer dies first, RabbitMQ requeues the message and delivers it again: at least once. |
+| **Kafka** | Partitioned log; a consumer group shares the partitions | At least once. An exception in an event handler is retriable by default: the offset isn't committed, and the message comes back. |
+
+Two operational traps hide in that table. The first comes from the Redis and Nest docs — it takes
+a Redis server and several replicas to see it:
+
+- **Redis pub/sub sends every message to every subscriber.** Scale a Redis-transport consumer to
+  three replicas and each replica receives each event: the work triples instead of being shared.
+  NATS queue groups and RabbitMQ queues are how you share work between replicas.
+- **"Sent" isn't "handled".** On TCP, Redis or core NATS, a successful `emit` means the bytes left
+  your process. If the consumer crashes after that, the message is gone.
+
+## Where duplicates come from
+
+Even on an at-most-once transport, your handler can see the same event twice, because the
+*publisher* can repeat it:
+
+1. **A publisher retries after a timeout.** The first attempt was slow, not lost; now there are
+   two. (A `timeout()` abandons the wait, never the remote work.)
+2. **A broker redelivers an unacknowledged message.** The handler finished the work and crashed
+   before the ack — or a deploy killed it there.
+3. **A relay publishes, then dies before recording that it did.** The outbox pattern (complex
+   tier) chooses this duplicate on purpose, rather than losing the event.
+
+So the rule for any handler with a side effect — charging a card, booking a courier, sending an
+email — is the same on every transport: **assume every message may arrive more than once.**
+The complex tier shows how to make a handler idempotent.

@@ -1,0 +1,74 @@
+---
+id: throttler
+title: @nestjs/throttler — what it counts, per what, and where
+---
+
+The lifecycle unit covered *why* `ThrottlerGuard` is a guard. This is how to configure it
+(`@nestjs/throttler` 6.7, which supports Nest 12) and what its numbers actually mean.
+
+```ts
+@Module({
+  imports: [
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],     // 100 requests per 60 s; ttl in milliseconds
+      // storage: …                                    // see "Where the count lives" below
+    }),
+  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+})
+export class AppModule {}
+
+@Controller("auth")
+export class AuthController {
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })   // tighter for credential guessing
+  @Post("login") login() {}
+}
+
+@SkipThrottle()                                       // health checks shouldn't spend a budget
+@Controller("health")
+export class HealthController {}
+```
+
+Over the limit, the guard throws and the client gets
+`429 {"statusCode":429,"message":"ThrottlerException: Too Many Requests"}` with a `Retry-After`
+header in seconds. Successful responses carry `X-RateLimit-Limit`, `-Remaining` and `-Reset`.
+
+## Per what? Per route, per client
+
+The guard counts under a key built from **the controller class, the handler, the throttler's
+name and a tracker** — the client's IP by default. So "100 a minute" means 100 a minute **per
+route, per IP**, not per client across the API. A client spreading requests over five routes
+gets five budgets. When the real limit is per account or per API key, override `getTracker` (or
+`generateKey`) to count on that.
+
+## The tracker behind a proxy
+
+The default tracker is `req.ip`. Behind a load balancer, without telling Express to trust it,
+`req.ip` is **the load balancer's address for every user** — so everyone shares one bucket, and
+one busy client gets the whole site rate-limited.
+
+```ts
+const app = await NestFactory.create<NestExpressApplication>(AppModule);
+app.set("trust proxy", "10.0.0.0/8");    // the load balancer's subnet: only it may set X-Forwarded-For
+```
+
+Name the proxy you actually have: its address or subnet, or `"loopback"` when it runs on the
+same host (the Nest docs' example). Express then walks `X-Forwarded-For` from the right and makes
+`req.ip` the first address it doesn't trust — the client. `app.set("trust proxy", true)` instead
+takes the **left-most** entry, which is whatever the client sent unless a proxy replaced the
+header. On an app clients can reach directly, or behind a proxy that appends to the header rather
+than overwriting it, that means any client can send a fresh "IP" per request and never hit the
+limit.
+
+## Where the count lives
+
+The built-in storage is an in-memory map **in each process**. With three replicas, every client
+gets three budgets, one per replica it happens to hit. The docs' answer for distributed servers
+is a shared store: `storage` takes any object implementing `ThrottlerStorage`, whose one method
+is `increment(key, ttl, limit, blockDuration, throttlerName)`.
+
+The Redis storage the docs link to, `@nest-lab/throttler-storage-redis`, is a community package.
+As of October 2026 its latest release (1.2.0) declares peer dependencies only up to Nest 11, so
+`npm install` on a Nest 12 app stops with `ERESOLVE`. You can override the peer range, or write
+the storage yourself — it's one method, and owning it is also how you decide what happens when
+Redis is down (complex tier).

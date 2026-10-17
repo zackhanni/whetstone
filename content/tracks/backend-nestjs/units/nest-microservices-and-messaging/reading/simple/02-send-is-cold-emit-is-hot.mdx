@@ -1,0 +1,70 @@
+---
+id: send-is-cold-emit-is-hot
+title: send() waits to be subscribed; emit() doesn't
+---
+
+`ClientProxy.send()` and `emit()` both return an RxJS `Observable`, and they behave in opposite
+ways. Getting this wrong loses messages silently. (Checked on Nest 11.2 and 12.1 over TCP.)
+
+## `send()` is cold — nothing leaves until someone subscribes
+
+```ts
+this.audit.send("audit.record", entry);          // ✗ never sent: nobody subscribed
+return order;
+```
+
+A cold Observable is a *recipe*, not an action: `send()` builds it, and the request goes out only
+when something subscribes. Every subscription runs the recipe again:
+
+```ts
+const price$ = this.pricing.send<number>("price.get", { sku });
+await lastValueFrom(price$);                     // request 1
+await lastValueFrom(price$);                     // request 2 — the handler runs twice
+```
+
+Three ways to subscribe, in order of how often you want them:
+
+```ts
+const price = await lastValueFrom(this.pricing.send<number>("price.get", { sku }));  // in a service
+
+@Get(":sku/price")
+price(@Param("sku") sku: string) {
+  return this.pricing.send<number>("price.get", { sku });   // an HTTP handler can return it: Nest subscribes
+}
+
+this.pricing.send("price.get", { sku }).subscribe(...);       // rarely: you now own the subscription
+```
+
+`lastValueFrom` resolves with the **last** value once the stream completes. That matters when a
+handler returns an Observable itself: `from([1, 2, 3])` sends three replies, so `lastValueFrom`
+gives `3` and `firstValueFrom` gives `1`.
+
+## `emit()` is hot — it's sent the moment you call it
+
+```ts
+this.events.emit("order.paid", event);          // already on its way, subscribed or not
+```
+
+`emit()` connects and dispatches immediately; the Observable it returns only *reports* how that
+went. Ignore it and you also ignore failures: with the consumer down, an un-awaited `emit()`
+throws nothing and logs nothing on the caller's side — the event is simply gone.
+
+```ts
+await lastValueFrom(this.events.emit("order.paid", event));   // rejects with ECONNREFUSED if it can't be sent
+```
+
+Awaiting it tells you the event **left the process** — nothing more. It resolves once the client
+has handed the message to its connection, without waiting for any handler (in a local run, before
+the handler had even started), and it can't tell you whether a handler succeeded.
+
+## Bound every `send()`
+
+There is no default timeout. If the other service accepts the connection and never answers,
+`lastValueFrom(send(...))` waits forever. Put a limit on it:
+
+```ts
+this.pricing.send<number>("price.get", { sku }).pipe(timeout(2_000));   // TimeoutError after 2 s
+```
+
+A timeout stops the *waiting*, not the *work*: the pricing service keeps running the handler and
+finishes it. Remember that the next time a retry after a timeout seems like an easy fix.
