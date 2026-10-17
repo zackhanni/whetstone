@@ -4,13 +4,13 @@ window resize bumps the counter by more than one.
 
 ## Hints
 
-- **Effect 1** keeps `count` in sync with `text`. Anything you can compute during render
-  isn't state: `const count = text.length` and the effect disappears.
+- **Effect 1** keeps `count` in sync with `text`. Ask whether `count` holds anything
+  `text` doesn't already know. Fixing its dependency array still leaves a second render
+  after every keystroke, and the tests count renders.
 - **Effect 2** copies the prop into state after *every* render, so it overwrites each
-  keystroke. Delete it — `useState(description)` already seeds the initial value. (To
-  reset when a *different* record loads, the parent remounts with a `key`.)
-- **Effect 3** is a genuine subscription, but it needs a named handler, a
-  `return () => window.removeEventListener("resize", onResize)` cleanup, and `[]` deps so
-  it subscribes once instead of once per render.
+  keystroke. Ask what already gives `text` its first value. (Resetting the draft for a
+  *different* record is the parent's job, done with a `key`.)
+- **Effect 3** is a genuine subscription. The cleanup can only remove a listener it can
+  name, and the dependency array decides how many times it subscribes.
 
 Attack order: **derive → delete → fix the deps/cleanup on what's left.**

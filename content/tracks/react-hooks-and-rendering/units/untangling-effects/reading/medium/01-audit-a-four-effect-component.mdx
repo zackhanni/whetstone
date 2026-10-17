@@ -54,8 +54,8 @@ reference, so an inline arrow can never be removed.
 **4 — legitimately an effect, but it fights the component.** Because it re-runs on every
 `text` change, it *is* a debounce (nice), but `onCommit` in the dependency list means an
 inline parent callback re-creates the timer on every parent render. Either memoize
-`onCommit` in the parent (`useCallback`) or hold the callback in a ref and keep the deps
-to `[text]`.
+`onCommit` in the parent (`useCallback`), or read it through an Effect Event
+(`useEffectEvent`, React 19.2+) and keep the deps to `[text]`.
 
 Result: four effects become one subscription effect plus one save effect — with `count`
 derived and the prop-sync deleted.

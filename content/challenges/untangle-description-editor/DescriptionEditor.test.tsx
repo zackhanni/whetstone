@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
+import { Profiler } from "react";
 import { DescriptionEditor } from "./DescriptionEditor";
 
 const setup = () => {
@@ -34,6 +35,22 @@ describe("DescriptionEditor", () => {
     const { type, count } = setup();
     type("hello");
     expect(count()).toBe("5");
+  });
+
+  // A count that is synced in an effect still ends up right, one render late: the keystroke
+  // renders with the old count, then the effect's setCount renders again. <Profiler> calls
+  // onRender once per commit, so a derived count shows up as exactly one.
+  it("derives the count in the keystroke's own render (one render, not two)", () => {
+    let commits = 0;
+    render(
+      <Profiler id="editor" onRender={() => { commits += 1; }}>
+        <DescriptionEditor description="Draft" />
+      </Profiler>,
+    );
+    commits = 0;
+    fireEvent.change(screen.getByTestId("text"), { target: { value: "hello" } });
+    expect(screen.getByTestId("count").textContent).toBe("5");
+    expect(commits).toBe(1);
   });
 
   it("counts two resize events as exactly two", () => {

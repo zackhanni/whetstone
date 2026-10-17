@@ -10,7 +10,7 @@
   "acceptanceCriteria": [
     "The input starts from the `description` prop",
     "Typing sticks — the value doesn't revert",
-    "`chars` matches the current text on every keystroke",
+    "`chars` matches the current text on every keystroke, in that keystroke's own render — no second render to catch up",
     "Two resize events increment `resizes` by exactly two, and the listener is removed on unmount"
   ]
 }
