@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 3,
+  "slug": "latest-only-search-client",
+  "title": "Make the search client latest-only",
+  "skills": ["async", "AbortController", "promises"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 30,
+  "runner": "in-browser",
+  "entry": "search-client.ts",
+  "acceptanceCriteria": [
+    "A search shows its results, with `status: \"success\"`",
+    "Starting a new search aborts the previous request's signal",
+    "An older response never overwrites a newer search's results, even when the request ignores its signal",
+    "A superseded search is never reported as an error, even when the request rejects with its own error instead of an `AbortError`",
+    "`cancel()` aborts the request in flight and returns to `status: \"idle\"` with no error, and stays idle even if that request still resolves",
+    "A search that takes longer than `timeoutMs` (default `TIMEOUT_MS`) has its request aborted, and ends with `status: \"error\"` and `error: \"Search timed out\"`",
+    "A real failure ends with `status: \"error\"` and the failure's own message"
+  ]
+}

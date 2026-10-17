@@ -1,0 +1,60 @@
+---
+id: timeouts-and-combined-signals
+title: Timeouts, combined signals, and telling the reasons apart
+---
+
+**`AbortSignal.timeout(ms)`** returns a signal that aborts by itself after `ms` milliseconds,
+with a `TimeoutError` `DOMException` as its reason. Unlike `Promise.race` with a timer, it really
+stops the request:
+
+```js
+const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+```
+
+**`AbortSignal.any([a, b, …])`** returns a signal that aborts when **any** of its inputs does,
+taking that first input's reason. It's how you give one request two ways to stop: the user or a
+newer query, **or** a deadline.
+
+```js
+const controller = new AbortController(); // for cancel() / a newer search
+const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]);
+
+try {
+  const res = await fetch(url, { signal });
+  return await res.json();
+} catch (err) {
+  if (controller.signal.aborted) return;         // we cancelled it: not a failure
+  if (err.name === "TimeoutError") throw new Error("Search timed out");
+  throw err;                                      // a real failure: network, HTTP, parse
+}
+```
+
+Three outcomes, three different jobs: a cancellation is **silent**, a timeout is a **failure with
+a clear message** (and maybe a retry), and anything else is a **real error**.
+
+**Check your own signal, not just the error's name.** `err.name === "AbortError"` only works for
+the default reason. Abort with your own value, `controller.abort(new Error("superseded"))`, and
+`fetch` rejects with exactly that `Error`, whose `name` is `"Error"`. The check misses it, and the
+cancellation shows up as a failure. `controller.signal.aborted` answers the real question, "did
+_we_ cancel this?", whatever the reason was.
+
+**Support (MDN compatibility data).**
+
+| API | Chrome | Firefox | Safari | Node |
+| --- | --- | --- | --- | --- |
+| `AbortSignal.timeout()` | 124 (103–123: see below) | 100 | 16 | 17.3 |
+| `AbortSignal.any()` | 116 | 124 | 17.4 | 20.3 |
+| `signal.reason`, `throwIfAborted()` | 98 / 100 | 97 | 15.4 | 17.2 / 17.3 |
+
+Chrome 103 to 123 shipped `AbortSignal.timeout()` aborting with an **`AbortError`**, not a
+`TimeoutError`. On those versions a name check can't tell a timeout from a cancellation, which is
+one more reason to decide by checking your own controller's signal.
+
+<!--more-->
+
+### The timeout clock pauses
+
+MDN: the timeout "is based on active rather than elapsed time", so it's effectively paused while
+the page sits in the back/forward cache or a worker is suspended. That's usually what you want for
+a request. If you need wall-clock deadlines (a session expiry), compare against `Date.now()` instead
+(the `timers` unit).

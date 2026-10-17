@@ -1,0 +1,49 @@
+---
+id: a-controller-and-its-signal
+title: A controller and its signal
+---
+
+Promises have no built-in "cancel". The platform's answer is a pair of objects:
+
+- **`AbortController`**, the button. Whoever decides to cancel keeps it and calls `abort()`.
+- **`AbortSignal`** (`controller.signal`), the wire. You pass it to the work. The work watches it
+  and stops when it fires.
+
+```js
+const controller = new AbortController();
+
+fetch("/api/report", { signal: controller.signal })
+  .then((res) => res.json())
+  .then(showReport)
+  .catch((err) => {
+    if (err.name === "AbortError") return; // we cancelled it: not a failure
+    showError(err);
+  });
+
+cancelButton.onclick = () => controller.abort();
+```
+
+When `abort()` is called, `fetch` stops the request and its promise rejects with an `AbortError`
+`DOMException`. If the response headers have already arrived, reading the body
+(`res.json()`, `res.text()`) rejects instead.
+
+Four facts about the pair:
+
+- **Aborting is one-way and once.** The first `abort()` sets `signal.aborted = true` and fires
+  the `abort` event. Later calls do nothing, and the signal stays aborted forever.
+- **So use one controller per operation.** A signal that's already aborted makes every new
+  `fetch` reject immediately. Create a fresh controller for each request you might cancel.
+- **`signal.reason`** says why. With no argument it's an `AbortError` `DOMException`.
+  `abort(someValue)` makes `someValue` the reason, and `fetch` rejects with exactly that value.
+- **Cancellation is cooperative.** A signal does nothing by itself. It only stops work that
+  takes it and listens to it. `fetch` does. Your own async functions must be written to (medium
+  tier).
+
+<!--more-->
+
+### It isn't only for fetch
+
+`addEventListener(type, handler, { signal })` removes the listener when the signal aborts, so
+one `abort()` can tear down a whole set of listeners. Node accepts a `signal` in many APIs, for
+example `fetch`, `node:timers/promises`, `events.once` and `fs.promises.readFile`. The
+`use-effect` unit shows the React side: abort in an effect's cleanup.

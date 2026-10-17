@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 3,
+  "slug": "cancellation-and-races",
+  "title": "Cancellation & races: AbortController and latest-only requests",
+  "skills": ["async", "AbortController", "promises"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Thread an `AbortSignal` through your own async functions: accept `{ signal }`, check `throwIfAborted()`, reject with `signal.reason`, and stop the underlying work",
+    "Combine a cancel with a deadline using `AbortSignal.any()` and `AbortSignal.timeout()` (naming their support versions), and tell a cancellation, a timeout and a real failure apart",
+    "Fix a last-response-wins race with an abort plus a latest-request check, and say what each one covers",
+    "Explain what aborting can't do: un-send a write, order updates on the server, or stop code that ignores the signal"
+  ],
+  "sources": [
+    { "title": "MDN: AbortController", "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController" },
+    { "title": "MDN: AbortSignal", "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal" },
+    { "title": "MDN: AbortSignal.timeout()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/timeout_static" },
+    { "title": "MDN: AbortSignal.any()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/any_static" },
+    { "title": "MDN: Using the Fetch API — canceling a request", "url": "https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch#canceling_a_request" },
+    { "title": "DOM Standard: Aborting ongoing activities", "url": "https://dom.spec.whatwg.org/#aborting-ongoing-activities" },
+    { "title": "Node.js API: AbortController", "url": "https://nodejs.org/api/globals.html#class-abortcontroller" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-cancellation", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-cancellation",
+      "questions": [
+        {
+          "id": "reuse-controller",
+          "prompt": "A search box keeps **one** `AbortController` for the whole page and calls `controller.abort()` before each new search, passing `controller.signal` to `fetch`. From the second keystroke on, every search fails instantly. Why?",
+          "options": [
+            { "id": "stays-aborted", "text": "A signal stays aborted forever, and `fetch` rejects straight away when given one. Each request needs a fresh controller" },
+            { "id": "global", "text": "`abort()` cancels every `fetch` on the page, including future ones" },
+            { "id": "cached", "text": "The browser caches the aborted response and replays it" },
+            { "id": "needs-reset", "text": "The controller must be `reset()` after each abort" }
+          ],
+          "answer": "stays-aborted",
+          "explanation": "Aborting is one-way: the first `abort()` sets `signal.aborted` to `true` permanently, and later `abort()` calls do nothing. `fetch` (like any API following the DOM Standard) rejects immediately when handed an already-aborted signal. There is no `reset()`. The pattern is: abort the **previous** controller, then create a new one for the new request. Nothing is global: `abort()` affects only work that was given this signal."
+        },
+        {
+          "id": "own-sleep-already-aborted",
+          "prompt": "Your `sleep(ms, signal)` adds an `abort` listener that clears the timer and rejects. Called with a signal that's **already** aborted, it waits the full `ms` and then resolves. Why?",
+          "options": [
+            { "id": "late-listener", "text": "The `abort` event has already fired, and a listener added afterwards never runs. Check `signal.throwIfAborted()` (or `signal.aborted`) first" },
+            { "id": "settimeout-ignores", "text": "`setTimeout` ignores signals, so a timer can't be stopped once scheduled" },
+            { "id": "once-per-page", "text": "Abort listeners fire only once per page, and another listener used it up" },
+            { "id": "no-reject-in-listener", "text": "`reject` can't be called from inside an event listener" }
+          ],
+          "answer": "late-listener",
+          "explanation": "Events aren't replayed: the `abort` event fires once, at the moment of the abort. A listener attached later waits for an event that will never come. That's why the DOM Standard tells abortable APIs to \"reject immediately if the AbortSignal is already aborted\" before they start listening. `signal.throwIfAborted()` does it in one line, throwing `signal.reason`. The timer itself can be cleared fine, once something actually runs `clearTimeout`."
+        },
+        {
+          "id": "custom-reason",
+          "prompt": "A client cancels with `controller.abort(new Error(\"superseded\"))`, and its `catch` ignores errors where `err.name === \"AbortError\"`. What does the user see when a search is superseded?",
+          "options": [
+            { "id": "error-shown", "text": "An error. `fetch` rejects with the reason itself, an `Error` whose `name` is `\"Error\"`, so the check misses it" },
+            { "id": "wrapped", "text": "Nothing: `fetch` wraps any reason in an `AbortError`, so the check still matches" },
+            { "id": "type-error", "text": "`abort()` throws a `TypeError`, because the reason must be a `DOMException`" },
+            { "id": "ignored-reason", "text": "Nothing: `fetch` ignores custom reasons and always rejects with `AbortError`" }
+          ],
+          "answer": "error-shown",
+          "explanation": "`abort(reason)` accepts any value, and `fetch` rejects with exactly that value (tested in Node 24: `Error | superseded`). An `AbortError` appears only when no reason is given. Name checks are fragile for this reason. The robust check is your own bookkeeping, `controller.signal.aborted` or \"is this still the current request?\", which is true whatever the reason was."
+        },
+        {
+          "id": "timeout-signal-vs-race",
+          "prompt": "Why prefer `fetch(url, { signal: AbortSignal.timeout(5000) })` over `Promise.race([fetch(url), rejectAfter(5000)])`?",
+          "options": [
+            { "id": "really-stops", "text": "The signal actually aborts the request. `race` only stops waiting, and the request keeps running and downloading" },
+            { "id": "race-cant-reject", "text": "`Promise.race` can't reject, so the timeout would never be reported" },
+            { "id": "wall-clock", "text": "`AbortSignal.timeout` measures wall-clock time even in background tabs, unlike timers" },
+            { "id": "same", "text": "They're equivalent. The signal version is just shorter" }
+          ],
+          "answer": "really-stops",
+          "explanation": "Combinators settle on outcomes. They never stop the work behind them, so with `race` the losing request still runs to completion, using bandwidth and maybe server capacity. A signal goes **into** `fetch`, which tears the request down and rejects with a `TimeoutError`. (`race` does reject when the timer rejects first. And MDN says the timeout's clock is based on _active_ time, paused in the back/forward cache, the opposite of wall-clock.)"
+        },
+        {
+          "id": "telling-outcomes-apart",
+          "prompt": "A request uses `signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)])`. Which `catch` logic tells a user cancel, a timeout and a real failure apart, even if someone aborts with a custom reason?",
+          "options": [
+            { "id": "controller-then-name", "text": "`controller.signal.aborted` → cancelled. Otherwise `err.name === \"TimeoutError\"` → timed out. Otherwise a real failure" },
+            { "id": "combined-aborted", "text": "`signal.aborted` → cancelled. Otherwise a real failure" },
+            { "id": "abort-name", "text": "`err.name === \"AbortError\"` → cancelled. Anything else → timed out" },
+            { "id": "domexception", "text": "`err instanceof DOMException` → cancelled. Anything else → real failure" }
+          ],
+          "answer": "controller-then-name",
+          "explanation": "Only your own controller's signal answers \"did **we** cancel it?\", whatever the reason. The combined signal is also aborted on timeout, so checking it lumps timeouts in with cancels and hides them. `AbortError` misses custom reasons and treats every real network failure as a timeout. Both cancels and timeouts are `DOMException`s by default. Once cancellation is ruled out, the name is a fine way to recognise a timeout (on Chrome 124+; 103–123 used `AbortError` for timeouts too)."
+        },
+        {
+          "id": "abort-is-not-enough",
+          "prompt": "A search aborts the previous request on every keystroke. But results come from `sdk.query(q)`, which takes no signal. What can still go wrong?",
+          "options": [
+            { "id": "stale-write", "text": "An older query can still finish last and overwrite newer results. Only a latest-request check stops a stale result from being written" },
+            { "id": "nothing", "text": "Nothing: aborting the controller cancels every promise created after it" },
+            { "id": "sdk-throws", "text": "The SDK throws an `AbortError` the moment the controller is aborted" },
+            { "id": "abort-throws", "text": "`abort()` throws, because nothing is listening to the signal" }
+          ],
+          "answer": "stale-write",
+          "explanation": "Cancellation is cooperative: a signal stops only code that receives it and listens. Here, aborting does nothing to `sdk.query`, which runs to completion and resolves normally. The fix that doesn't depend on cooperation is an identity check before writing: keep an id (or the controller) for the newest request, and drop any result that isn't from it. In production use both: abort to save work, check to keep state correct."
+        },
+        {
+          "id": "aborted-delete",
+          "prompt": "A `DELETE /projects/42` request is aborted 50 ms after it was sent. What do you know about project 42?",
+          "options": [
+            { "id": "unknown", "text": "Nothing for certain: the server may already have deleted it. Re-read the project (or retry idempotently) before telling the user" },
+            { "id": "not-deleted", "text": "It wasn't deleted: aborting cancels the server-side work" },
+            { "id": "deleted", "text": "It was deleted: abort only works before the request is sent" },
+            { "id": "rolled-back", "text": "It wasn't deleted: the server rolls back when the connection closes" }
+          ],
+          "answer": "unknown",
+          "explanation": "`abort()` is a client-side decision to stop waiting and close the connection. The request may already have reached the server and been committed. The server may never notice the disconnect, and even if it does, a finished transaction isn't rolled back. So after an aborted or timed-out write, the outcome is unknown. Never treat abort as undo, and only retry writes automatically when repeating them is safe."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-cancellation",
+      "prompts": [
+        {
+          "id": "pass-the-signal",
+          "prompt": "Make this request cancellable by the controller.",
+          "code": "const res = await fetch(url, { ___: controller.signal });",
+          "blanks": [
+            { "id": "s1", "accept": ["signal"] }
+          ],
+          "explanation": "The `signal` option is how `fetch`, and by the DOM Standard's convention every abortable API, receives cancellation. `controller.abort()` then rejects the `fetch` (or the body read, if headers have already arrived) with the signal's reason."
+        },
+        {
+          "id": "reject-with-reason",
+          "prompt": "When the signal aborts, stop the timer and reject with whatever reason the caller chose.",
+          "code": [
+            "signal.addEventListener(\"abort\", () => {",
+            "  clearTimeout(timer);",
+            "  reject(signal.___);",
+            "}, { once: true });"
+          ],
+          "blanks": [
+            { "id": "r1", "accept": ["reason"] }
+          ],
+          "explanation": "Passing `signal.reason` through unchanged keeps the caller's checks working: an `AbortError` by default, a `TimeoutError` from `AbortSignal.timeout`, or their own value. `clearTimeout` is the part that actually stops the work. `{ once: true }` drops the listener after it fires."
+        },
+        {
+          "id": "combine-cancel-and-deadline",
+          "prompt": "Give one request two ways to stop: the controller, or a 5-second deadline.",
+          "code": "const signal = AbortSignal.___([controller.signal, AbortSignal.___(5000)]);",
+          "blanks": [
+            { "id": "c1", "accept": ["any"] },
+            { "id": "c2", "accept": ["timeout"] }
+          ],
+          "explanation": "`AbortSignal.any` aborts as soon as any input does, taking that input's reason (Chrome 116, Firefox 124, Safari 17.4, Node 20.3). `AbortSignal.timeout(ms)` aborts with a `TimeoutError` after `ms` (Chrome 124, Firefox 100, Safari 16, Node 17.3; Chrome 103–123 used an `AbortError`)."
+        },
+        {
+          "id": "latest-request-check",
+          "prompt": "`sdk.query` can't be cancelled. Make sure only the newest query's results are rendered.",
+          "code": [
+            "const id = ++latestId;",
+            "const results = await sdk.query(q);",
+            "if (id ___ latestId) return; // a newer query has started since",
+            "render(results);"
+          ],
+          "blanks": [
+            { "id": "l1", "accept": ["!==", "!="] }
+          ],
+          "explanation": "Each call takes the next id. By the time a response arrives, `latestId` may have moved on, and if so this result is stale and dropped. The check works whatever the request does with signals. (In a React effect, the `ignore` flag in the `use-effect` unit is the same idea.)"
+        },
+        {
+          "id": "timeout-error-name",
+          "prompt": "Show a timeout message, but only for a deadline set with `AbortSignal.timeout()`.",
+          "code": "if (err.name === \"___\") showMessage(\"Search timed out\");",
+          "blanks": [
+            { "id": "t1", "accept": ["TimeoutError"] }
+          ],
+          "explanation": "`AbortSignal.timeout()` aborts with a `DOMException` named `TimeoutError` (since Chrome 124, Firefox 100, Safari 16, Node 17.3), and `fetch` rejects with it. Check your own controller first, so a user cancel is never mistaken for anything else."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-cancellation",
+      "snippets": [
+        {
+          "id": "abort-twice",
+          "code": [
+            "const controller = new AbortController();",
+            "controller.signal.addEventListener(\"abort\", () => console.log(\"abort event\"));",
+            "",
+            "controller.abort(\"first\");",
+            "controller.abort(\"second\");",
+            "",
+            "console.log(controller.signal.aborted, controller.signal.reason);"
+          ],
+          "question": "What is logged? (Same in browsers and Node.)",
+          "answer": "abort event, then true first",
+          "acceptable": ["abort event / true \"first\"", "the event once, reason first"],
+          "explanation": "The first `abort()` sets `aborted`, records the reason and dispatches the `abort` event, synchronously, so `abort event` logs before the next line. The second `abort()` is a no-op: no second event, and the reason stays `\"first\"`. A signal records one cancellation, permanently. That's why every new request needs its own controller."
+        },
+        {
+          "id": "custom-reason-reaches-catch",
+          "code": [
+            "const controller = new AbortController();",
+            "const request = fetch(\"https://api.example.com/search?q=re\", { signal: controller.signal });",
+            "controller.abort(new Error(\"superseded\"));",
+            "",
+            "try {",
+            "  await request;",
+            "} catch (err) {",
+            "  console.log(err.name, \"|\", err.message, \"|\", err.name === \"AbortError\");",
+            "}"
+          ],
+          "question": "What is logged? (In a module, so top-level `await` works. This is Node 24's output, and the Fetch Standard requires the same of browsers.)",
+          "answer": "Error | superseded | false",
+          "acceptable": ["Error superseded false"],
+          "explanation": "`fetch` rejects with the signal's reason, and here the reason is the `Error` you passed. So `name` is `\"Error\"`, and an `AbortError` check reports this cancellation as a failure. Without an argument, the reason (and the rejection) would be an `AbortError` `DOMException`. Decide \"did we cancel this?\" from `controller.signal.aborted`, not from the error."
+        },
+        {
+          "id": "latest-id-timeline",
+          "code": [
+            "let latest = 0;",
+            "const shown = [];",
+            "",
+            "async function onQuery(q, ms) {",
+            "  const id = ++latest;",
+            "  const results = await new Promise((resolve) => setTimeout(() => resolve(q), ms));",
+            "  if (id !== latest) return;",
+            "  shown.push(results);",
+            "}",
+            "",
+            "onQuery(\"r\", 90);",
+            "onQuery(\"re\", 30);",
+            "setTimeout(() => onQuery(\"rea\", 10), 50);",
+            "setTimeout(() => console.log(shown), 200);"
+          ],
+          "question": "What is logged?",
+          "answer": "[\"re\", \"rea\"]",
+          "acceptable": ["re, rea", "re then rea"],
+          "explanation": "At 30 ms `re` finishes, and it **is** the latest query at that moment (id 2 of 2), so it's shown. At 50 ms `rea` starts (id 3) and finishes at 60 ms: shown. At 90 ms the slow `r` finishes, but its id is 1 and the latest is 3: dropped. The id check doesn't hide intermediate results that were current when they arrived. It only stops stale ones from overwriting newer ones."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-latest-only-search",
+      "challengeSlug": "latest-only-search-client"
+    }
+  ]
+}
