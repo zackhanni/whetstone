@@ -1,0 +1,35 @@
+---
+id: env-files-and-git
+title: .env files, and keeping them out of git
+---
+
+Next.js loads `.env*` files into `process.env`. For a variable defined in several places, the first
+match in this order wins (Next.js docs):
+
+1. the real `process.env` (what your host or CI sets)
+2. `.env.$(NODE_ENV).local`
+3. `.env.local` (not read when `NODE_ENV` is `test`)
+4. `.env.$(NODE_ENV)` — `.env.development`, `.env.production`, `.env.test`
+5. `.env`
+
+The docs' warning: "The default `create-next-app` template ensures all `.env` files are added to
+your `.gitignore`. You almost never want to commit these files to your repository." A working
+setup:
+
+- **Real secrets** live in `.env.local` on your machine and in your hosting platform's
+  environment settings for deployments. They're never in a committed file.
+- **A committed `.env.example`** lists every variable name with an empty or fake value, so a new
+  developer knows what to set. (A convention, not a Next.js feature: a file Next.js doesn't load
+  can't leak into the build.)
+- **`.gitignore` covers the rest** — `.env*.local` at minimum, and usually every `.env*` except
+  the example.
+
+One trap: `.gitignore` only affects files git isn't tracking yet. The git docs: "Files already
+tracked by Git are not affected." If `.env` was committed once, adding it to `.gitignore` changes
+nothing — `git rm --cached .env` stops tracking it. And the secret is still in history, which
+the complex tier deals with. (Git mechanics are the `everyday-git` unit's subject; here it matters
+because it's how secrets end up in repositories.)
+
+Detection belongs before the commit: OWASP's Secrets Management cheat sheet suggests running a
+secret scanner as a pre-commit hook, and GitHub's push protection can reject a push that contains
+a recognised credential.

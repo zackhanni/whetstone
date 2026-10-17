@@ -1,0 +1,47 @@
+---
+id: check-what-you-shipped
+title: Check what you actually shipped
+---
+
+Reviews catch `NEXT_PUBLIC_SECRET` in a diff. They miss the secret that arrives through a prop, a
+return value or a shared helper. Check the output, not the intent.
+
+**The client bundle.** `next build` writes the browser's JavaScript under `.next/static`, which
+Next.js serves at `/_next/static/` (the `output` docs describe it as the folder a CDN should
+serve). After a build, search it for **values**, not just names:
+
+```bash
+# a known prefix of a real secret
+grep -rl "sk_live_" .next/static
+
+# every secret you have, by value: loop over the server-only entries in .env.local
+# (sed drops the quotes around a quoted value, or the search would look for them too)
+grep -v '^NEXT_PUBLIC_' .env.local | grep -v '^#' | cut -d= -f2- | sed -E 's/^"(.*)"$/\1/' | while read -r v; do
+  [ -n "$v" ] && grep -rlF -- "$v" .next/static && echo "LEAK: ${v:0:4}…"
+done
+```
+
+Searching by value matters because a leak doesn't keep the variable's name: once inlined or
+serialised, the bundle contains `"sk_live_…"`, not `PAYMENTS_SECRET_KEY`. (Print a short prefix in
+the report, never the secret itself.)
+
+**The HTML and RSC payload.** Props passed to Client Components ride in the page itself, not in
+`.next/static`. Fetch real pages from a preview deployment and search the response:
+
+```bash
+curl -s https://my-app-preview.example.com/account | grep -c "sk_live_"
+```
+
+**Server Action responses.** In the browser's Network panel, look at what an action returns after
+a save. A full database record is the leak from the medium tier.
+
+What these checks can't do: prove absence. A secret built into a response only under some
+condition (an admin page, an error path) won't show up in a happy-path crawl. They're a cheap net
+under the structural rules — `server-only` on every secret-touching module, `process.env` only in
+the Data Access Layer, minimal props and return values — not a replacement for them.
+
+<!--more-->
+
+Run the bundle search in CI after `next build`, with the secrets available as environment variables
+rather than read from a file, and fail the job on any match. Put it next to a secret scanner on the
+repository: one checks what you commit, the other what you ship.
