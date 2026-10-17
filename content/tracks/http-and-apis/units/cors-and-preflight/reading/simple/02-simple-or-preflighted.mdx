@@ -1,0 +1,64 @@
+---
+id: simple-or-preflighted
+title: Simple or preflighted — the browser decides before it sends
+---
+
+Some cross-origin requests a page could always make — an HTML `form` can `POST` anywhere. The
+browser sends those straight away. Anything an HTML form couldn't do gets a **preflight**: a
+separate `OPTIONS` request asking the server's permission first.
+
+The Fetch standard's rule: **no preflight** only if
+
+- the method is `GET`, `HEAD` or `POST` (the *CORS-safelisted methods*), **and**
+- every header your code set is *CORS-safelisted*: `Accept`, `Accept-Language`,
+  `Content-Language`, `Content-Type` — only as `application/x-www-form-urlencoded`,
+  `multipart/form-data` or `text/plain` — and `Range` with a single byte range (values have length
+  and character limits too).
+
+So the most ordinary API call in a single-page app is preflighted:
+
+```ts
+fetch("http://localhost:4123/api/cart", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },   // not a safelisted value -> preflight
+  body: JSON.stringify({ sku: "TEA-1" }),
+});
+```
+
+The API's request log (trimmed) when Chrome ran that from `http://localhost:4124`:
+
+```text
+OPTIONS /api/cart  origin=http://localhost:4124  access-control-request-method=POST  access-control-request-headers=content-type
+POST    /api/cart  origin=http://localhost:4124  content-type=application/json
+```
+
+The preflight carries the planned method in `Access-Control-Request-Method` and the
+non-safelisted header names in `Access-Control-Request-Headers` (lowercased, sorted,
+comma-separated). It never carries cookies. The server must answer with a `2xx` that grants them:
+
+```http
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: http://localhost:4124
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE
+Access-Control-Allow-Headers: authorization, content-type
+Access-Control-Max-Age: 600
+Vary: Origin
+```
+
+Only then does the browser send the real `POST`. In the same session, a `PATCH` (not in
+`Allow-Methods`) got its preflight and then `TypeError: Failed to fetch` — and the `PATCH` itself
+never reached the server.
+
+`Access-Control-Max-Age` lets the browser cache that permission. Without it the default is 5
+seconds; browsers cap it (MDN: Firefox at 24 hours, Chromium since v76 at 2 hours).
+
+<!--more-->
+
+**A JSON body without the header is not preflighted.** `fetch(url, { method: "POST", body:
+JSON.stringify(data) })` sends `Content-Type: text/plain;charset=UTF-8` — a safelisted value — so
+it goes out immediately, with no permission check. The request-response unit showed why the server
+then often ignores the body; this unit adds that it *ran* without asking.
+
+**Authorization always means a preflight** (it isn't a safelisted header), which is why adding a
+bearer token to a cross-origin `GET` suddenly doubles its requests in the network tab — until the
+preflight is cached.

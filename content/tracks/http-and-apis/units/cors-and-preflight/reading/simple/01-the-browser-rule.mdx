@@ -1,0 +1,54 @@
+---
+id: the-browser-rule
+title: CORS is the server relaxing a browser rule
+---
+
+An **origin** is scheme + host + port. Compared with `https://app.example.com`:
+
+| URL | Same origin? |
+| --- | --- |
+| `https://app.example.com/orders?x=1` | yes — path and query don't count |
+| `http://app.example.com` | no — scheme |
+| `https://api.example.com` | no — host (a subdomain is a different host) |
+| `https://app.example.com:8443` | no — port |
+
+The **same-origin policy** is a browser rule: a script running on one origin may *send* many kinds
+of requests to another origin, but it may not *read the response* unless that other origin says it
+may. **CORS** (Cross-Origin Resource Sharing, defined in the Fetch standard) is how the other
+origin says so — with response headers.
+
+Here is that rule in a real browser. A page on `http://localhost:4124` fetches
+`http://localhost:4123/no-cors`, an endpoint that sends no CORS headers:
+
+```text
+server log:      GET /no-cors  origin=http://localhost:4124       <- the request arrived and ran
+page's script:   TypeError: Failed to fetch                       <- the response was withheld
+```
+
+```console
+$ curl http://localhost:4123/no-cors
+{"secret":"visible to curl, hidden from other origins' scripts"}
+```
+
+Three facts in that one experiment:
+
+1. **The request reached the server and the handler ran.** CORS did not stop it.
+2. **The browser blocked the page from reading the response**, because nothing in it said
+   `http://localhost:4124` was allowed. To the script it's an opaque network error; MDN notes that
+   CORS failure details "are not available to JavaScript" — the reason appears only in the
+   browser console.
+3. **curl got the data.** CORS is enforced by browsers, for scripts running in web pages. curl, a
+   Node server, a mobile app's HTTP client — none of them implement it, so none of them ever see a
+   CORS error.
+
+The fix for the page is on the **server**: send `Access-Control-Allow-Origin: http://localhost:4124`
+(or `*` for a public, non-credentialed resource) and the browser hands the response to the script.
+Nothing you write in the page's `fetch` call can grant itself that permission.
+
+<!--more-->
+
+**Why the rule exists.** Your browser carries your cookies, and it sits inside networks (an office
+intranet, a home router) that the open internet can't reach. Without the same-origin policy, any
+page you visit could read your webmail or your router's admin page *as you*. The Fetch standard
+puts it plainly: CORS is opt-in so it can't leak data "behind a firewall", and opt-in again for
+requests that carry credentials.
