@@ -1,0 +1,21 @@
+---
+id: luxon
+title: Luxon: a DateTime that carries its zone
+---
+
+Luxon (v3, from the Moment team) wraps an instant **and** a zone in an immutable `DateTime`. It
+gets zone rules from the `Intl` API, so it ships no time zone data. Its docs separate two kinds of
+math: **calendar math** for days, weeks, months and years (keeps the wall-clock time) and **time
+math** for hours and smaller (adds exact milliseconds).
+
+```js
+import { DateTime } from "luxon";
+
+const standUp = DateTime.fromISO("2026-03-07T09:00", { zone: "America/New_York" });
+standUp.plus({ days: 1 }).toISO();   // "2026-03-08T09:00:00.000-04:00": still 09:00
+standUp.plus({ hours: 24 }).toISO(); // "2026-03-08T10:00:00.000-04:00": the 23-hour day
+standUp.setZone("Asia/Tokyo").toISO(); // "2026-03-07T23:00:00.000+09:00": same instant
+```
+
+Pick Luxon when values naturally belong to a place: schedules, bookings, anything "at 09:00 in
+New York".

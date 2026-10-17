@@ -1,0 +1,32 @@
+---
+id: one-instant-many-clocks
+title: One instant, many wall clocks
+---
+
+A `Date` holds one instant. "What time is it?" has a different answer on every wall clock in the
+world, and the local getters answer it for **the machine running the code**:
+
+```js
+const order = new Date("2026-03-10T15:00:00Z"); // one instant
+
+order.getUTCHours(); // 15 on every machine
+order.getHours();    // 11 in New York, 15 in London, 0 in Tokyo
+order.getDate();     // 10 in New York and London, 11 in Tokyo
+order.getDay();      // 2 (Tuesday) in New York, 3 (Wednesday) in Tokyo
+```
+
+Nothing changed between those lines except where they ran. It's not only the hour that moves:
+near midnight UTC the **day**, the **weekday**, even the **month and year** come out different.
+
+Every local getter and setter has a UTC twin that ignores the machine's zone:
+
+| Local (machine's zone) | UTC |
+| --- | --- |
+| `getFullYear()`, `getMonth()`, `getDate()` | `getUTCFullYear()`, `getUTCMonth()`, `getUTCDate()` |
+| `getDay()`, `getHours()` | `getUTCDay()`, `getUTCHours()` |
+| `setDate()`, `setHours()` | `setUTCDate()`, `setUTCHours()` |
+| `toString()` | `toUTCString()`, `toISOString()` |
+
+"The machine" is whoever runs the line: in a browser, the user's device setting; in Node, the
+`TZ` environment variable or else the operating system's zone. A server and its users are
+almost never in the same zone, which is what the rest of this unit is about.

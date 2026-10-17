@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 3,
+  "slug": "dates-and-time",
+  "title": "Dates & Time",
+  "description": "The date bugs that reach production, and how to avoid them: a Date is one instant read through the machine's time zone, so store UTC and render in the viewer's zone; parse only ISO strings and format with Intl; keep birthdays and due dates as date-only values with their own arithmetic, because DST days aren't 24 hours; then when a library is worth it, and where Temporal stands.",
+  "units": [
+    "date-api-basics",
+    "utc-vs-local",
+    "parsing-and-formatting",
+    "date-only-and-dst",
+    "date-libraries"
+  ]
+}

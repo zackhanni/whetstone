@@ -1,0 +1,57 @@
+---
+id: parsing-and-formatting-traps
+title: Strings that parse when they shouldn't, formatters that throw
+---
+
+**An impossible date inside a valid shape.** The format allows a day from 01 to 31 in any month,
+so `"2026-02-30"` matches it. What happens next is up to the engine: MDN notes that for a string
+whose components are in bounds but don't name a real date, like February 30, implementations
+"behave inconsistently". V8 (Chrome, Node) rolls it forward:
+
+```js
+new Date("2026-02-30").toISOString(); // V8: "2026-03-02T00:00:00.000Z"; other engines may give Invalid Date
+new Date("2026-13-01").getTime();     // NaN everywhere: the spec requires NaN for an out-of-bounds month
+```
+
+So parsing succeeding doesn't mean the date exists. Validate the components yourself.
+
+**A space instead of `T`.** `"2026-03-10 09:00"` is not in the standard format, so it's
+implementation-defined. V8 reads it as local time, but don't rely on that. The same goes for
+microseconds, two-digit offsets like `+00` and other shapes databases and logs print: normalize
+them to the standard format at the edge, or have the API send `toISOString()` output.
+
+**Two invalid-date behaviours.** Formatting an Invalid Date is not consistent across APIs:
+
+```js
+const bad = new Date("not a date");
+bad.toLocaleDateString();                      // "Invalid Date" (a string, no error)
+new Intl.DateTimeFormat("en-US").format(bad);  // throws RangeError: Invalid time value
+```
+
+The first renders "Invalid Date" in your UI; the second crashes the render. Both are cured by
+validating at the parse.
+
+**Formatter options that throw.** The constructor validates its options:
+
+```js
+new Intl.DateTimeFormat("en-US", { dateStyle: "medium", hour: "numeric" });
+// TypeError: ECMA-402 forbids mixing a style preset with individual parts
+
+new Intl.DateTimeFormat("en-US", { timeZone: "Mars/Olympus" });
+// RangeError: invalid time zone (a typo in a stored user zone fails here)
+```
+
+A user's saved `timeZone` usually comes from the browser and is valid, but an import, an admin
+form or a typo can put an unknown name there. Validate it when you save it (construct a
+formatter once and catch the `RangeError`), not on every render.
+
+**Defaults come from the runtime.** No locale means the runtime's default locale; no
+`timeZone` means the runtime's zone. On a server that's the server's, not the user's (the
+previous unit), and it's why the same `toLocaleString()` call renders differently in
+development and production.
+
+<!--more-->
+
+Engines also accept `"24:00"` as the end of a day: `new Date("2026-03-10T24:00Z")` is March 11
+at 00:00 UTC. The spec allows it on purpose, so a "day ends at 24:00" schedule parses correctly.
+A typo of 24 for 00 parses too, silently, one day later.

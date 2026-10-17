@@ -18,7 +18,8 @@ in `AGENTS.md` → "Working with this repo".
   - Backend with NestJS accuracy pass — 12 findings handled against Nest 12 (current major);
     `docs/content-review.md` now has no open findings (PR #17).
   - New track **JavaScript & TypeScript Fundamentals** (5 units, 4 challenges), first in the
-    catalog.
+    catalog (PR #18).
+  - New track **Dates & Time** (4 mastery units + 1 card unit, 1 challenge).
 - Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
   Vercel build runs both.
 

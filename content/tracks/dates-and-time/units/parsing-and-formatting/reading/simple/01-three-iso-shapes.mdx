@@ -1,0 +1,32 @@
+---
+id: three-iso-shapes
+title: Three ISO shapes, three different instants
+---
+
+`new Date(string)` reliably parses one family of strings: the ECMAScript date time string
+format, a simplified ISO 8601 (`YYYY-MM-DDTHH:mm:ss.sssZ`). Inside that family, whether there is
+an offset decides which instant you get:
+
+```js
+// machine in America/New_York
+new Date("2026-03-10");             // date-only            → UTC midnight      (2026-03-10T00:00Z)
+new Date("2026-03-10T00:00");       // date-time, no offset → LOCAL midnight    (2026-03-10T04:00Z)
+new Date("2026-03-10T00:00Z");      // Z                    → exactly that      (2026-03-10T00:00Z)
+new Date("2026-03-10T00:00+05:30"); // offset               → exactly that      (2026-03-09T18:30Z)
+```
+
+The spec's rule: when the offset is absent, **date-only forms are UTC and date-time forms are
+local**. MDN calls the UTC reading of date-only strings "a historical spec error" that couldn't
+be fixed without breaking the web. It's why this prints the 9th in New York:
+
+```js
+new Date("2026-03-10").getDate(); // 9: UTC midnight is 8 p.m. on March 9 in New York
+```
+
+Two rules follow:
+
+- **An instant on the wire always carries `Z` or an offset.** `toISOString()` produces exactly
+  that, which is why it's the format for APIs, logs and sorting.
+- **A date-only value is not an instant.** Don't hand `"2026-03-10"` to `new Date` and then read
+  local getters. Keep it as a string, or do date math in UTC (the next unit is about exactly
+  this).

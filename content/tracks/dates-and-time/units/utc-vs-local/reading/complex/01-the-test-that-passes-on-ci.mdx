@@ -1,0 +1,67 @@
+---
+id: the-test-that-passes-on-ci
+title: The test that passes on CI and fails on your laptop
+---
+
+```ts
+// format.ts
+export const dueLabel = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+// format.test.ts
+expect(dueLabel("2026-03-10T02:00:00Z")).toBe("Mar 10");
+```
+
+CI runners and cloud servers are commonly set to UTC, where this passes. On a laptop in New York
+it fails with `"Mar 9"`, because 02:00 UTC is 22:00 the evening before. The test is not flaky:
+it's the only honest witness. Users in New York, and in most of the Americas, really do see
+March 9, and the green CI run was hiding it.
+
+The tempting fix, `TZ=UTC` for everyone, makes the laptop agree with CI and hides the bug again.
+Fix the code first, then make the tests prove it.
+
+**Fix the code: take the zone as a parameter.** A function that formats for a person should be
+told whose zone:
+
+```ts
+export const dueLabel = (iso: string, timeZone: string) =>
+  new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone });
+
+expect(dueLabel("2026-03-10T02:00:00Z", "America/New_York")).toBe("Mar 9");
+expect(dueLabel("2026-03-10T02:00:00Z", "Asia/Tokyo")).toBe("Mar 10");
+```
+
+Now the tests mean the same thing on every machine.
+
+**Then run the suite in a zone that isn't UTC**, so any code that still reads the machine's zone
+fails everywhere, not just on some laptops. A zone with daylight saving time and a large offset
+catches the most (`America/New_York`). Two places work in Vitest 4, because they set `TZ` before
+any test worker starts (the `package.json` form is for macOS and Linux shells):
+
+```jsonc
+// package.json
+"test": "TZ=America/New_York vitest run"
+```
+
+```ts
+// vitest.config.ts, first line
+process.env.TZ = "America/New_York";
+```
+
+Setting `TZ` inside a test, in a setup file or through `test.env` only works in Vitest's
+default `forks` pool. Under `pool: "threads"` it silently does nothing: Vitest's docs say
+changing `process.env.TZ` doesn't affect the time zone in a worker thread. So assert that the switch took, or a config
+change can quietly turn the whole guard off:
+
+```ts
+it("runs in New York", () => {
+  expect(new Date(2026, 0, 1).getTimezoneOffset()).toBe(300);
+});
+```
+
+<!--more-->
+
+Browser tests have the same trap one layer up. Playwright's `timezoneId` option
+(`use: { timezoneId: "America/New_York" }`) sets the **browser's** zone. Its docs note that it
+doesn't change the test runner's zone, so a date your test computes in Node can still disagree
+with the page.

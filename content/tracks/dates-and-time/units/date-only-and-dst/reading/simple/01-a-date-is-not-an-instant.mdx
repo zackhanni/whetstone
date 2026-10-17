@@ -1,0 +1,36 @@
+---
+id: a-date-is-not-an-instant
+title: A birthday is not a moment in time
+---
+
+Some values are **instants**: an order was placed, a message was sent. Others are **calendar
+dates**: a birthday, a due date, a public holiday, a hotel check-in day. A birthday on July 4 is
+July 4 in Tokyo and in New York. It has no time and no zone.
+
+Turn a calendar date into an instant and it starts moving:
+
+```js
+const birthday = new Date("1990-07-04"); // an instant: midnight UTC
+birthday.toLocaleDateString("en-US");    // in New York: "7/3/1990"
+```
+
+Midnight UTC is the evening of July 3 anywhere west of UTC, so half the world sees the wrong
+birthday. Nothing in that code looks wrong, which is why this bug ships.
+
+The fix is to **keep calendar dates as date-only values**, the string `"YYYY-MM-DD"`, end to end:
+
+- in JSON: `{ "birthday": "1990-07-04" }`, not `"1990-07-04T00:00:00.000Z"`;
+- in the database: a date type without a time;
+- in code: as the string, or as UTC midnight used only with UTC methods (next example).
+
+To display one, either print the parts yourself, or format UTC midnight **in UTC**, so no zone
+can shift it:
+
+```js
+new Date("1990-07-04").toLocaleDateString("en-US", { timeZone: "UTC", dateStyle: "long" });
+// "July 4, 1990" on every machine
+```
+
+There is exactly one place where a calendar date needs a zone: **"what is today?"** Today is
+March 10 in New York while it's already March 11 in Tokyo. So "is this task overdue?" compares the
+due date with today **in the user's zone**, never with the server's clock.

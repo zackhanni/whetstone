@@ -1,0 +1,55 @@
+---
+id: invalid-date
+title: Invalid Date is a Date, and it fails quietly
+---
+
+When the constructor can't make an instant, it doesn't throw. It returns a `Date` whose number
+is `NaN`, printed as `"Invalid Date"`:
+
+```js
+new Date("next tuesday");      // Invalid Date (unparseable)
+new Date("2026-13-01");        // Invalid Date (month 13)
+new Date(undefined);           // Invalid Date (undefined → NaN)
+new Date(null);                // 1970-01-01T00:00:00.000Z (null → 0, NOT invalid)
+
+const d = new Date(2026, 2, 10);
+d.setMonth(undefined);         // returns NaN, and d is now Invalid Date
+```
+
+The problem is how it surfaces, which is mostly not at all:
+
+| You do | With an Invalid Date |
+| --- | --- |
+| `d instanceof Date` | `true` |
+| `d.getTime()`, `d.getFullYear()` | `NaN` |
+| `String(d)` | `"Invalid Date"` |
+| `JSON.stringify({ d })` | `'{"d":null}'`: the API receives `null` |
+| `d < now`, `d > now` | both `false`: filters drop the row silently |
+| `list.sort((a, b) => a - b)` | the comparator returns `NaN`, treated as "equal", so the order around it is unreliable |
+| `d.toISOString()` | throws `RangeError: Invalid time value` |
+
+So the one loud failure is often far from the cause: a report that crashes on `toISOString()`
+long after the bad string came in, or a payload with `"due": null` that nobody notices.
+
+Check at the boundary, where the input arrives, and fail there:
+
+```js
+function parseInstant(input) {
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) throw new RangeError(`not a date: ${input}`);
+  return d;
+}
+```
+
+`Number.isNaN(d.getTime())` says exactly what it checks. The global `isNaN(d)` also works,
+because it converts the Date to its number first, but it reads like a mistake. `instanceof Date`
+and truthiness checks pass an Invalid Date straight through.
+
+<!--more-->
+
+Two more edges of the multi-argument forms:
+
+- **Years 0–99 mean 1900–1999.** `new Date(99, 0, 1)` is 1999, and `Date.UTC(26, 0, 1)` is
+  1926. For a real year below 100, build the date and then call `setFullYear(26)`.
+- **The range is finite.** `new Date(8.64e15)` is September 13, 275760; one millisecond more is
+  Invalid Date. Real code hits this only when it multiplies a timestamp by 1000 twice.

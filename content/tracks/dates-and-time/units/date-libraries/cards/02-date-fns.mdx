@@ -1,0 +1,22 @@
+---
+id: date-fns
+title: date-fns: plain functions on Date
+---
+
+date-fns (v4, current 4.4) is a box of small functions that take and return plain `Date`s. They
+never mutate their input, and you import only what you use. The catch: a `Date` has no zone, so
+date-fns calculates in the **machine's** zone unless you give it one. Since v4, that's the `in`
+option with `tz()` from `@date-fns/tz`:
+
+```js
+import { addDays, format } from "date-fns";
+import { tz } from "@date-fns/tz";
+
+const standUp = new Date("2026-03-07T14:00:00Z");     // 09:00 in New York
+const ny = tz("America/New_York");
+format(addDays(standUp, 1, { in: ny }), "yyyy-MM-dd HH:mm", { in: ny }); // "2026-03-08 09:00"
+
+addDays(standUp, 1); // 14:00 UTC on a UTC server, 13:00 UTC on a New York laptop
+```
+
+Without `in`, the same line gives different instants on different machines across a DST change.

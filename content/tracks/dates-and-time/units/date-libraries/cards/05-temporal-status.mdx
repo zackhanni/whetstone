@@ -1,0 +1,23 @@
+---
+id: temporal-status
+title: Where Temporal stands (October 2026)
+---
+
+- **Standard:** Stage 4 at TC39, listed for ES2027.
+- **Shipped:** Firefox 139 (May 2025), Chrome and Edge 144 (January 2026), Node.js 26 (May 2026),
+  Deno 2.7, Bun 1.4.
+- **Not shipped:** Safari, which has it only in Technology Preview. So MDN marks Temporal
+  "Limited availability", not Baseline. Node 24 LTS doesn't have it either.
+
+MDN's `Date` page already calls `Date` "a legacy feature" and suggests Temporal for new code,
+"check the browser compatibility" included.
+
+In practice: server code on Node 26+ can use it today. Browser code that must work in Safari
+needs a polyfill (the proposal lists `temporal-polyfill` as stable and `@js-temporal/polyfill` as
+alpha) or a feature check:
+
+```js
+const hasTemporal = typeof globalThis.Temporal !== "undefined";
+```
+
+Recheck MDN's compatibility table before you drop the polyfill.
