@@ -35,8 +35,9 @@ invoked with no feedback at all ("take what you just learned and make the system
      schema change (a field removed or renamed, or its meaning changed) **bumps `schemaVersion`**
      and sweeps every content file as ONE self-contained change set — nothing unrelated in it.
      An added optional field is not breaking and needs no bump.
-   - Keep content edits and system edits in separate change sets either way, so the developer
-     can stage them as separate commits (you don't commit — see step 5).
+   - Apart from that schema bump (whose content sweep must stay with it), keep content edits
+     and system edits in separate change sets, so the developer can stage them as separate
+     commits (you don't commit — see step 5).
 4. **Gate.** `pnpm check` (which includes `pnpm test:challenges`, the headless proof that each
    starter fails and each solution passes) + `pnpm build`. If a challenge changed, also open it
    **in the browser** once (starter FAILS, _Show solution_ PASSES), since the headless grader is

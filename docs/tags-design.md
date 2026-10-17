@@ -32,8 +32,9 @@ _computed_ by walking the tree, never by re-tagging lessons with every ancestor.
   displayed tags are the deduped union of its units' skills, so track and unit tags can never
   drift. Schema v2 removed `track.skills` outright: nothing read it, and it had already drifted
   (the React track listed 4 tags while its units used 21).
-- **No `schemaVersion` bump.** Unit/track shapes are unchanged; this adds a sibling registry and
-  a validator rule only.
+- **No `schemaVersion` bump for this feature.** It left unit/track shapes unchanged, adding only
+  a sibling registry and a validator rule. (Removing `track.skills` later was a breaking change,
+  so it shipped as part of schema v2.)
 
 ## Data model
 

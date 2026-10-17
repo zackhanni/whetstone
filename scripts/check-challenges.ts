@@ -41,13 +41,14 @@ async function runVariant(variant: Variant): Promise<FileReport[]> {
       { cwd: ROOT, env: { ...process.env, CHALLENGE_VARIANT: variant }, encoding: "utf8" },
     );
     // Vitest exits non-zero whenever a test fails, which the starter run expects, so the exit
-    // code means nothing here. A missing report means Vitest itself broke: show why.
+    // code means nothing here. A missing report means Vitest itself broke, or never started
+    // (`result.error`, e.g. pnpm not on PATH, with no output to show): say which.
     let raw: string;
     try {
       raw = await fs.readFile(outputFile, "utf8");
     } catch {
       throw new Error(
-        `vitest (${variant}) produced no report:\n${result.stderr || result.stdout}`,
+        `vitest (${variant}) produced no report:\n${result.error?.message ?? (result.stderr || result.stdout)}`,
       );
     }
     return (JSON.parse(raw) as { testResults: FileReport[] }).testResults;
