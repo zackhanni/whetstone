@@ -9,6 +9,7 @@
     "data-fetching-tanstack",
     "http-and-apis",
     "nextjs-and-the-network",
-    "backend-nestjs"
+    "backend-nestjs",
+    "reference-cards"
   ]
 }
