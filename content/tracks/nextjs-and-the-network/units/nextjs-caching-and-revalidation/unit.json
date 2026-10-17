@@ -1,0 +1,277 @@
+{
+  "schemaVersion": 3,
+  "slug": "nextjs-caching-and-revalidation",
+  "title": "Next.js caching & revalidation: Cache Components",
+  "skills": ["nextjs", "caching", "cache-components", "revalidation"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 45,
+  "objectives": [
+    "Explain the Next.js 16 default (with `cacheComponents`, nothing is cached until `use cache`) and what changed from Next 14 and 15",
+    "Write a `use cache` function with `cacheLife` and `cacheTag`, reading `cookies()`/`headers()` outside the cached scope and passing values in as arguments",
+    "Choose `updateTag`, `revalidateTag(tag, \"max\")`, `revalidatePath` or `refresh` after a write, from where it runs and who must see the change",
+    "Predict what a `cacheLife` profile does over time: `stale` (client router), `revalidate` (background regeneration), `expire` (blocking), defaults and nesting",
+    "Explain why a local `next start` doesn't prove how production caches, and read cache behaviour on the real platform instead"
+  ],
+  "sources": [
+    { "title": "Next.js docs: Caching (Cache Components)", "url": "https://nextjs.org/docs/app/getting-started/caching" },
+    { "title": "Next.js docs: Revalidating", "url": "https://nextjs.org/docs/app/getting-started/revalidating" },
+    { "title": "Next.js docs: use cache", "url": "https://nextjs.org/docs/app/api-reference/directives/use-cache" },
+    { "title": "Next.js docs: cacheLife", "url": "https://nextjs.org/docs/app/api-reference/functions/cacheLife" },
+    { "title": "Next.js docs: updateTag", "url": "https://nextjs.org/docs/app/api-reference/functions/updateTag" },
+    { "title": "Next.js docs: revalidateTag", "url": "https://nextjs.org/docs/app/api-reference/functions/revalidateTag" },
+    { "title": "Next.js docs: revalidatePath", "url": "https://nextjs.org/docs/app/api-reference/functions/revalidatePath" },
+    { "title": "Next.js docs: Caching and Revalidating (Previous Model)", "url": "https://nextjs.org/docs/app/guides/caching-without-cache-components" },
+    { "title": "Next.js docs: Upgrading to version 15", "url": "https://nextjs.org/docs/app/guides/upgrading/version-15" },
+    { "title": "Next.js blog: Next.js 16", "url": "https://nextjs.org/blog/next-16" },
+    { "title": "Next.js docs: Self-Hosting (Caching and ISR)", "url": "https://nextjs.org/docs/app/guides/self-hosting" },
+    { "title": "Next.js docs: How revalidation works", "url": "https://nextjs.org/docs/app/guides/how-revalidation-works" },
+    { "title": "Vercel docs: Incremental Static Regeneration", "url": "https://vercel.com/docs/incremental-static-regeneration" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-next-caching", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-next-caching",
+      "questions": [
+        {
+          "id": "default-in-16",
+          "prompt": "Next.js 16 with `cacheComponents: true`. A Server Component awaits a database query and has no `use cache` anywhere above it. When does the query run?",
+          "options": [
+            { "id": "per-request", "text": "On every request, and the component must sit inside `<Suspense>` or the build fails with a blocking-route error (uncached data accessed outside of `<Suspense>`)" },
+            { "id": "build", "text": "Once at build time; the result is reused until you revalidate" },
+            { "id": "default-15", "text": "Once, then cached for the default 15 minutes" },
+            { "id": "first", "text": "On the first request, then cached until a deploy" }
+          ],
+          "answer": "per-request",
+          "explanation": "Under Cache Components caching is entirely opt-in: uncached work runs at request time. Because it can't be part of the prerendered shell, Next requires you to say where it streams (a `<Suspense>` boundary) or to cache it (`use cache`). \"Cached at build by default\" is the Next 14 habit; the 15-minute figure is the `default` profile, which applies only **inside** `use cache`."
+        },
+        {
+          "id": "fetch-history",
+          "prompt": "A page written for Next 14 reads `searchParams` (so it renders on every request) and calls `fetch(url)` with no options, relying on Next 14 serving that fetch from its Data Cache. After upgrading to Next 15 or 16 (without Cache Components), what happens?",
+          "options": [
+            { "id": "uncached", "text": "The fetch is no longer cached by default, so the upstream API is called on every request until you opt in" },
+            { "id": "same", "text": "Nothing changes; `fetch` caching is a web-platform default" },
+            { "id": "error", "text": "The build fails until each fetch declares a `cache` option" },
+            { "id": "forever", "text": "It's now cached forever, until a deploy" }
+          ],
+          "answer": "uncached",
+          "explanation": "Next 15 changed the default: `fetch` requests (and `GET` Route Handlers) are no longer cached. In the previous model you opt back in with `cache: \"force-cache\"`, `next: { revalidate }` or `fetchCache`; under Cache Components you wrap the work in `use cache`. The browser's HTTP cache has nothing to do with the Next server's fetch cache. (On a page with no request-time APIs, Next 15+ still prerenders the route, so there the fetch runs once, at build.)"
+        },
+        {
+          "id": "cookies-in-cache",
+          "prompt": "A `use cache` function needs the visitor's currency, stored in a cookie. What's the right shape?",
+          "options": [
+            { "id": "arg", "text": "Read `cookies()` in an uncached caller and pass the currency string in as an argument" },
+            { "id": "inside", "text": "Call `await cookies()` inside the cached function; Next adds the cookie to the key" },
+            { "id": "promise", "text": "Pass the `cookies()` promise in as an argument and await it inside" },
+            { "id": "private", "text": "Switch to `cacheLife(\"seconds\")` so a stale currency doesn't matter" }
+          ],
+          "answer": "arg",
+          "explanation": "Cached scopes can't touch request APIs: calling `cookies()` inside throws, and passing the unresolved promise makes `next build` wait on request data that doesn't exist until it times out. Await outside, pass the **value**: arguments are part of the cache key, so each currency gets its own entry. A shorter `cacheLife` fixes nothing here: the problem is where the cookie is read, not how long the result lives."
+        },
+        {
+          "id": "closure-key",
+          "prompt": "Inside `async function Orders({ userId })`, a nested `const load = async (status) => { \"use cache\"; return db.orders(userId, status) }` is called. Do two users share one cached result?",
+          "options": [
+            { "id": "separate", "text": "No: `userId` is captured from the closure, and captured variables become part of the key" },
+            { "id": "shared", "text": "Yes: only the explicit argument `status` is in the key, so user B sees user A's orders" },
+            { "id": "uncached", "text": "Nothing is cached, because nested functions can't use `use cache`" },
+            { "id": "error", "text": "It throws, because closures can't be serialised" }
+          ],
+          "answer": "separate",
+          "explanation": "The `use cache` docs: variables referenced from outer scopes are captured and bound as arguments, so they join the key alongside the explicit ones. That's what makes per-user caching safe. The real leaks come from what the key can't see: shared module state, or data fetched with credentials that aren't part of the inputs."
+        },
+        {
+          "id": "read-your-writes",
+          "prompt": "In a Server Action, a user saves their display name, then `redirect(\"/profile\")`. The profile reads data tagged `user-42`. Which call guarantees the redirected page shows the new name?",
+          "options": [
+            { "id": "update", "text": "`updateTag(\"user-42\")`" },
+            { "id": "revalidate-max", "text": "`revalidateTag(\"user-42\", \"max\")`" },
+            { "id": "refresh", "text": "`refresh()`" },
+            { "id": "nothing", "text": "None needed: a redirect always renders fresh data" }
+          ],
+          "answer": "update",
+          "explanation": "`updateTag` expires the entries so the next read waits for fresh data: read-your-own-writes, Server Actions only. `revalidateTag(tag, \"max\")` is stale-while-revalidate, so the very next render may still show the old name. `refresh()` re-renders without touching cached data, and a redirect alone doesn't invalidate anything."
+        },
+        {
+          "id": "webhook-invalidate",
+          "prompt": "A CMS calls your Route Handler `POST /api/cms-webhook` when an article is published. How should it invalidate `post-<slug>`?",
+          "options": [
+            { "id": "revalidate-tag", "text": "`revalidateTag(\"post-\" + slug, \"max\")`" },
+            { "id": "update-tag", "text": "`updateTag(\"post-\" + slug)`" },
+            { "id": "refresh", "text": "`refresh()`" },
+            { "id": "single", "text": "`revalidateTag(\"post-\" + slug)`" }
+          ],
+          "answer": "revalidate-tag",
+          "explanation": "`updateTag` and `refresh` are Server Action–only and throw in a Route Handler. The one-argument `revalidateTag` is deprecated in Next 16. With `\"max\"`, the next visitor gets the cached article instantly while the new one is built in the background, which is fine when nobody is waiting on their own write. (If the CMS needs the old copy gone at once, the docs show `{ expire: 0 }`.)"
+        },
+        {
+          "id": "path-scope",
+          "prompt": "`/blog` and `/dashboard` both show posts fetched with the `posts` tag. A Server Action calls `revalidatePath(\"/blog\")`. What does `/dashboard` show on its next visit?",
+          "options": [
+            { "id": "stale", "text": "Its cached copy: only `/blog` was invalidated, and the `posts` tag wasn't" },
+            { "id": "fresh", "text": "Fresh posts, because they share the tag" },
+            { "id": "error", "text": "An error, because the two pages are now out of sync" },
+            { "id": "both", "text": "Fresh posts, because `revalidatePath` clears the whole server cache" }
+          ],
+          "answer": "stale",
+          "explanation": "The `revalidatePath` docs use exactly this example: the path is refreshed, but other pages using the same tags keep serving cached data until those tags are invalidated. Tags describe **data**, paths describe **pages**; when the data changed, invalidate the tag. (`revalidatePath(\"/\", \"layout\")` is the deliberate everything switch.)"
+        },
+        {
+          "id": "revalidate-window",
+          "prompt": "`getProducts()` uses `cacheLife(\"hours\")` (revalidate 1 hour, expire 1 day) and was cached at 09:00. Traffic is steady. What does a request at 10:10 get?",
+          "options": [
+            { "id": "swr", "text": "The 09:00 result immediately, while the server regenerates it in the background for later requests" },
+            { "id": "wait", "text": "It waits while the server regenerates, then gets fresh data" },
+            { "id": "same-till-expire", "text": "The 09:00 result, and nothing regenerates until the 1-day expire" },
+            { "id": "client", "text": "Whatever the browser cached: `revalidate` is the browser's timer" }
+          ],
+          "answer": "swr",
+          "explanation": "Past `revalidate`, Next serves the cached entry and regenerates it in the background (stale-while-revalidate), so this visitor is fast and the next one sees new data. A request **waits** only past `expire`, which counts time without traffic. The browser's timer is `stale`, a separate number (5 minutes in every built-in profile except `seconds`)."
+        },
+        {
+          "id": "local-proof",
+          "prompt": "The build output lists `/sitemap.xml` with a 4-hour revalidate, and on `next start` it regenerates on schedule. Someone reports production serving yesterday's sitemap. What settles it?",
+          "options": [
+            { "id": "read-prod", "text": "Read production: `x-vercel-cache` / `age` and a date in the body, some hours after the last deploy" },
+            { "id": "local-wins", "text": "The local run: `next start` is the production server, so the report is wrong" },
+            { "id": "build-table", "text": "The build output table, which is generated from the same config" },
+            { "id": "dev", "text": "Run `next dev` and watch it regenerate" }
+          ],
+          "answer": "read-prod",
+          "explanation": "A local production build is evidence about Next's server. The deployed platform adds its own storage and CDN (on Vercel, a per-deployment ISR cache behind a CDN), and that is what visitors get. `next dev` is further still from production: it never runs the build-time prerender. A finding measured on production can only be overturned by measuring production."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-next-caching",
+      "prompts": [
+        {
+          "id": "enable-flag",
+          "prompt": "Turn on Next.js 16's opt-in caching model.",
+          "code": [
+            "const nextConfig: NextConfig = {",
+            "  ___: true,",
+            "};"
+          ],
+          "blanks": [{ "id": "a1", "accept": ["cacheComponents"] }],
+          "explanation": "`cacheComponents` (Next 16) replaces the Next 15 experiments `experimental.dynamicIO` / `experimental.useCache` and `experimental.ppr`. Without it, the previous model's `fetch` options and segment config still apply."
+        },
+        {
+          "id": "cached-function",
+          "prompt": "Cache this query for hours and tag it so a write can invalidate it.",
+          "code": [
+            "import { cacheLife, cacheTag } from \"next/cache\";",
+            "",
+            "export async function getProducts() {",
+            "  ___",
+            "  cacheLife(\"hours\");",
+            "  ___(\"products\");",
+            "  return db.product.findMany();",
+            "}"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["'use cache'", "'use cache';"] },
+            { "id": "b2", "accept": ["cacheTag"] }
+          ],
+          "explanation": "The directive goes first in the function body. `cacheLife` and `cacheTag` (no `unstable_` prefix since Next 16) must run inside the cached scope; calling `cacheLife` at module level throws."
+        },
+        {
+          "id": "action-vs-webhook",
+          "prompt": "Invalidate the same tag from a Server Action (the writer must see it at once) and from a CMS webhook Route Handler.",
+          "code": [
+            "// app/admin/actions.ts — Server Action",
+            "___(\"products\");",
+            "",
+            "// app/api/cms-webhook/route.ts — Route Handler",
+            "revalidateTag(\"products\", \"___\");"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["updateTag"] },
+            { "id": "c2", "accept": ["max"] }
+          ],
+          "explanation": "`updateTag` gives read-your-own-writes and exists only in Server Actions. In a Route Handler you use `revalidateTag` with a profile; `\"max\"` is the recommended stale-while-revalidate choice."
+        },
+        {
+          "id": "value-not-promise",
+          "prompt": "Read the cookie outside the cache and hand the cached component a plain value.",
+          "code": [
+            "async function Prices() {",
+            "  const currency = (___ cookies()).get(\"currency\")?.value ?? \"USD\";",
+            "  return <PriceList currency={currency} />;",
+            "}",
+            "",
+            "async function PriceList({ currency }: { currency: string }) {",
+            "  ___",
+            "  return renderPrices(await getPrices(currency));",
+            "}"
+          ],
+          "blanks": [
+            { "id": "d1", "accept": ["await"] },
+            { "id": "d2", "accept": ["'use cache'", "'use cache';"] }
+          ],
+          "explanation": "`cookies()` is async (synchronous access was removed in Next 16) and must stay outside the cached scope. The awaited string becomes a prop, and props are part of the cache key, so each currency is cached separately."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-next-caching",
+      "snippets": [
+        {
+          "id": "revalidate-max-after-write",
+          "code": [
+            "\"use server\";",
+            "export async function createPost(formData: FormData) {",
+            "  await db.post.create({ data: { title: String(formData.get(\"title\")) } });",
+            "  revalidateTag(\"posts\", \"max\");",
+            "  redirect(\"/posts\"); // /posts lists posts read with cacheTag(\"posts\")",
+            "}"
+          ],
+          "question": "Is the new post in the list the author lands on?",
+          "answer": "Not necessarily: that render can be served the stale list while a fresh one regenerates in the background",
+          "acceptable": ["no", "maybe not; it shows the stale list", "no, stale-while-revalidate"],
+          "explanation": "`revalidateTag(tag, \"max\")` marks the entries stale; the next visit gets stale-while-revalidate: the old copy immediately, the new one for whoever comes after. That's right for a CMS update nobody is watching and wrong for the person who just clicked Save. `updateTag(\"posts\")` exists for this case: it expires the entries so the redirected render waits for fresh data."
+        },
+        {
+          "id": "nested-default",
+          "code": [
+            "async function Widget() {",
+            "  \"use cache\";",
+            "  cacheLife(\"hours\"); // revalidate: 1 hour",
+            "  return <Stats data={await getStats()} />;",
+            "}",
+            "",
+            "export default async function Dashboard() {",
+            "  \"use cache\"; // no cacheLife here",
+            "  return <main><h1>Dashboard</h1><Widget /></main>;",
+            "}"
+          ],
+          "question": "How often does Dashboard's cached output revalidate?",
+          "answer": "Every 15 minutes (the default profile); the inner hour can't lengthen it",
+          "acceptable": ["15 minutes", "every 15 min", "default profile, 15 minutes"],
+          "explanation": "An outer `use cache` without its own `cacheLife` runs on `default` (revalidate 15 minutes). Inner caches with a **shorter** lifetime pull it down; a **longer** one, like this hour, can't extend it. Had Widget used `cacheLife(\"minutes\")`, Dashboard would revalidate every minute. Writing an explicit `cacheLife` on the outer scope makes it win either way, which is why the docs recommend it."
+        },
+        {
+          "id": "client-stale-window",
+          "code": [
+            "// app/feed/page.tsx",
+            "export default async function Feed() {",
+            "  \"use cache\";",
+            "  cacheLife({ stale: 300, revalidate: 60, expire: 3600 });",
+            "  return <FeedList items={await getFeed()} />;",
+            "}",
+            "",
+            "// The user opens /feed, clicks a <Link> to /about,",
+            "// and 2 minutes later clicks a <Link> back to /feed."
+          ],
+          "question": "The server's copy is past `revalidate`. Does the browser ask the server for /feed again?",
+          "answer": "No: the client router reuses its copy until `stale` (5 minutes) runs out; `revalidate` is the server's timer",
+          "acceptable": ["no", "no, stale is 5 minutes", "no, it uses the client cache"],
+          "explanation": "`stale` controls Next's client router cache (sent as `x-nextjs-stale-time`), not HTTP headers; `revalidate` and `expire` are about the server. Two minutes in, the server would regenerate on its next request, but the browser doesn't send one: it shows the copy it already has until 5 minutes have passed. The router also never honours a `stale` below 30 seconds. A Server Action that calls `updateTag`, `revalidateTag`, `revalidatePath` or `refresh` clears the client cache outright, which is how a write still shows up immediately."
+        }
+      ]
+    }
+  ]
+}

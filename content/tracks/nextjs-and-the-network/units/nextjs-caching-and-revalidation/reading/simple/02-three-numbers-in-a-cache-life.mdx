@@ -1,0 +1,49 @@
+---
+id: three-numbers-in-a-cache-life
+title: Three numbers in every cacheLife — stale, revalidate, expire
+---
+
+`cacheLife` sets a cached entry's lifetime with three timings, each aimed at a different reader:
+
+- **`stale`** — the **browser**. How long Next's client router reuses the entry without asking the
+  server during navigation.
+- **`revalidate`** — the **server**. After this, the next request still gets the cached entry
+  immediately, and the server regenerates it **in the background** (stale-while-revalidate).
+- **`expire`** — the server's hard limit. After this long **with no requests**, the next request
+  waits for fresh content.
+
+The built-in profiles (Next 16 `cacheLife` reference):
+
+| Profile | `stale` | `revalidate` | `expire` |
+| --- | --- | --- | --- |
+| `default` (no `cacheLife` call) | 5 min | 15 min | never |
+| `seconds` | 30 s | 1 s | 1 min |
+| `minutes` | 5 min | 1 min | 1 h |
+| `hours` | 5 min | 1 h | 1 day |
+| `days` | 5 min | 1 day | 1 week |
+| `weeks` | 5 min | 1 week | 30 days |
+| `max` | 5 min | 30 days | 1 year |
+
+A timeline for `cacheLife("hours")` on a product list, cached at 09:00:
+
+- **09:40**: served from the cache; nothing runs.
+- **10:10**: past `revalidate`. This visitor gets the 09:00 list instantly; the server regenerates
+  in the background, and the next visitor sees the new one.
+- Nobody visits from 10:15 until the next day at **11:00**: past `expire` with no traffic in
+  between, so this visitor **waits** while the list is rebuilt.
+
+For a one-off, pass an object instead of a name. Missing fields inherit from `default`, and
+`expire` must be longer than `revalidate`:
+
+```ts
+cacheLife({ revalidate: 300, expire: 3600 }); // stale comes from `default`: 5 min
+```
+
+<!--more-->
+
+Very short lifetimes change where the work happens. A cache with `revalidate: 0` or an `expire`
+under five minutes (of the presets, only `seconds`) is **short-lived**: Next leaves it out of
+the prerendered page and treats it as a dynamic hole that runs at request time. The
+`cacheLife` docs for Next 16.4 add a `stale` under 30 seconds to that list. If a short-lived cache is nested
+inside another `use cache` with no explicit `cacheLife`, the prerender fails with an error, so
+that a short lifetime buried in an imported component can't silently shorten the outer cache.

@@ -1,0 +1,56 @@
+---
+id: four-ways-to-invalidate
+title: updateTag, revalidateTag, revalidatePath, refresh — which after a write
+---
+
+After a write, ask two questions: **where am I running**, and **must the person who wrote it see
+the change on the very next render?**
+
+| Call | Callable from | What it does |
+| --- | --- | --- |
+| `updateTag(tag)` | Server Actions only | Expires the tagged entries now; the next read **waits** for fresh data |
+| `revalidateTag(tag, "max")` | Server Actions and Route Handlers | Marks them stale; the next visit gets the **old** copy while a fresh one is built in the background |
+| `revalidatePath(path)` | Server Actions and Route Handlers | Invalidates one route's cached data (with `"layout"`, everything under that layout) |
+| `refresh()` | Server Actions only | Refreshes the client router; doesn't touch cached data |
+
+**Read-your-own-writes → `updateTag`.** Someone saves their profile and lands back on it. With
+`revalidateTag(tag, "max")` that next render can still show the old values, the change arriving a
+request later; `updateTag` is the Next 16 API made for this case, and it throws outside a Server
+Action.
+
+**Somebody else's write → `revalidateTag(tag, "max")`.** A CMS webhook hits your Route Handler
+when an editor publishes. Nobody is staring at the page waiting, and serving the old copy for one
+more request is fine, so stale-while-revalidate keeps every visitor fast. `"max"` is the profile
+the docs recommend for that second argument.
+
+```ts
+// app/api/cms-webhook/route.ts
+import { revalidateTag } from "next/cache";
+
+export async function POST(request: Request) {
+  if (!(await isSignedByCms(request))) return new Response(null, { status: 401 });
+  const { slug } = await request.json();
+  revalidateTag(`post-${slug}`, "max");
+  return Response.json({ revalidated: true });
+}
+```
+
+**Tags beat paths.** `revalidatePath("/blog")` refreshes `/blog`, but `/dashboard` showing the same
+posts keeps its cached copy until its own path or tag is invalidated. The docs prefer tags for
+precision; use a path when you don't know which tags a page reads.
+
+**`refresh()`** is for data that was never cached: the unread-notifications count in the header
+after you mark one read. It re-renders the current route for the client; your cached entries stay
+as they are.
+
+Two Next 15 → 16 changes to watch for in older code: the one-argument `revalidateTag("posts")` is
+**deprecated** (it expires immediately, like `updateTag`), and `cacheLife` / `cacheTag` lost their
+`unstable_` prefix.
+
+<!--more-->
+
+On Vercel these choices show up in the `x-vercel-cache` header of the next request. A tag marked
+stale with a profile like `"max"` is served as `STALE` while it regenerates. Vercel lists
+`updateTag`, `revalidatePath` and the one-argument `revalidateTag` as **deletes**, like a
+dashboard purge set to Delete: there's nothing to serve, so the next request is `REVALIDATED` and
+pays the full render time in the foreground.
