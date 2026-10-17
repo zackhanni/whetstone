@@ -29,7 +29,7 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
  *      (or superseded) is not a failure. Decide by your own bookkeeping, not the error.
  *   4. There's no deadline: a hung request stays "loading" forever. Give each request a
  *      `timeoutMs` deadline on top of its own controller, and report a timeout as
- *      "Search timed out".
+ *      "Search timed out", whatever error the request rejects with.
  */
 
 /** `timeoutMs` defaults to TIMEOUT_MS (config.ts), which the tests use. */

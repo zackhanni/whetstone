@@ -3,10 +3,10 @@ id: date-fns
 title: date-fns: plain functions on Date
 ---
 
-date-fns (v4, current 4.4) is a box of small functions that take and return plain `Date`s. They
-never mutate their input, and you import only what you use. The catch: a `Date` has no zone, so
-date-fns calculates in the **machine's** zone unless you give it one. Since v4, that's the `in`
-option with `tz()` from `@date-fns/tz`:
+date-fns (v4, current 4.4) is a box of small functions on `Date`. They never mutate their input,
+and you import only what you use. The catch: a `Date` has no zone, so date-fns calculates in the
+**machine's** zone unless you give it one. Since v4, that's the `in` option with `tz()` from
+`@date-fns/tz`, and a date it returns is then a `TZDate`, a `Date` subclass that keeps the zone:
 
 ```js
 import { addDays, format } from "date-fns";

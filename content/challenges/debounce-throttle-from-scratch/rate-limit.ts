@@ -20,8 +20,8 @@ export interface Throttled<F extends AnyFn> {
  *   3. debounced.flush() runs fn, then the pending timer runs it again.
  *   4. After a run has fired, debounced.flush() runs fn again. "Is a run pending?" must become
  *      false when the timer fires.
- *   5. throttle's trailing run uses the arguments of the call that started the timer, not the
- *      latest call's.
+ *   5. throttle's trailing run uses the `this` and arguments of the call that started the
+ *      timer, not the latest call's.
  *   6. throttle has no cancel() for dropping a pending trailing run.
  */
 

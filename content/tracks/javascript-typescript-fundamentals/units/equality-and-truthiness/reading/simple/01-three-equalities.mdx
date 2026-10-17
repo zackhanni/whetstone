@@ -33,6 +33,6 @@ Number.isNaN(0 / 0);  // true
 [1, 2] === [1, 2];    // false — two different arrays
 ```
 
-`Object.is` is the strictest of the three. You rarely call it yourself, but React uses it to decide
-whether state or a dependency changed, which is why "same contents, new object" counts as a change
-there.
+`Object.is` is `===` with two differences: `NaN` equals itself, and `0` and `-0` are different.
+You rarely call it yourself, but React uses it to decide whether state or a dependency changed,
+which is why "same contents, new object" counts as a change there.

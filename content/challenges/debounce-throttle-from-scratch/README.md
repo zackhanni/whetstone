@@ -4,8 +4,8 @@
   `this` and arguments. The returned function also has `cancel()` (drop the pending run) and
   `flush()` (run it now).
 - `throttle(fn, wait)` runs the first call immediately, then at most once per `wait`. Calls that
-  arrive while the window is closed collapse into **one** trailing run, with the latest
-  arguments, so the last value always gets through. It has `cancel()` too.
+  arrive while the window is closed collapse into **one** trailing run, with the latest call's
+  `this` and arguments, so the last value always gets through. It has `cancel()` too.
 
 Both pass a quick manual test, which is how they shipped. The six bugs only show up in how
 they're actually used: a debounced method on an object, a component that cancels on teardown,
@@ -22,5 +22,6 @@ a Save button that flushes, a scroll handler whose final position matters. The c
   a run happens, from the timer or from `flush()`.
 - `cancel` and `flush` both need `clearTimeout(timer)`. Forgetting the handle doesn't stop the
   timer.
-- In `throttle`, store the latest arguments on **every** call, and have the timer callback read
-  that shared variable when it fires. Don't use the `args` it closed over when it was created.
+- In `throttle`, store the latest `this` and arguments on **every** call, and have the timer
+  callback read those shared variables when it fires. Don't use the `this` and `args` it closed
+  over when it was created.

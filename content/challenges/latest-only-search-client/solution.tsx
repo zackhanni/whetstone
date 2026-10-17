@@ -33,7 +33,8 @@ export function createSearchClient({ timeoutMs = TIMEOUT_MS }: { timeoutMs?: num
     state = { query, status: "loading", results: state.results, error: null };
 
     // Two ways to stop: a newer search or cancel() (our controller), or the deadline.
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)]);
+    const deadline = AbortSignal.timeout(timeoutMs);
+    const signal = AbortSignal.any([controller.signal, deadline]);
 
     try {
       const results = await searchApi(query, signal);
@@ -45,8 +46,9 @@ export function createSearchClient({ timeoutMs = TIMEOUT_MS }: { timeoutMs?: num
       // Superseded or cancelled: whoever aborted it owns the state now. Not an error.
       // (Checking our own bookkeeping works whatever the abort reason was.)
       if (controller !== current) return;
-      const timedOut = (error as { name?: unknown } | null)?.name === "TimeoutError";
-      state = { query, status: "error", results: [], error: timedOut ? "Search timed out" : messageOf(error) };
+      // Timed out is our bookkeeping too: ask the deadline signal, not the error. A request that
+      // wraps the abort in its own Error has no "TimeoutError" name to find.
+      state = { query, status: "error", results: [], error: deadline.aborted ? "Search timed out" : messageOf(error) };
     }
   }
 
