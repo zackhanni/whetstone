@@ -1,0 +1,71 @@
+---
+id: ours-theirs-and-safe-force-pushes
+title: Ours/theirs flip in a rebase; force-push with a lease
+---
+
+## During a rebase, "ours" is the other branch
+
+Same conflict as before — `main` has `timeout = 45`, your `feature` commit sets `timeout = 60` —
+but resolved by rebasing `feature` onto `main` instead of merging:
+
+```text
+% git switch feature && git rebase main
+CONFLICT (content): Merge conflict in config.txt
+error: could not apply 2244e71... Raise timeout to 60
+% cat config.txt
+<<<<<<< HEAD
+timeout = 45
+=======
+timeout = 60
+>>>>>>> 2244e71 (Raise timeout to 60)
+% git checkout --ours config.txt && cat config.txt
+timeout = 45
+% git checkout --theirs config.txt && cat config.txt
+timeout = 60
+```
+
+A rebase works by checking out `main` and replaying your commits onto it, so `HEAD` — "ours" — is
+the branch you're rebasing **onto**, and "theirs" is **your** commit being replayed. In a merge
+it's the other way round. The `git-rebase` docs spell it out; when in doubt, read the labels on the
+markers instead of trusting the words: `HEAD` vs `2244e71 (Raise timeout to 60)`. Resolve, `git
+add`, then `git rebase --continue` — once per conflicting commit.
+
+## Force-pushing a rebased branch
+
+After rebasing a branch you'd already pushed, its commits have new ids and the push is rejected as
+non-fast-forward. You do need to force it. The question is what you might overwrite.
+
+A real run: Alice pushed `feature`, Bob pushed a fix to it, and Alice — who hadn't fetched since —
+rewrote her commit.
+
+```text
+% git push --force-with-lease
+ ! [rejected]        feature -> feature (stale info)
+```
+
+`--force-with-lease` forces only if the remote branch is still where Alice's `origin/feature`
+says it was. Bob's push moved it, so the lease fails and Bob's fix survives. A plain `--force`
+would have silently deleted it.
+
+**But a fetch renews the lease.** Some editors and tools can run `git fetch` in the background,
+and the git-push docs warn about exactly this. After a fetch, Alice's `origin/feature` includes
+Bob's commit, and the same command goes through:
+
+```text
+% git fetch            # what a background auto-fetch does
+% git push --force-with-lease
+ + 79fbe01...97f0661 feature -> feature (forced update)        # Bob's fix: gone
+```
+
+`--force-if-includes` (Git 2.30+) closes that hole: it checks that the remote-tracking tip is
+reachable from one of your branch's **reflog** entries — that you actually had Bob's commit in
+your branch at some point, rather than a fetch merely downloading it:
+
+```text
+% git push --force-with-lease --force-if-includes
+ ! [rejected]        feature -> feature (remote ref updated since checkout)
+```
+
+Make it the default with `git config --global push.useForceIfIncludes true`, and always type
+`--force-with-lease`, never `--force`. When it's rejected, `git fetch`, look at what's new
+(`git log feature..origin/feature`), rebase onto it, and push again.

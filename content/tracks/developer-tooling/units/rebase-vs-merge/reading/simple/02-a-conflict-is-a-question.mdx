@@ -1,0 +1,60 @@
+---
+id: a-conflict-is-a-question
+title: A conflict is git asking you a question
+---
+
+A conflict happens when both sides changed the same lines differently, and git can't know which
+you want. It stops, writes **both** versions into the file, and waits. Real output: `main` set
+`timeout = 45`, `feature` set `timeout = 60`, both starting from `timeout = 30`.
+
+```text
+% git merge feature
+Auto-merging config.txt
+CONFLICT (content): Merge conflict in config.txt
+Automatic merge failed; fix conflicts and then commit the result.
+% git status --short
+UU config.txt
+% cat config.txt
+<<<<<<< HEAD
+timeout = 45
+=======
+timeout = 60
+>>>>>>> feature
+```
+
+Between `<<<<<<<` and `=======` is the side you're on (`HEAD`); between `=======` and `>>>>>>>` is
+the side coming in. `UU` in `git status` means "unmerged, changed on both sides".
+
+## Resolving it
+
+1. Edit the file into what it **should** be — one side, the other, or a combination — and delete
+   all three marker lines.
+2. `git add config.txt` — this marks it resolved.
+3. Finish: `git commit` for a merge, `git rebase --continue` for a rebase.
+
+Changed your mind? `git merge --abort` or `git rebase --abort` puts the branch and its files back
+as they were before you started; only the resolving you'd done so far is thrown away. (Start a
+merge from a clean working tree: the git-merge docs warn that `--abort` can't always rebuild
+uncommitted changes you had when the merge began. A rebase refuses to start with them.)
+
+## See the original too: zdiff3
+
+Two versions don't tell you what either side *changed*. With `merge.conflictStyle = zdiff3`
+(Git 2.35+), git also shows the common ancestor:
+
+```text
+<<<<<<< HEAD
+timeout = 45
+||||||| 7423bd5
+timeout = 30
+=======
+timeout = 60
+>>>>>>> feature
+```
+
+Now it's clear both sides raised a timeout of 30 — one to 45, one to 60 — and the question is which
+raise wins, not which line is "right". Turn it on once: `git config --global merge.conflictStyle zdiff3`.
+
+A conflict marker that slips into a commit is a bug like any other. `git diff --check` (or
+`git diff --cached --check` once you've staged) prints `config.txt:1: leftover conflict marker`
+for every one it finds.

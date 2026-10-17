@@ -1,0 +1,66 @@
+---
+id: three-ways-to-bring-a-branch-in
+title: Fast-forward, merge commit, rebase
+---
+
+`feature` has one commit, `Feature 1`. How it joins `main` depends on whether `main` moved in the
+meantime, and on which tool you use. Real `git log --oneline --graph` output (Git 2.50) for each.
+
+## main didn't move → fast-forward
+
+```text
+% git merge feature
+Updating 92a04c5..74a1861
+Fast-forward
+% git log --oneline --graph
+* 74a1861 Feature 1
+* 92a04c5 Base
+```
+
+`main` is an ancestor of `feature`, so "merging" just slides the `main` pointer forward. No new
+commit. (`git merge --no-ff` would make a merge commit anyway, to record that a branch happened.)
+
+## main moved → a merge commit
+
+```text
+% git merge feature
+Merge made by the 'ort' strategy.
+% git log --oneline --graph
+*   f7a5219 Merge branch 'feature'
+|\
+| * 74a1861 Feature 1
+* | 01426a6 Main 1
+|/
+* 92a04c5 Base
+```
+
+The histories diverged, so git makes a **merge commit** with two parents. Every existing commit
+keeps its id; the graph shows exactly what happened, branches and all.
+
+## Rebase → replay on top, then fast-forward
+
+```text
+% git switch feature && git rebase main
+Successfully rebased and updated refs/heads/feature.
+% git log --oneline --graph
+* ede9e65 Feature 1          # was 74a1861
+* 01426a6 Main 1
+* 92a04c5 Base
+% git switch main && git merge feature
+Fast-forward
+```
+
+Rebase takes the commits on `feature` that `main` doesn't have, and **replays** each one on top of
+`main`: it applies the same change to a new parent. A commit's id is a hash of everything in it —
+the snapshot, the parent id, author, committer and message — so every replayed commit is a **new
+commit** with a new id: `74a1861` became `ede9e65`. The old one still exists (the reflog can find
+it); the branch just doesn't point at it any more.
+
+## Which to use
+
+- **Merge** keeps history true: what happened, in parallel, including the merge. Never rewrites.
+- **Rebase** keeps history linear: as if you'd started from today's `main`. It rewrites your
+  branch's commits — fine while they're only yours, a problem once someone else has them.
+
+Many teams do both: rebase your own branch onto `main` to stay current, and let the pull request
+merge it in. The rest of this unit is about doing each without losing work.
