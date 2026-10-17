@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 3,
+  "slug": "javascript-typescript-fundamentals",
+  "title": "JavaScript & TypeScript Fundamentals",
+  "description": "The language layer every other track assumes: choosing Map, Set, object or array (and what each costs), the shorthand syntax you read in review and what it expands to, equality and truthiness, narrowing unions instead of reaching for enums, and updating data without mutating the copy someone else still holds.",
+  "units": [
+    "maps-sets-objects-arrays",
+    "shorthand-syntax",
+    "equality-and-truthiness",
+    "narrowing-and-unions",
+    "immutable-updates"
+  ]
+}

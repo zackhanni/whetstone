@@ -234,6 +234,19 @@ export const TAXONOMY: TagNode[] = [
     label: "DTOs & Contracts",
     parents: ["validation", "architecture"],
   },
+
+  // ── javascript-typescript-fundamentals ──
+  { slug: "languages", label: "Languages", parents: [] },
+  { slug: "javascript", label: "JavaScript", parents: ["languages"] },
+  { slug: "typescript", label: "TypeScript", parents: ["languages"] },
+  { slug: "collections", label: "Map, Set & Collections", parents: ["javascript"] },
+  { slug: "syntax", label: "Modern Syntax", parents: ["javascript"] },
+  { slug: "equality", label: "Equality & Truthiness", parents: ["javascript"] },
+  { slug: "null-and-undefined", label: "null vs undefined", parents: ["equality", "typescript"] },
+  { slug: "narrowing", label: "Narrowing & Unions", parents: ["typescript"] },
+  { slug: "enums", label: "Enums", parents: ["typescript"] },
+  // Immutable updates are a language skill that every state owner (React state, a store) relies on.
+  { slug: "immutability", label: "Immutability", parents: ["javascript", "state-management"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
