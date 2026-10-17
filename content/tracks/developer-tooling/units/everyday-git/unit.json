@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 3,
+  "slug": "everyday-git",
+  "title": "Everyday git: three places, pointers and upstreams",
+  "skills": ["tooling", "git", "branches"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Explain where a change lives — working tree, index, commit — and predict what `git status --short`, `git diff` and `git diff --staged` show",
+    "Explain a branch as a movable pointer and `origin/main` as your last-fetched copy, and read ahead/behind and `[upstream]` in `git status` and `git branch -vv`",
+    "Start a branch whose push can't land on `main` (`--no-track`, `push -u`, `branch.autoSetupMerge simple`, `push.autoSetupRemote`), and recognise `feature -> main` before it ships",
+    "Stop tracking a committed file with `git rm --cached`, and explain why `.gitignore` alone changes nothing and what the commit does to teammates' copies"
+  ],
+  "sources": [
+    { "title": "Pro Git: Recording Changes to the Repository", "url": "https://git-scm.com/book/en/v2/Git-Basics-Recording-Changes-to-the-Repository" },
+    { "title": "Pro Git: Remote Branches", "url": "https://git-scm.com/book/en/v2/Git-Branching-Remote-Branches" },
+    { "title": "Git docs: git-status", "url": "https://git-scm.com/docs/git-status" },
+    { "title": "Git docs: git-diff", "url": "https://git-scm.com/docs/git-diff" },
+    { "title": "Git docs: git-branch (--track, --no-track)", "url": "https://git-scm.com/docs/git-branch" },
+    { "title": "Git docs: git-push", "url": "https://git-scm.com/docs/git-push" },
+    { "title": "Git docs: git-config (branch.autoSetupMerge, push.default, push.autoSetupRemote)", "url": "https://git-scm.com/docs/git-config" },
+    { "title": "Git docs: gitignore", "url": "https://git-scm.com/docs/gitignore" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-everyday-git", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-everyday-git",
+      "questions": [
+        {
+          "id": "diff-empty-after-add",
+          "prompt": "You edit three files, run `git add .`, then `git diff` — and it prints nothing. What does that mean?",
+          "options": [
+            { "id": "index-caught-up", "text": "The index now matches the working tree; `git diff --staged` shows what the commit will contain" },
+            { "id": "add-lost", "text": "`git add .` discarded the edits" },
+            { "id": "already-committed", "text": "The changes were committed automatically" },
+            { "id": "need-fetch", "text": "`git diff` only works after a `git fetch`" }
+          ],
+          "answer": "index-caught-up",
+          "explanation": "`git diff` with no arguments compares the **working tree with the index** — unstaged changes only. After `git add`, there are none. `git diff --staged` (same as `--cached`) compares the index with the last commit, which is exactly the commit you're about to make."
+        },
+        {
+          "id": "mm-commit",
+          "prompt": "`git status --short` shows `MM src/order.ts`. You run `git commit -m \"Fix order total\"`. What goes into the commit?",
+          "options": [
+            { "id": "staged", "text": "The version you staged with `git add`; the edits made after that stay in the working tree" },
+            { "id": "disk", "text": "The file as it is on disk right now" },
+            { "id": "nothing", "text": "Nothing — git refuses to commit a file with unstaged changes" },
+            { "id": "both", "text": "Two commits: one for each M" }
+          ],
+          "answer": "staged",
+          "explanation": "The left `M` says the index differs from the last commit; the right `M` says the working tree differs from the index. A commit is a snapshot of the **index**, so it gets what `git add` copied in. Afterwards `git status --short` shows ` M src/order.ts` — the later edits, still unstaged. Run `git diff --staged` before committing to see exactly what's going in."
+        },
+        {
+          "id": "commit-a-untracked",
+          "prompt": "You edited `src/app.ts` and created `src/helper.ts`, then ran `git commit -am \"Extract helper\"`. What's in the commit?",
+          "options": [
+            { "id": "tracked-only", "text": "Only the change to `src/app.ts`; `src/helper.ts` is still untracked (`??`)" },
+            { "id": "both", "text": "Both files — `-a` means all" },
+            { "id": "neither", "text": "Neither; `-a` only works with a pathspec" },
+            { "id": "helper-only", "text": "Only the new file" }
+          ],
+          "answer": "tracked-only",
+          "explanation": "`-a` stages changes to files git already **tracks**, then commits. A new file isn't tracked until something `git add`s it, so the commit references a helper that isn't in it — and the build on the next machine fails. `git status` after committing shows `?? src/helper.ts`."
+        },
+        {
+          "id": "stale-origin",
+          "prompt": "A teammate pushed to `main` five minutes ago. Your `git status` still says `Your branch is up to date with 'origin/main'.` Why?",
+          "options": [
+            { "id": "photo", "text": "`origin/main` is your copy from the last fetch; it doesn't move until you `fetch`, `pull` or `push`" },
+            { "id": "lag", "text": "GitHub takes several minutes to publish a push" },
+            { "id": "other-branch", "text": "Their push went to a different remote" },
+            { "id": "status-live", "text": "`git status` checks the remote live, so the push must have failed" }
+          ],
+          "answer": "photo",
+          "explanation": "`git status` never talks to the network. It compares your branch with the remote-tracking branch `origin/main`, which records where the remote's `main` was the last time you fetched. After `git fetch`, the same command reports `behind 'origin/main' by 1 commit`."
+        },
+        {
+          "id": "sync-lands-on-main",
+          "prompt": "You ran `git switch -c feature origin/main`, made two commits, pressed VS Code's Sync button and clicked OK on its prompt. Where did the commits go?",
+          "options": [
+            { "id": "main", "text": "To `main` on the remote — the branch's upstream is `origin/main`, and Sync pushes `feature:main`" },
+            { "id": "refuse", "text": "Nowhere; VS Code refuses, like a plain `git push` does" },
+            { "id": "feature", "text": "To a new `feature` branch on the remote" },
+            { "id": "pr", "text": "Into a pull request against `main`, waiting for review" }
+          ],
+          "answer": "main",
+          "explanation": "Branching from a remote-tracking branch sets it as the upstream (`branch.autoSetupMerge` defaults to `true`) — git even prints `branch 'feature' set up to track 'origin/main'`. A plain `git push` refuses because `push.default=simple` wants matching names, but a tool that pushes to the upstream sends `feature -> main`. VS Code's prompt even said so — `This action will pull and push commits from and to \"origin/main\".` — in words that are easy to click past. Git never opens a pull request by itself. Start such branches with `--no-track`, or fix the upstream with `git push -u origin feature`."
+        },
+        {
+          "id": "read-sb",
+          "prompt": "`git status -sb` on your work branch prints `## fix-cart...origin/main [ahead 2]`. What should you do before pushing?",
+          "options": [
+            { "id": "push-u", "text": "Run `git push -u origin fix-cart`, so the branch's upstream becomes `origin/fix-cart`" },
+            { "id": "pull", "text": "Run `git pull` to get the two missing commits" },
+            { "id": "fine", "text": "Nothing — `ahead 2` means it's ready to push" },
+            { "id": "rebase", "text": "Rebase onto `origin/fix-cart`" }
+          ],
+          "answer": "push-u",
+          "explanation": "`fix-cart...origin/main` means the upstream is `origin/main`: any push \"to the upstream\" would go to `main`. `ahead 2` means you have two commits `main` doesn't — not that you're missing any, so pulling isn't the fix. `git push -u origin fix-cart` pushes to the branch's own name and replaces the upstream; `git branch -vv` then shows `[origin/fix-cart]`."
+        },
+        {
+          "id": "gitignore-tracked",
+          "prompt": "You added `.env` to `.gitignore` and committed it, but after editing `.env`, `git status` still shows ` M .env`. Why, and what's the fix?",
+          "options": [
+            { "id": "rm-cached", "text": "`.env` was already tracked, and ignore rules only apply to untracked files; `git rm --cached .env`, then commit" },
+            { "id": "syntax", "text": "The pattern needs a leading slash: `/.env`" },
+            { "id": "cache", "text": "Git caches `.gitignore`; run `git status --refresh`" },
+            { "id": "rm", "text": "`git rm .env`, then commit" }
+          ],
+          "answer": "rm-cached",
+          "explanation": "The gitignore manual: \"Files already tracked by Git are not affected.\" The pattern is fine; it just has nothing to do while `.env` is in the index. `git rm --cached` removes it from the index and keeps your file on disk — plain `git rm` would delete it from disk too. (`git status` has no `--refresh` option.)"
+        },
+        {
+          "id": "teammates-lose-file",
+          "prompt": "You push the commit made by `git rm --cached .env`. What happens on a teammate's machine when they pull it?",
+          "options": [
+            { "id": "deleted", "text": "Git deletes `.env` from their working tree — the commit records the file as removed" },
+            { "id": "untracked", "text": "Their `.env` stays, now untracked" },
+            { "id": "conflict", "text": "The pull always stops with a conflict" },
+            { "id": "nothing", "text": "Nothing; `--cached` changes only your local index" }
+          ],
+          "answer": "deleted",
+          "explanation": "To everyone else, your commit says \"`.env` was deleted\", and updating to it removes a tracked file from their checkout. (If they had uncommitted edits to it, git refuses to update until they deal with them.) Warn the team first. And if the file ever held a secret, it's still in every earlier commit — rotate the secret."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-everyday-git",
+      "prompts": [
+        {
+          "id": "preview-commit",
+          "prompt": "Show exactly what the next commit will contain.",
+          "code": "git diff ___",
+          "blanks": [{ "id": "a1", "accept": ["--staged", "--cached"] }],
+          "explanation": "`--staged` (or its older name `--cached`) compares the index with `HEAD`. Plain `git diff` compares the working tree with the index, which is the part you have *not* staged."
+        },
+        {
+          "id": "branch-without-upstream",
+          "prompt": "Start `feature` from the remote's latest `main` without making `origin/main` its upstream, then publish it under its own name.",
+          "code": [
+            "git fetch",
+            "git switch ___ -c feature origin/main",
+            "# ...commits...",
+            "git push ___ origin feature"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["--no-track"] },
+            { "id": "b2", "accept": ["-u", "--set-upstream"] }
+          ],
+          "explanation": "`--no-track` overrides `branch.autoSetupMerge`, so the new branch has no upstream. `push -u` (`--set-upstream`) pushes and records `origin/feature` as the upstream, so later bare `git push`/`git pull` — and any tool that pushes \"to the upstream\" — use the branch's own name."
+        },
+        {
+          "id": "safe-defaults",
+          "prompt": "Make new branches track only a same-named remote branch, and make the first bare `git push` create one (Git 2.37+).",
+          "code": [
+            "git config --global branch.autoSetupMerge ___",
+            "git config --global push.___ true"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["simple"] },
+            { "id": "c2", "accept": ["autoSetupRemote"] }
+          ],
+          "explanation": "`branch.autoSetupMerge simple` sets an upstream only when the new branch and the remote branch share a name, so `switch -c feature origin/main` gets none. `push.autoSetupRemote true` turns the first bare `git push` on an upstream-less branch into `git push -u origin <branch>`. Config keys are case-insensitive, so `autosetupremote` also works."
+        },
+        {
+          "id": "untrack-file",
+          "prompt": "Stop tracking `.env` but keep it on your disk.",
+          "code": [
+            "git rm ___ .env",
+            "git commit -m \"Stop tracking .env\""
+          ],
+          "blanks": [{ "id": "d1", "accept": ["--cached"] }],
+          "explanation": "`--cached` removes the path from the index only. Without it, `git rm` deletes the file from your working tree as well. After this commit the `.gitignore` rule takes effect — but every earlier commit still contains the file."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-everyday-git",
+      "snippets": [
+        {
+          "id": "status-mm",
+          "code": [
+            "# notes.txt is committed, containing the line \"one\"",
+            "printf 'two\\n' >> notes.txt",
+            "git add notes.txt",
+            "printf 'three\\n' >> notes.txt",
+            "echo new > todo.txt",
+            "git status --short"
+          ],
+          "question": "What does `git status --short` print?",
+          "answer": "MM notes.txt, then ?? todo.txt",
+          "acceptable": ["MM notes.txt / ?? todo.txt"],
+          "explanation": "`notes.txt` differs in both columns: the index (with `two`) differs from the commit, and the working tree (with `three`) differs from the index. `todo.txt` has never been added, so it's untracked: `??`. A commit now would contain `one, two` — check with `git diff --staged`."
+        },
+        {
+          "id": "push-two-ways",
+          "code": [
+            "git switch -c feature origin/main     # prints: branch 'feature' set up to track 'origin/main'.",
+            "echo more >> README.md && git commit -qam \"Add f\"",
+            "git push                             # default config",
+            "git -c push.default=upstream push"
+          ],
+          "question": "What do the two pushes do?",
+          "answer": "The first refuses (the upstream's name doesn't match the branch); the second pushes feature -> main",
+          "acceptable": ["fatal error, then feature -> main", "first fails, second lands on main"],
+          "explanation": "The first push fails with `fatal: The upstream branch of your current branch does not match the name of your current branch.` — `push.default=simple` (the default) only pushes to a same-named upstream. Under `push.default=upstream` there's no such check: the output shows `feature -> main`, and your commit is on the remote's `main`. Tools that push to the upstream (VS Code's Push/Sync) behave like the second command."
+        },
+        {
+          "id": "ignored-but-tracked",
+          "code": [
+            "# .env was committed; a later commit added \".env\" to .gitignore",
+            "echo \"SECRET=2\" > .env",
+            "git status --short",
+            "git check-ignore -v .env; echo \"exit=$?\""
+          ],
+          "question": "What do the last two lines print?",
+          "answer": "M .env (modified, unstaged), then exit=1 — check-ignore prints no rule",
+          "acceptable": ["M .env and exit=1", "modified .env; check-ignore finds nothing"],
+          "explanation": "`.env` is in the index, so it's tracked and its edit shows up as modified — the ignore rule doesn't apply to tracked files. `git check-ignore` agrees in its own way: by default it skips tracked paths, so it prints nothing and exits 1. `git check-ignore --no-index -v .env` would show the rule (`.gitignore:1:.env`) that *would* match. Fix: `git rm --cached .env` and commit."
+        }
+      ]
+    }
+  ]
+}

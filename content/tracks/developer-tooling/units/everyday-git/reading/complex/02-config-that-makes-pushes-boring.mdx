@@ -1,0 +1,73 @@
+---
+id: config-that-makes-pushes-boring
+title: Three settings that make pushes boring
+---
+
+Upstream tracking is configured by three settings. Knowing their values explains every "why
+did it push there?" — and two of them, both added in Git 2.37, remove the trap entirely.
+
+## `branch.autoSetupMerge` — which new branches get an upstream
+
+| Value | A new branch tracks its start point when… |
+| --- | --- |
+| `true` (default) | the start point is a remote-tracking branch (`origin/main`) |
+| `simple` (Git 2.37+) | …and the new branch has the **same name** as that remote branch |
+| `always` | the start point is any branch, local or remote |
+| `inherit` | (copies the start point's own upstream) |
+| `false` | never |
+
+With `simple`, `git switch -c feature origin/main` sets no upstream (the names differ), while
+`git switch fix` — checking out a teammate's `origin/fix` as a local branch — still tracks it.
+
+## `push.default` — what a bare `git push` sends
+
+| Value | Pushes the current branch to… |
+| --- | --- |
+| `simple` (default since Git 2.0) | the branch of the **same name**; refuses if the upstream's name differs |
+| `upstream` | its upstream, **whatever its name** — `feature -> main` |
+| `current` | the same name on the remote, upstream or not |
+| `nothing` | nowhere, unless you name a refspec |
+
+## `push.autoSetupRemote` — the first push
+
+With `push.autoSetupRemote=true` (Git 2.37+), a bare `git push` on a branch with no upstream acts
+like `git push -u origin <branch>` instead of failing with
+`fatal: The current branch fix-b has no upstream branch.`:
+
+```text
+% git -c push.autoSetupRemote=true push
+ * [new branch]      fix-b -> fix-b
+branch 'fix-b' set up to track 'origin/fix-b'.
+```
+
+## A boring setup
+
+```sh
+git config --global branch.autoSetupMerge simple
+git config --global push.autoSetupRemote true
+# push.default stays at its default, simple
+```
+
+Now a branch started from `origin/main` gets no upstream, and its first plain `git push` creates
+`origin/<branch>` and tracks it. A tool that pushes "to the upstream" then pushes to the
+branch's own name — there's no `main` in its config to push to.
+
+## Asking git directly
+
+```sh
+git rev-parse --abbrev-ref @{upstream}    # where pull integrates from:  origin/main
+git rev-parse --abbrev-ref @{push}        # where a bare push would go (or an error if it'd refuse)
+git branch -vv                            # every branch with [its upstream]
+git branch --unset-upstream               # drop a wrong upstream
+```
+
+`@{upstream}` (short: `@{u}`) and `@{push}` can differ — that's the point of `push.default`. On
+the trap branch, `@{u}` is `origin/main`, while `@{push}` under `simple` fails with
+`fatal: cannot resolve 'simple' push to a single destination` (the same refusal as the push). When
+a GUI tool offers to "sync", `git branch -vv` is the ten-second check of where that will go.
+
+<!--more-->
+
+**Global vs repo config.** `--global` writes `~/.gitconfig` and applies to every repo; without it,
+`git config` writes the current repo's `.git/config`, which wins over the global file. Try a
+setting for one command with `git -c key=value <command>`, as the examples above do.

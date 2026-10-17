@@ -1,0 +1,64 @@
+---
+id: staged-then-edited
+title: Staged, then edited — one file in three states
+---
+
+A real session (Git 2.50). `notes.txt` was committed containing one line, `one`:
+
+```sh
+% printf 'two\n' >> notes.txt
+% git add notes.txt                 # the index now holds "one, two"
+% printf 'three\n' >> notes.txt     # the working tree now holds "one, two, three"
+% echo new > todo.txt
+% git status --short
+MM notes.txt
+?? todo.txt
+```
+
+`MM`: left column, the index differs from the last commit (`two` was staged); right column, the
+working tree differs from the index (`three` wasn't). Ask each diff what it compares:
+
+```diff
+% git diff                      # index → working tree
+@@ -1,2 +1,3 @@
+ one
+ two
++three
+
+% git diff --staged             # last commit → index
+@@ -1 +1,2 @@
+ one
++two
+```
+
+Now commit, and look at what landed:
+
+```sh
+% git commit -m "Add two"
+% git show HEAD:notes.txt       # the file as stored in the new commit
+one
+two
+% git status --short
+ M notes.txt                    # "three" is still only in the working tree
+?? todo.txt
+```
+
+The commit took the **index** — the snapshot `git add` made — not the file on disk. That's a
+feature: you can stage the finished part of a file (`git add -p` stages hunk by hunk) and keep
+experimenting in the rest. It's also how a "fix" goes missing from a commit: you staged, kept
+editing, committed, and the last edit is still sitting there unstaged. Before a commit,
+`git diff --staged` is the honest preview.
+
+## Reading history
+
+```sh
+git log --oneline --graph --all     # every branch, as a graph
+git log --oneline main..feature     # commits on feature that main doesn't have
+git show <commit>                   # one commit's message and diff
+git diff main...feature             # what feature changed since it branched from main
+```
+
+`main..feature` (two dots) in `git log` means "reachable from `feature`, not from `main`" — the
+commits a merge would bring in. `main...feature` (three dots) in `git diff` compares `feature`
+with the point where it branched off `main`, which is what a pull request's "Files changed" tab
+shows. The rebase unit leans on both.
