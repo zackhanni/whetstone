@@ -1,0 +1,40 @@
+---
+id: days-are-not-24-hours
+title: A day is not always 24 hours
+---
+
+In a zone with daylight saving time, two local days a year aren't 24 hours long. In New York in
+2026, clocks jump forward on March 8 and back on November 1:
+
+```js
+// machine in America/New_York
+(new Date(2026, 2, 9) - new Date(2026, 2, 8)) / 3_600_000;   // 23
+(new Date(2026, 10, 2) - new Date(2026, 10, 1)) / 3_600_000; // 25
+```
+
+So "a day later" has three common spellings, and they disagree:
+
+```js
+// machine in America/New_York
+const nov1 = new Date(2026, 10, 1);              // local midnight, November 1
+
+new Date(nov1.getTime() + 86_400_000);           // 1. Nov 1, 23:00: still November 1
+
+const d = new Date(nov1);
+d.setDate(d.getDate() + 1);                      // 2. Nov 2, 00:00
+
+new Date(Date.UTC(2026, 10, 1) + 86_400_000)
+  .toISOString().slice(0, 10);                   // 3. "2026-11-02"
+```
+
+1. **Adding milliseconds** to local midnight assumes a 24-hour day. Forwards across the 25-hour
+   day you land at 23:00 on the same date; backwards across the 23-hour day (March 9 minus 24
+   hours) you land at 23:00 on March 7, one date too far.
+2. **`setDate` on a local date** steps the calendar, not the clock, so it gets the day right
+   here. But the answer still runs through the machine's zone, and on a UTC CI machine you
+   can't tell it apart from version 1.
+3. **UTC days** have no daylight saving time: every UTC day is exactly 24 hours, so adding
+   `86_400_000` to UTC midnight is always the next UTC midnight, on every machine.
+
+For **date-only values**, use version 3: treat `"2026-11-01"` as UTC midnight, do the
+arithmetic, read it back with `toISOString().slice(0, 10)`. The machine's zone never enters.

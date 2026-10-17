@@ -1,0 +1,50 @@
+---
+id: date-only-arithmetic-in-utc
+title: Date-only arithmetic in UTC, line by line
+---
+
+A small set of helpers that treat `"YYYY-MM-DD"` as UTC midnight of that day. Every function
+takes and returns date-only strings, so callers never hold a `Date` they could read with a local
+getter.
+
+```ts
+const DAY_MS = 86_400_000;
+
+/** "2026-03-10" → epoch ms of 2026-03-10T00:00:00Z. */
+function toUtcMidnight(day: string): number {
+  const [year, month, dayOfMonth] = day.split("-").map(Number);
+  return Date.UTC(year, month - 1, dayOfMonth); // month is 0-indexed here too
+}
+
+/** epoch ms of a UTC midnight → "YYYY-MM-DD". toISOString is always UTC. */
+const fromUtcMidnight = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+export const addDays = (day: string, days: number): string =>
+  fromUtcMidnight(toUtcMidnight(day) + days * DAY_MS);
+
+export const daysBetween = (from: string, to: string): number =>
+  (toUtcMidnight(to) - toUtcMidnight(from)) / DAY_MS;
+
+/** 0 = Sunday … 6 = Saturday, the same on every machine. */
+export const weekday = (day: string): number => new Date(toUtcMidnight(day)).getUTCDay();
+```
+
+Why each piece is the way it is:
+
+- **`Date.UTC`, not `new Date(y, m, d)`.** The constructor builds _local_ midnight; `Date.UTC`
+  builds UTC midnight and returns a number.
+- **`days * DAY_MS` is safe here, and only here.** It's wrong for local times because a local day
+  can be 23 or 25 hours. In UTC it's always 24.
+- **`daysBetween` needs no rounding.** Both values are UTC midnights, so the difference is an
+  exact multiple of `DAY_MS`. With New York local midnights, March 7 to March 9 spans the
+  23-hour March 8: 47 hours, and `Math.floor(47 / 24)` is 1.
+- **`toISOString().slice(0, 10)` to read back.** `getDate()` and `getMonth()` would read the
+  machine's zone and could hand back the previous day.
+- **`getUTCDay()` for the weekday.** Same reason as `getUTCDate()`.
+
+Overflow still works for you: `Date.UTC(2026, 11, 32)` is January 1, 2027, so month and year ends
+need no special cases.
+
+What these helpers don't do yet: reject `"2026-02-30"` (`Date.UTC` rolls it into March), or
+answer "is it overdue?", which needs today's date in the user's zone. Both are in the next
+example.

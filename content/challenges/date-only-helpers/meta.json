@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 3,
+  "slug": "date-only-helpers",
+  "title": "Date-only helpers that work in every time zone",
+  "skills": [
+    "javascript",
+    "dates",
+    "date-arithmetic",
+    "time-zones"
+  ],
+  "difficulty": "advanced",
+  "estimatedMinutes": 35,
+  "runner": "in-browser",
+  "entry": "due-dates.ts",
+  "acceptanceCriteria": [
+    "`isValidDateOnly` accepts only real calendar dates: `\"2028-02-29\"` passes; `\"2026-02-30\"`, `\"2026-02-29\"` and `\"2026-13-01\"` fail",
+    "`addDays` and `daysBetween` throw a `RangeError` for a date that doesn't exist, instead of rolling it over",
+    "`addDays` crosses month ends, year ends, leap days and daylight saving time changes: `addDays(\"2026-11-01\", 1)` is `\"2026-11-02\"`",
+    "`daysBetween` counts calendar days, across daylight saving time changes too: `daysBetween(\"2026-03-07\", \"2026-03-09\")` is `2`",
+    "`addDays` and `daysBetween` never read the machine's time zone (the grader runs them with local-time `Date` APIs disabled)",
+    "`isOverdue` is `false` during the due date itself and `true` from the next day",
+    "`isOverdue` decides what day it is in the user's `timeZone`: at 02:00 UTC on March 11, a March 10 task is overdue in Tokyo but not in New York"
+  ]
+}

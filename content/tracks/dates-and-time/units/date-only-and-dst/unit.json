@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 3,
+  "slug": "date-only-and-dst",
+  "title": "Date-only values & daylight saving time",
+  "skills": ["javascript", "dates", "date-arithmetic", "time-zones"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 45,
+  "objectives": [
+    "Choose a date-only `\"YYYY-MM-DD\"` value, not an instant, for birthdays, due dates and holidays, and bring in a zone only to answer \"what is today?\"",
+    "Predict what `+ 86_400_000`, a local `setDate(d + 1)` and UTC-day arithmetic give across a daylight saving time change (New York's 23-hour March 8 and 25-hour November 1, 2026)",
+    "Spot the prefix trap when a date-only string is compared with an ISO instant string: `\"2026-03-10\" < \"2026-03-10T…\"` is always true",
+    "Validate a date-only string as a real calendar date: the regex accepts `2026-02-30`, `Date.UTC` rolls it to March 2, so round-trip the parts",
+    "Write `addDays`, `daysBetween` and `isOverdue` helpers that give the same answers in every time zone"
+  ],
+  "sources": [
+    { "title": "MDN: Date — local time and the time zone offset", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date" },
+    { "title": "MDN: Date.UTC()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/UTC" },
+    { "title": "MDN: Date.prototype.setDate()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/setDate" },
+    { "title": "MDN: Date.parse() — out-of-bounds components like February 30", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/parse" },
+    { "title": "ECMAScript spec: UTC(t) — skipped and repeated local times", "url": "https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-utc-t" },
+    { "title": "MDN: Intl.DateTimeFormat.prototype.formatToParts()", "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/DateTimeFormat/formatToParts" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-date-only", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-date-only",
+      "questions": [
+        {
+          "id": "birthday-on-the-wire",
+          "prompt": "A user's birthday is July 4, 1990. What should the API send?",
+          "options": [
+            { "id": "date-only", "text": "`\"1990-07-04\"`" },
+            { "id": "utc-midnight", "text": "`\"1990-07-04T00:00:00.000Z\"`" },
+            { "id": "epoch", "text": "`647049600000` (epoch ms of UTC midnight)" },
+            { "id": "local-midnight", "text": "`\"1990-07-04T00:00:00\"`" }
+          ],
+          "answer": "date-only",
+          "explanation": "A birthday is a calendar date with no time and no zone, so send the date-only string. UTC midnight (as an ISO string or epoch ms) is an instant: rendered with local getters or a default `toLocaleDateString()`, it shows July 3 anywhere west of UTC. A date-time with no offset is local midnight of whichever machine parses it, so it's a different instant on every machine."
+        },
+        {
+          "id": "same-answer-everywhere",
+          "prompt": "Which way of adding one day to the date-only value `\"2026-11-01\"` gives the same answer on every machine?",
+          "options": [
+            { "id": "utc-days", "text": "`new Date(Date.UTC(2026, 10, 1) + 86_400_000).toISOString().slice(0, 10)`" },
+            { "id": "local-ms", "text": "`new Date(2026, 10, 1).getTime() + 86_400_000`, read back with `getDate()`" },
+            { "id": "local-setdate", "text": "`setDate(getDate() + 1)` on `new Date(2026, 10, 1)`, read back with `toISOString().slice(0, 10)`" },
+            { "id": "utc-then-local", "text": "`new Date(Date.parse(\"2026-11-01\") + 86_400_000).toLocaleDateString()`" }
+          ],
+          "answer": "utc-days",
+          "explanation": "UTC has no daylight saving time, so UTC midnight plus 24 hours is always the next UTC midnight, and `toISOString()` reads it back in UTC. Adding 24 hours to **local** midnight lands at 23:00 on November 1 in New York, where that day has 25 hours. Local `setDate` steps the calendar correctly to local midnight on November 2, but `toISOString()` reads that instant in UTC: east of UTC (Berlin, Tokyo) local midnight is still November 1 in UTC, so it prints `\"2026-11-01\"`. Building in local time and reading back in UTC is wrong somewhere for every date. The last option does the arithmetic in UTC and then reads it back in local time: November 1 again, west of UTC."
+        },
+        {
+          "id": "due-today-filter",
+          "prompt": "`tasks.filter((t) => t.due >= new Date().toISOString())` should list tasks due today or later. On March 10, what happens to a task with `due: \"2026-03-10\"`?",
+          "options": [
+            { "id": "dropped", "text": "It's dropped: `\"2026-03-10\"` sorts before every `\"2026-03-10T…\"` string" },
+            { "id": "works", "text": "It's kept: ISO strings compare chronologically" },
+            { "id": "throws", "text": "The comparison throws, because one side is a date and the other a timestamp" },
+            { "id": "half-day", "text": "It's kept until noon UTC, then dropped" }
+          ],
+          "answer": "dropped",
+          "explanation": "Both sides are plain strings, compared character by character. The first 10 characters are equal, and then the shorter string ends, and a prefix sorts first. So `\"2026-03-10\" >= \"2026-03-10T…\"` is false at every moment of the day. ISO strings only compare chronologically when they have the same shape. Compare two date-only strings (today in the user's zone vs the due date) instead."
+        },
+        {
+          "id": "reject-feb-30",
+          "prompt": "Which check rejects `\"2026-02-30\"`?",
+          "options": [
+            { "id": "round-trip", "text": "Build `new Date(Date.UTC(2026, 1, 30))` and check that the UTC year, month and day come back unchanged" },
+            { "id": "regex", "text": "`/^\\d{4}-\\d{2}-\\d{2}$/.test(s)`" },
+            { "id": "parse-nan", "text": "`!Number.isNaN(Date.parse(s))`" },
+            { "id": "utc-nan", "text": "`!Number.isNaN(Date.UTC(2026, 1, 30))`" }
+          ],
+          "answer": "round-trip",
+          "explanation": "Every other check says yes. The regex only checks the shape. `Date.UTC` doesn't validate, it rolls over: February 30, 2026 becomes March 2, which is a perfectly good number. `Date.parse` does the same in V8 (Chrome, Node), though MDN notes engines are inconsistent here. Only comparing what you asked for with what you got (March 2 ≠ February 30) catches it."
+        },
+        {
+          "id": "today-on-a-utc-server",
+          "prompt": "A server in UTC marks tasks overdue with `task.due < new Date().toISOString().slice(0, 10)`. A user in Los Angeles (UTC−7 in March) has a task due March 10. At 6 p.m. on March 10 in Los Angeles, what do they see?",
+          "options": [
+            { "id": "overdue-early", "text": "Overdue: it's already March 11 in UTC" },
+            { "id": "fine", "text": "Not overdue: slicing to 10 characters removed the prefix trap" },
+            { "id": "prefix", "text": "Overdue, because of the prefix trap" },
+            { "id": "browser", "text": "It depends on the user's browser" }
+          ],
+          "answer": "overdue-early",
+          "explanation": "Slicing does fix the prefix trap, since both sides are date-only now. But it compares with **UTC's** date, and 6 p.m. in Los Angeles is 01:00 UTC on March 11. Every user west of UTC sees tasks go overdue hours early; users east of UTC see them late. The server is doing the comparison, so the browser has no say. \"Today\" has to be computed in the user's zone: `formatToParts` with `timeZone: user.timeZone`."
+        },
+        {
+          "id": "skipped-local-time",
+          "prompt": "On a machine in New York, what is `new Date(2026, 2, 8, 2, 30)`? (Clocks jump from 2:00 to 3:00 a.m. that day.)",
+          "options": [
+            { "id": "three-thirty", "text": "03:30 EDT: a skipped time is read with the offset from before the change" },
+            { "id": "invalid", "text": "Invalid Date, because 2:30 a.m. didn't happen" },
+            { "id": "one-thirty", "text": "01:30 EST" },
+            { "id": "two-thirty-est", "text": "02:30 EST, and `getHours()` returns 2" }
+          ],
+          "answer": "three-thirty",
+          "explanation": "The ECMAScript spec resolves a local time inside a spring-forward gap with the offset in effect before the change: 2:30 at UTC−5 is 07:30 UTC, which the clock on the wall shows as 3:30 EDT, so `getHours()` returns 3. (\"2:30 EST\" names that same instant, but no New York clock showed it that day.) Nothing throws and nothing returns Invalid Date, so a reminder set for 2:30 fires at 3:30 once a year. For a time repeated in the autumn, the spec picks the earlier one."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-date-only",
+      "prompts": [
+        {
+          "id": "to-utc-midnight",
+          "prompt": "Turn a date-only value into UTC midnight of that day, in epoch ms.",
+          "code": [
+            "const [y, m, d] = \"2026-03-10\".split(\"-\").map(Number);",
+            "const ms = Date.___(y, m - ___, d);"
+          ],
+          "blanks": [
+            { "id": "u1", "accept": ["UTC"] },
+            { "id": "u2", "accept": ["1"] }
+          ],
+          "explanation": "`Date.UTC` reads its arguments as UTC and returns a number; `new Date(y, m, d)` would read them as local time. The month is 0-indexed in both, so the `03` from the string becomes `2`."
+        },
+        {
+          "id": "back-to-date-only",
+          "prompt": "Add a day and read the result back as a date-only string, without touching the machine's zone.",
+          "code": "const next = new Date(ms + 86_400_000).___().slice(0, ___); // \"2026-03-11\"",
+          "blanks": [
+            { "id": "b1", "accept": ["toISOString", "toJSON"] },
+            { "id": "b2", "accept": ["10"] }
+          ],
+          "explanation": "UTC midnight plus 24 hours is the next UTC midnight. `toISOString()` prints it in UTC, and its first 10 characters are `YYYY-MM-DD`. Reading it back with `getDate()` would use the machine's zone and give March 10 anywhere west of UTC."
+        },
+        {
+          "id": "round-trip-check",
+          "prompt": "Finish the calendar check: the date must come back out exactly as it went in.",
+          "code": [
+            "const date = new Date(Date.UTC(y, m - 1, d));",
+            "const real = date.___() === y && date.getUTCMonth() === m - 1 && date.___() === d;"
+          ],
+          "blanks": [
+            { "id": "r1", "accept": ["getUTCFullYear"] },
+            { "id": "r2", "accept": ["getUTCDate"] }
+          ],
+          "explanation": "`Date.UTC` rolls an impossible date forward (February 30 → March 2), so it never fails on its own. Reading the parts back with the **UTC** getters shows whether a rollover happened. Local getters would mix in the machine's zone and reject real dates west of UTC."
+        },
+        {
+          "id": "utc-weekday",
+          "prompt": "The weekday of a date-only value, the same on every machine (0 = Sunday).",
+          "code": "const weekday = new Date(Date.UTC(2026, 2, 10)).___(); // 2: Tuesday",
+          "blanks": [{ "id": "w1", "accept": ["getUTCDay"] }],
+          "explanation": "The date is UTC midnight, so it has to be read in UTC: `getUTCDay()`. `getDay()` would give Monday (`1`) on any machine west of UTC, where that instant is still March 9."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-date-only",
+      "snippets": [
+        {
+          "id": "ms-vs-setdate-fall-back",
+          "code": [
+            "// The machine is in America/New_York. Clocks go back at 2 a.m. on November 1, 2026.",
+            "const a = new Date(2026, 10, 1); // local midnight, November 1",
+            "const b = new Date(2026, 10, 1);",
+            "a.setTime(a.getTime() + 86_400_000);",
+            "b.setDate(b.getDate() + 1);",
+            "console.log(a.getDate(), a.getHours(), b.getDate(), b.getHours());"
+          ],
+          "question": "What's logged?",
+          "answer": "1 23 2 0",
+          "acceptable": ["1, 23, 2, 0"],
+          "explanation": "November 1 is 25 hours long in New York, so 24 hours after midnight is 23:00 on the same date. `setDate` changes the calendar day and keeps the wall-clock time, so `b` is midnight on November 2. In UTC both lines print the same thing, which is how the millisecond version survives a UTC CI run."
+        },
+        {
+          "id": "floor-across-spring-forward",
+          "code": [
+            "// The machine is in America/New_York. Clocks go forward on March 8, 2026.",
+            "const ms = new Date(\"2026-03-09T00:00\") - new Date(\"2026-03-07T00:00\");",
+            "console.log(ms / 3_600_000, Math.floor(ms / 86_400_000));"
+          ],
+          "question": "What's logged?",
+          "answer": "47 1",
+          "acceptable": ["47, 1"],
+          "explanation": "Both strings are local midnights (date-time, no offset), and the span includes the 23-hour March 8: 47 hours. `Math.floor(47 / 24)` is 1, so a two-night stay is billed as one night. With UTC midnights the difference is exactly 48 hours, and no rounding is needed."
+        },
+        {
+          "id": "prefix-compare",
+          "code": [
+            "const due = \"2026-03-10\";",
+            "console.log(",
+            "  due < \"2026-03-10T00:00:00.000Z\",",
+            "  due >= \"2026-03-10T23:59:59.999Z\",",
+            "  due === \"2026-03-10T00:00:00.000Z\".slice(0, 10),",
+            ");"
+          ],
+          "question": "What's logged?",
+          "answer": "true false true",
+          "acceptable": ["true, false, true"],
+          "explanation": "A string that's a prefix of another sorts first, so the date-only value is \"less than\" every instant on its own day, at midnight and at 23:59 alike. Comparisons between the two shapes are wrong for the whole day; cutting the instant down to a date-only string (in the right zone) makes them comparable."
+        },
+        {
+          "id": "date-utc-rolls-over",
+          "code": [
+            "const value = \"2026-02-30\";",
+            "const [y, m, d] = value.split(\"-\").map(Number);",
+            "console.log(",
+            "  /^\\d{4}-\\d{2}-\\d{2}$/.test(value),",
+            "  new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10),",
+            ");"
+          ],
+          "question": "What's logged?",
+          "answer": "true 2026-03-02",
+          "acceptable": ["true, 2026-03-02", "true \"2026-03-02\""],
+          "explanation": "The regex is happy with the shape, and `Date.UTC` rolls February 30 over into March 2 without complaint. That's how a typo becomes a real due date nobody entered. Compare the parts that come back out with the parts that went in, and reject the input when they differ."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-date-only", "challengeSlug": "date-only-helpers" }
+  ]
+}
