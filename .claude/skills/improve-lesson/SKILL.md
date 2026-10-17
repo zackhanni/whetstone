@@ -13,8 +13,9 @@ invoked with no feedback at all ("take what you just learned and make the system
 ## Steps
 
 1. **Gather.** With feedback: list the open feedback issues —
-   `gh issue list --label lesson-feedback --state open --json number,title,body,url` — or the
-   ones for the named unit. Each body ends with a `<!-- whetstone-feedback {...} -->` marker
+   `gh issue list --label lesson-feedback --state open --limit 1000 --json number,title,body,url`
+   (gh returns only 30 without `--limit`) — or the ones for the named unit. Each body ends with a
+   `<!-- whetstone-feedback {...} -->` marker
    holding the exact `track`/`unit`/`block`/`item` ids (`lib/feedback.ts`); go straight there.
    Also check `docs/content-review.md` for accuracy findings not yet handled. With `--system` (or
    "make the system better" with nothing to read): the inputs are the run you just finished and
@@ -26,7 +27,8 @@ invoked with no feedback at all ("take what you just learned and make the system
    different place depending on which.
 2. **Triage — and pick the highest-leverage layer.** For each item ask "where does this stop
    happening forever?" and fix it at the _highest_ layer that applies:
-   1. **A check** in `scripts/validate.ts` (or a unit test) — the machine now enforces it.
+   1. **A check** in `learning/validate-content.ts`, with its case in
+      `learning/validate-content.test.ts` (or another unit test) — the machine now enforces it.
    2. **The schema** `learning/schema.ts` — the shape makes the mistake unrepresentable.
    3. **`learning/PLAYBOOK.md`** — judgment a machine can't check.
    4. **The skills** (`.claude/skills/*/SKILL.md`) — the _procedure_ and its ordering.

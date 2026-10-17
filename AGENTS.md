@@ -13,7 +13,7 @@
 pnpm dev              # Next dev server — this project runs on :3002 (another app owns :3000)
 pnpm build            # production build (SSG) — gate for any routing/content change
 pnpm check            # lint + typecheck + validate + test + test:challenges — the primary gate
-pnpm validate         # schema + reading files + slugs + taxonomy + challenge contract (scripts/validate.ts)
+pnpm validate         # schema + catalog + reading files + slugs + taxonomy + challenge contract (learning/validate-content.ts)
 pnpm test             # Vitest — pure lib/* and learning/* logic, node environment
 pnpm test:challenges  # every challenge grader, headless: starter must fail, solution must pass
 ```

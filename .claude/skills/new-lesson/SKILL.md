@@ -88,13 +88,14 @@ then replace the substance. Don't re-derive the conventions from the schema.
    review (see AGENTS.md).
 7. **Feed the loop.** If you learned something the next author would otherwise re-learn the
    hard way — a runner limitation, a validator gap, a convention — fix it _upstream_ in the
-   same pass: prefer a check in `scripts/validate.ts` or `learning/schema.ts`, then a line in
-   `PLAYBOOK.md`, then a step here. A rule that a machine can check should not live only in prose.
+   same pass: prefer a check in `learning/validate-content.ts` (plus its test case) or
+   `learning/schema.ts`, then a line in `PLAYBOOK.md`, then a step here. A rule that a machine
+   can check should not live only in prose.
 
 ## Notes
 
 - This skill produces _content_, not app/UI code. The one deliberate exception is step 7: a
-  **reusable** fix may land in `scripts/validate.ts`, `learning/schema.ts` or
+  **reusable** fix may land in `learning/validate-content.ts`, `learning/schema.ts` or
   `learning/PLAYBOOK.md`, because encoding a lesson learned is cheaper than re-learning it.
 - Don't add speculative fields (pick-N, difficulty-mix, ratings) — they're non-breaking
   later additions. If the schema genuinely can't express what a lesson needs, propose a schema

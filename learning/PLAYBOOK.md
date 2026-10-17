@@ -306,7 +306,8 @@ Capture which it is, because the fix lives in a different place (the app / order
 
 **Fix things at the highest layer that applies** — the same ladder `/improve-lesson` follows:
 
-1. a **check** in `scripts/validate.ts` or a unit test (the machine enforces it forever),
+1. a **check** in `learning/validate-content.ts` (with its case in
+   `learning/validate-content.test.ts`) or a unit test (the machine enforces it forever),
 2. the **schema** (`learning/schema.ts`) so the mistake can't be represented,
 3. **this playbook** for judgment a machine can't check,
 4. the **skills** (`.claude/skills/*/SKILL.md`) for procedure and ordering,
