@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "token-bucket-rate-limiter",
+  "title": "Fix a token-bucket rate limiter",
+  "skills": ["rate-limiting", "back-pressure", "system-design"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "rate-limiter.ts",
+  "acceptanceCriteria": [
+    "A new key can send `capacity` requests at once; the next one is denied",
+    "Each key has its own bucket — one busy key never denies another",
+    "A bucket never holds more than `capacity` tokens, however long the key sits idle",
+    "Partial tokens carry over: a client polling every 300 ms at 1 token/s still averages one request per second",
+    "A denied request reports `retryAfterMs` as the time until the next whole token, counting any partial token already refilled (and 0 when allowed)",
+    "A denied request doesn't spend a token"
+  ]
+}

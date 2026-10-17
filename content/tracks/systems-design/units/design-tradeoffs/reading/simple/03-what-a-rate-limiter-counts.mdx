@@ -1,0 +1,34 @@
+---
+id: what-a-rate-limiter-counts
+title: What a rate limiter actually counts
+---
+
+A rate limit sounds like one number — "100 requests a minute" — but every limiter has to answer
+*100 requests in which minute?*, and the answers behave differently.
+
+**Fixed window.** Count requests per calendar window: `user:42:2026-10-17T09:41`. Reset when the
+window changes. Redis's `INCR` docs show this pattern: one counter per client per window, with an
+expiry so old windows clean themselves up. One small counter per client — but the windows have
+edges. 100 requests at 09:41:59.9 and 100 more at 09:42:00.1 are both within their own windows:
+**200 requests in 0.2 seconds**, all allowed.
+
+**Sliding window.** Count the requests in the last 60 seconds *from now*. Exact, no edge — but you
+need each request's timestamp (Redis's tutorial keeps them in a sorted set), so memory grows with
+the limit: a 10,000-per-hour limit stores up to 10,000 entries per client. A cheaper
+approximation weights the previous window's count by how much of it still overlaps.
+
+**Token bucket.** Each client has a bucket of up to `capacity` tokens that refills at a steady
+rate; a request takes a token. Two numbers instead of one, and they mean different things:
+
+- `refill rate` — the long-run average a client can sustain (say, 10 a second).
+- `capacity` — the burst it can send after being quiet (say, 20 at once).
+
+That second number is the point: real clients are bursty (an app opening fires several requests at
+once), and a token bucket allows that burst *on purpose*, up to a stated size, while holding the
+average. AWS API Gateway documents its throttling this way — a steady-state rate plus a burst,
+enforced with the token bucket algorithm, answering `429 Too Many Requests` beyond them.
+
+Whatever the algorithm, a denial should tell the client when to come back. RFC 6585 defines 429
+for rate limiting and lets it carry `Retry-After` — a number of seconds to wait (RFC 9110 also
+allows a date). A client that honours it stops hammering; a limiter that doesn't send it invites
+blind retries.
