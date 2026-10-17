@@ -37,6 +37,9 @@ invoked with no feedback at all ("take what you just learned and make the system
       point the PLAYBOOK at it.
 3. **Edit.**
    - _Local fix:_ edit the unit/challenge directly.
+   - _Bloom a card unit_ when feedback asks to practise it ("I want to drill this"): append a quiz
+     or fill-blank after the `cards` block, then a challenge if the skill is codeable. The depth
+     badge updates itself; nothing else changes.
    - _General fix:_ change the validator / `learning/schema.ts` / `PLAYBOOK.md`. A **breaking**
      schema change (a field removed or renamed, or its meaning changed) **bumps `schemaVersion`**
      and sweeps every content file as ONE self-contained change set — nothing unrelated in it.

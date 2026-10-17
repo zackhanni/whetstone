@@ -12,15 +12,24 @@ in `AGENTS.md` → "Working with this repo".
   addressed: schema v3 — objectives + sources on every unit, challenge text moved into
   meta.json, code as arrays of lines, `content/catalog.json`, the validator as a tested module,
   "Flag" → GitHub issue feedback, inline Markdown in prompts.
-- Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`.
+- **`feat/cards-and-build-gate`** (branched from PR #13's head, **uncommitted**): the `cards`
+  block for reference units, derived Card / Lesson / Full depth, question-less units completing
+  on visit, and `vercel.json` running `pnpm check` before every Vercel build.
+- Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build` — and, once
+  `vercel.json` is merged, every Vercel build runs both.
 
 ## Next up
 
-1. Merge PR #13 once its review is settled.
-2. After it merges, a production spot-check: a challenge's _Run tests_ (fails) and _Show
+1. Commit `feat/cards-and-build-gate` and open its PR against `feat/lesson-structure`.
+2. On that PR's first Vercel build, **read the build log** and confirm `pnpm check` ran (the
+   validate, test and challenge output appears before `next build`). A green check alone doesn't
+   prove the new command was used.
+3. Merge PR #13, but **retarget the stacked PR to `main` first** — merging #13 deletes its
+   branch, which would close a PR still based on it. Then merge the stacked PR.
+4. After both merge, a production spot-check: a challenge's _Run tests_ (fails) and _Show
    solution_ (passes) with the new title / task list / collapsed hints; a "Flag" link opening a
    prefilled issue; a predict-output reveal showing "Also counts:".
-3. **Content phase, first:** the 47 accuracy findings in `docs/content-review.md`, via
+5. **Content phase, first:** the 47 accuracy findings in `docs/content-review.md`, via
    `/improve-lesson`. Then new units from `docs/ROADMAP.md` → "Content tracks" (a new track
    starts with its unit outline in the ROADMAP).
 

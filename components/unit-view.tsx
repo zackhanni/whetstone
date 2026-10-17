@@ -12,6 +12,8 @@ import { QuizBlock } from "./quiz-block";
 import { FillBlankBlock } from "./fill-blank-block";
 import { PredictOutputBlock } from "./predict-output-block";
 import { ChallengeBlock } from "./challenge-block";
+import { CardsBlock } from "./cards-block";
+import { DEPTH_LABEL, unitDepth } from "@/lib/depth";
 import { UnitRefProvider } from "./flag-link";
 
 type Mode = "browse" | "drill";
@@ -19,6 +21,7 @@ type Result = { correct: boolean; answered: boolean };
 
 const LABELS: Record<string, string> = {
   reading: "Read",
+  cards: "Cards",
   quiz: "Quiz",
   "fill-blank": "Fill in the blank",
   "predict-output": "Predict the output",
@@ -83,6 +86,7 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
       }, 0),
     [bundle],
   );
+  const depth = unitDepth(bundle.unit.blocks.map((b) => b.type));
   const correctCount = Object.values(results).filter((r) => r.correct).length;
   const answeredCount = Object.values(results).filter((r) => r.answered).length;
 
@@ -108,30 +112,35 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
           <div className="text-xs uppercase tracking-wide text-slate-500">{bundle.track.title}</div>
           <h1 className="text-2xl font-bold text-slate-50">{bundle.unit.title}</h1>
           <div className="flex flex-wrap items-center gap-3">
-            <ToggleGroup
-              type="single"
-              value={mode}
-              onValueChange={(v) => v && switchMode(v as Mode)}
-              variant="outline"
-              size="sm"
-            >
-              <ToggleGroupItem
-                value="browse"
-                className="capitalize data-[state=on]:bg-sky-600 data-[state=on]:text-white"
+            {/* Nothing to drill in a unit with no questions (e.g. only cards). */}
+            {total > 0 && (
+              <ToggleGroup
+                type="single"
+                value={mode}
+                onValueChange={(v) => v && switchMode(v as Mode)}
+                variant="outline"
+                size="sm"
               >
-                Browse
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="drill"
-                className="capitalize data-[state=on]:bg-sky-600 data-[state=on]:text-white"
-              >
-                Drill
-              </ToggleGroupItem>
-            </ToggleGroup>
+                <ToggleGroupItem
+                  value="browse"
+                  className="capitalize data-[state=on]:bg-sky-600 data-[state=on]:text-white"
+                >
+                  Browse
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="drill"
+                  className="capitalize data-[state=on]:bg-sky-600 data-[state=on]:text-white"
+                >
+                  Drill
+                </ToggleGroupItem>
+              </ToggleGroup>
+            )}
             {mode === "drill" && (
               <span className="tabular-nums text-sm text-slate-400">⏱ {fmt(elapsed)}</span>
             )}
-            <span className="text-xs text-slate-500">~{bundle.unit.estimatedMinutes} min</span>
+            <span className="text-xs text-slate-500">
+              {DEPTH_LABEL[depth]} · ~{bundle.unit.estimatedMinutes} min
+            </span>
           </div>
           {mode === "drill" && (
             <p className="text-xs text-slate-500">
@@ -154,7 +163,7 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
 
         {bundle.unit.blocks.map((block) => {
           // Drill mode hides the teaching material — you're testing recall, not reading.
-          if (block.type === "reading" && mode === "drill") return null;
+          if ((block.type === "reading" || block.type === "cards") && mode === "drill") return null;
           return (
             <section
               key={block.id}
@@ -169,6 +178,7 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
                 readings={bundle.readings[block.id] as Record<Tier, ReadingExample[]>}
               />
             )}
+            {block.type === "cards" && <CardsBlock blockId={block.id} cards={bundle.cards[block.id]} />}
             {block.type === "quiz" && (
               <QuizBlock block={block} mode={mode} forceReveal={forceReveal} onResult={onResult} />
             )}

@@ -10,6 +10,7 @@ import {
   type Challenge,
 } from "@/learning/schema";
 import { parseFrontmatter } from "./frontmatter";
+import { unitDepth, type Depth } from "./depth";
 
 const ROOT = process.cwd();
 const TIERS = ["simple", "medium", "complex"] as const;
@@ -27,6 +28,7 @@ export type UnitBundle = {
   track: { slug: string; title: string };
   unit: Unit;
   readings: Record<string, Record<Tier, ReadingExample[]>>; // keyed by reading block id
+  cards: Record<string, ReadingExample[]>; // keyed by cards block id
   challenges: Record<string, ChallengeBundle>; // keyed by challengeSlug
 };
 
@@ -44,25 +46,28 @@ function resolveWithin(base: string, ...segments: string[]): string {
   return resolved;
 }
 
+/** The `*.mdx` files in one folder, ordered by filename — a reading tier or a deck of cards. */
+async function loadExamples(dir: string): Promise<ReadingExample[]> {
+  let files: string[] = [];
+  try {
+    files = (await fs.readdir(dir)).filter((f) => f.endsWith(".mdx")).sort();
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  return Promise.all(
+    files.map(async (f) => {
+      const { data, body } = parseFrontmatter(await fs.readFile(path.join(dir, f), "utf8"));
+      return { id: data.id ?? f, title: data.title ?? f, body };
+    }),
+  );
+}
+
 async function loadReadingTiers(dir: string): Promise<Record<Tier, ReadingExample[]>> {
   const entries = await Promise.all(
-    TIERS.map(async (tier): Promise<[Tier, ReadingExample[]]> => {
-      const tierDir = path.join(dir, tier);
-      let files: string[] = [];
-      try {
-        files = (await fs.readdir(tierDir)).filter((f) => f.endsWith(".mdx")).sort();
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-        files = [];
-      }
-      const examples = await Promise.all(
-        files.map(async (f) => {
-          const { data, body } = parseFrontmatter(await fs.readFile(path.join(tierDir, f), "utf8"));
-          return { id: data.id ?? f, title: data.title ?? f, body };
-        }),
-      );
-      return [tier, examples];
-    }),
+    TIERS.map(async (tier): Promise<[Tier, ReadingExample[]]> => [
+      tier,
+      await loadExamples(path.join(dir, tier)),
+    ]),
   );
   return Object.fromEntries(entries) as Record<Tier, ReadingExample[]>;
 }
@@ -128,6 +133,7 @@ export const loadUnit = cache(async (trackSlug: string, unitSlug: string): Promi
   ]);
 
   const readings: UnitBundle["readings"] = {};
+  const cards: UnitBundle["cards"] = {};
   const challenges: UnitBundle["challenges"] = {};
 
   // Load every block's assets concurrently. Assigning into the maps is safe — JS is
@@ -136,13 +142,15 @@ export const loadUnit = cache(async (trackSlug: string, unitSlug: string): Promi
     unit.blocks.map(async (block) => {
       if (block.type === "reading") {
         readings[block.id] = await loadReadingTiers(resolveWithin(unitDir, block.dir));
+      } else if (block.type === "cards") {
+        cards[block.id] = await loadExamples(resolveWithin(unitDir, block.dir));
       } else if (block.type === "challenge") {
         challenges[block.challengeSlug] = await loadChallenge(block.challengeSlug);
       }
     }),
   );
 
-  return { track: { slug: track.slug, title: track.title }, unit, readings, challenges };
+  return { track: { slug: track.slug, title: track.title }, unit, readings, cards, challenges };
 });
 
 /**
@@ -177,6 +185,7 @@ export type UnitSummary = {
   difficulty: string;
   estimatedMinutes: number;
   skills: string[];
+  depth: Depth;
 };
 export type TrackDetail = { slug: string; title: string; description: string; units: UnitSummary[] };
 
@@ -193,6 +202,7 @@ export const loadTrack = cache(async (trackSlug: string): Promise<TrackDetail> =
         difficulty: u.difficulty,
         estimatedMinutes: u.estimatedMinutes,
         skills: u.skills,
+        depth: unitDepth(u.blocks.map((b) => b.type)),
       };
     }),
   );

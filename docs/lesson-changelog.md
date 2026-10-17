@@ -15,6 +15,8 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — authoring system — new `cards` block for reference units (no schema bump: an added block type), derived Card/Lesson/Full depth, question-less units complete on visit; Vercel builds now run `pnpm check`.
+
 - 2026-10-17 — schema v3 — units gain `objectives` + `sources`; challenge `prompt` removed and README title/checklist/Running moved into meta.json; multi-line `code` as arrays; `content/catalog.json`; all content swept (README text kept, 2 duplicate blank answers pruned).
 - 2026-10-17 — all units — objectives and official-docs sources backfilled for the 14 units (drafted per track, URLs checked against each docs site); 47 accuracy findings logged in `docs/content-review.md`, none fixed yet.
 

@@ -157,13 +157,13 @@ snippet has already been turned into `debounced-input-and-autosave`.
 
 ## Deferred / cross-cutting
 
-- ⬜ **Cards & variable lesson depth** — a lightweight `card` block (info + example, flash-card style) so a "lesson" can range from a reminder to a full mastery unit, and cards can _bloom_ by appending blocks. Inline first; graduate to referenced/shared cards (challenge pattern) only when reuse is real. Proposal: `docs/cards-and-lesson-depth.md`.
+- ✅ **Cards & variable lesson depth (v1, 2026-10-17)** — a `cards` block (a deck of one-idea cards), derived Card / Lesson / Full depth, card units complete on visit. Shared cards and the swipe feed are still ⬜. Was: a lightweight `card` block (info + example, flash-card style) so a "lesson" can range from a reminder to a full mastery unit, and cards can _bloom_ by appending blocks. Inline first; graduate to referenced/shared cards (challenge pattern) only when reuse is real. Proposal: `docs/cards-and-lesson-depth.md`.
 - ⬜ zod 3 → 4 migration (`schema.ts`, `validate.ts`)
 - ⬜ TypeScript 5 → 6
 - ⬜ **Context → Zustand** for progress + drill history — the trigger fired when the interests store landed (the first Zustand store). Plan: `docs/zustand-migration.md`.
 - ⬜ Pick-N / difficulty-mix quizzes (schema already supports the shape)
 - ⬜ More "Go deeper" reading tiers across units
-- ⬜ CI — run `pnpm check` + build on PRs (about a minute; it draws on the Actions minutes shared by every private repo, so consider `paths-ignore` for docs-only pushes)
+- ✅ CI — `vercel.json` makes every Vercel build run `pnpm check && pnpm build`, so a failing gate fails the PR's preview and blocks production, with no GitHub Actions minutes (2026-10-17)
 
 ## Planned features (design later)
 

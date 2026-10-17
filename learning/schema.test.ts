@@ -115,7 +115,22 @@ describe("Unit schema", () => {
       u.blocks.push(u.blocks.shift()!); // reading moves to the end
       u.blocks.splice(2, 0, u.blocks.pop()!); // ...then before the challenge
     });
-    expect(issues).toContain('reading "read" comes after an assessment — readings open the unit');
+    expect(issues).toContain('reading "read" comes after an assessment — readings and cards open the unit');
+  });
+
+  it("accepts a cards-only unit, and cards alongside readings before assessments", () => {
+    const cardsOnly = { ...unit(), blocks: [{ type: "cards", id: "deck" }] };
+    expect(Unit.safeParse(cardsOnly).success).toBe(true);
+    const mixed = unit();
+    (mixed.blocks as { type: string; id: string }[]).splice(1, 0, { type: "cards", id: "deck" });
+    expect(Unit.safeParse(mixed).success).toBe(true);
+  });
+
+  it("rejects cards after an assessment", () => {
+    const issues = issuesAfter((u) => {
+      (u.blocks as { type: string; id: string }[]).splice(3, 0, { type: "cards", id: "deck" });
+    });
+    expect(issues).toContain('cards "deck" comes after an assessment — readings and cards open the unit');
   });
 
   it("rejects a block after the challenge", () => {

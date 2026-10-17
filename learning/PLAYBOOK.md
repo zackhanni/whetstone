@@ -21,7 +21,7 @@ Content is organized as **tracks → units → blocks**.
 - **Unit** — one focused concept you could learn in a sitting (e.g. `use-effect`). An ordered list
   of blocks. Its slug equals its folder name and is unique across **all** tracks, so a unit can be
   addressed by its slug alone (and moved to another track without a collision).
-- **Block** — a single interaction. Five types (below).
+- **Block** — a single interaction. Six types (below).
 
 Everything lives in `content/`. Coding challenges live once in
 `content/challenges/<slug>/` and are referenced by slug, so they're reusable and the
@@ -43,11 +43,12 @@ as tagged challenges.
   what the page says, not by its HTTP status: docs.nestjs.com is a single-page app that answers
   200 for any path, real or not.
 
-## The five block types — and when to reach for each
+## The six block types — and when to reach for each
 
 | Block            | Use it to…                         | Quality bar                                                                                                                        |
 | ---------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `reading`        | Install the mental model           | A folder of example `.mdx` files per tier (Simple/Medium/Complex), **1..n each**. Each tier is the same idea at higher resolution. |
+| `cards`          | Remind, not teach from scratch     | A folder of short `.mdx` cards, each **one idea + one example**. No tiers. A unit of only cards is a reference unit.                |
 | `quiz`           | Check recognition / discrimination | A list of questions; distractors are _real_ misconceptions, not filler.                                                            |
 | `fill-blank`     | Check recall of exact syntax/shape | A list of prompts; one concept per blank; accept reasonable equivalents.                                                           |
 | `predict-output` | Expose subtle runtime behavior     | A list of snippets; reserve for the genuinely surprising (stale closures, batching, ordering).                                     |
@@ -105,7 +106,24 @@ outside code appears on the page as literal text, so keep all code in backticks 
 values, unnumbered files, a non-`.mdx` file in a tier folder (it would never be shown), and
 duplicate reading ids within a unit.
 
-### Not every unit needs all five blocks
+### Two kinds of unit: mastery and reference
+
+The core principle above is about **mastery** units: reading tiers, then assessments, often a
+challenge. Some topics only need a **reminder** — HTTP status codes, CLI flags, "which date
+library when". Author those as a **card unit**: a `cards` block, and nothing else yet. Cards make
+breadth cheap; depth is added where it pays off.
+
+- **Card or reading?** A card is one idea and one example, under about 150 words with at most
+  one code block (`pnpm validate` warns past that). If it needs a Simple → Complex ladder, it's a
+  reading.
+- **Objectives** in a card unit name what the learner can _recall_ ("Tell 401 from 403"). They
+  aren't assessed until the unit blooms.
+- **Blooming:** when a card unit proves important (feedback, interview frequency, many tags
+  depend on it), append assessments — it becomes a Lesson — and later a challenge — Full. No
+  migration: the depth badge is derived from the blocks (`lib/depth.ts`).
+- A card unit completes on its first visit and has no Drill mode (there's nothing to answer).
+
+### Not every unit needs all six blocks
 
 A _decision_ unit ("which tool owns this?") legitimately ends at `fill-blank`: there's no
 surprising runtime output to predict and nothing to code. Reading + quiz + fill-blank is a
@@ -231,12 +249,13 @@ Sandpack iframe:
   options, prompts, blanks, snippets), that a quiz `answer` names real option ids, that the
   `___` count matches the blanks, 2–5 objectives and at least one https source per unit,
   multi-line code written as an array of lines, no two fill-blank answers that normalize alike,
-  and the checkable half of Rule 3: readings open the unit and challenges close it.
+  and the checkable half of Rule 3: readings and cards open the unit, challenges close it.
 - **The validator** (`learning/validate-content.ts`, run by `pnpm validate` and pinned case by
-  case in `learning/validate-content.test.ts`) checks Rule 2 and the reading-file rules above.
+  case in `learning/validate-content.test.ts`) checks Rule 2 and the reading-file rules above,
+  which apply to card files too (plus a warning when a card outgrows one idea and one example).
   It checks that slugs match folders, that every track folder is in `content/catalog.json` and
-  every unit folder in its track, and that unit slugs are unique across tracks. Every `skills` tag must be in the taxonomy, and
-  the taxonomy must be acyclic (unused tags are warned about). It also checks the challenge
+  every unit folder in its track, and that unit slugs are unique across tracks. Every `skills`
+  tag must be in the taxonomy, and the taxonomy must be acyclic (unused tags are warned about). It also checks the challenge
   contract for **every** challenge folder, referenced by a unit or not:
   - the entry resolves inside the folder
   - `README.md` exists and holds only the problem and hints (no title, checklist, "Your task"

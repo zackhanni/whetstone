@@ -1,8 +1,33 @@
 # Cards & variable lesson depth — proposal
 
-> Status: **proposal** (not built). Lets a "lesson" range from a single flash-card-style reminder
-> to a full mastery unit, with a lightweight `card` as the atomic building block. Captures the
-> reuse debate honestly — including where reuse is *not* worth it yet.
+> Status: **v1 built (2026-10-17)** — inline decks of cards, derived depth, card units that
+> complete on visit. See "What v1 built" right below; the rest of this doc is the original
+> design record, including the reuse debate, and still guides what comes next (shared cards,
+> the swipe feed).
+
+## What v1 built
+
+The open questions at the end were resolved simple-first:
+
+- **A `cards` block is a deck: a folder of card files**, `units/<unit>/cards/NN-name.mdx`, each
+  with `id` + `title` frontmatter, the same as a reading example minus the tiers. One block holds
+  as many cards as the topic needs, so a 10-code reference unit is one block, not ten. The block
+  is named `cards` (plural) rather than the `card` this doc first used.
+- **Inline only.** No shared `content/cards/` yet; that waits for real reuse.
+- **No tags on cards.** The unit's `skills` stay the single source of tags. Card-level tags
+  arrive only if the swipe feed needs to filter individual cards.
+- **Single-face.** Info plus one example; a front/back card is a one-item quiz.
+- **Depth is derived** (`lib/depth.ts`) and shown as "Card / Lesson / Full" on the track page
+  and the unit header.
+- **Progress.** A unit with no questions completes on its first visit, so a card unit can't
+  hold a track below 100% or stay in "Continue" forever. The unit hides its Drill toggle
+  (nothing to drill), and cards are hidden in drill mode like readings.
+- **Ordering.** Cards are teaching material: the schema lets readings and cards come in any
+  order before the assessments.
+- **Size.** `pnpm validate` warns when a card passes 150 words or 1 code block; past that it
+  has become a reading example.
+- **Not built yet:** shared/referenced cards, the swipe feed, and the editorial `status: "stub"`
+  worklist.
 
 ## Motivation
 

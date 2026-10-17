@@ -105,7 +105,7 @@ export function loadAllProgress(): ProgressMap {
 }
 
 /** Merge one unit's engagement, staying valid even if the unit's question count changed. */
-function nextEntry(
+export function nextEntry(
   prev: UnitProgress | undefined,
   answered: number,
   total: number,
@@ -121,7 +121,9 @@ function nextEntry(
     total: effTotal,
     // Recompute against the current total (not sticky): adding questions correctly reverts a
     // unit to in-progress; removing them can complete it. Never latched to stale content.
-    completed: effTotal > 0 && bestAnswered >= effTotal,
+    // A unit with no questions (only cards) has nothing to answer, so visiting completes it —
+    // otherwise its track could never reach 100% and "Continue" would point at it forever.
+    completed: effTotal > 0 ? bestAnswered >= effTotal : true,
     at: now,
   };
 }

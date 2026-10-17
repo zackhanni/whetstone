@@ -1,7 +1,7 @@
 ---
 name: new-lesson
-description: Scaffold a new Whetstone lesson (track/unit/blocks + a coding challenge) from the schema. Use when adding a skill to learn, e.g. "add a lesson on useRef" or "make a track for TanStack Query".
-argument-hint: "<skill or topic> [--track <slug>] [--difficulty intro|core|advanced]"
+description: Scaffold a new Whetstone lesson (track/unit/blocks + a coding challenge, or a deck of reference cards) from the schema. Use when adding a skill to learn, e.g. "add a lesson on useRef", "make a track for TanStack Query" or "add reference cards for HTTP status codes".
+argument-hint: "<skill or topic> [--track <slug>] [--difficulty intro|core|advanced] [--cards]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(pnpm:*), Bash(git:*), Bash(lsof:*)
 ---
 
@@ -34,6 +34,12 @@ then replace the substance. Don't re-derive the conventions from the schema.
    such as `useEffect`; place new roots per `docs/tags-design.md` → "Planned dimensions"). If that
    turns a leaf into a parent, expect `lib/tags.test.ts` to fail and fix the fixture (point it at a
    still-leaf tag) rather than flattening the tree.
+   **Mastery unit or card unit?** (PLAYBOOK → "Two kinds of unit".) A topic that only needs a
+   reminder — reference facts, flags, "which tool when" — is a **card unit**: one `cards` block
+   holding `units/<unit>/cards/NN-<name>.mdx` files, each one idea plus one example (≤150 words,
+   ≤1 code block), with `id` + `title` frontmatter and the same Markdown rules as readings. For a
+   card unit, write the cards instead of steps 1–4, then go to step 5. Its objectives say what the
+   learner can recall.
 1. **Reading.** Create `units/<unit>/reading/{simple,medium,complex}/NN-<name>.mdx` — at least
    one example per tier, each with `id` + `title` frontmatter (unquoted). Same concept at rising
    resolution; add more example files to a tier whenever one isn't enough. Lead with the mental

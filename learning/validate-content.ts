@@ -333,44 +333,77 @@ async function checkChallenge(run: Run, slug: string, devDependencies: Record<st
   }
 }
 
+/**
+ * One folder of example files — a reading tier or a deck of cards: only numbered `.mdx` files,
+ * `id` + `title` frontmatter (unquoted, nothing else), Markdown rather than MDX, ids unique
+ * across the unit. Returns the files' bodies so callers can add their own checks.
+ */
+async function checkExampleFolder(
+  run: Run,
+  label: string,
+  dir: string,
+  seenIds: Set<string>,
+): Promise<{ file: string; body: string }[]> {
+  let entries: string[] = [];
+  try {
+    entries = (await fs.readdir(dir)).sort();
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  // The loader reads only *.mdx files, so anything else here would silently never render.
+  for (const f of entries) {
+    if (!f.endsWith(".mdx") && f !== ".DS_Store")
+      fail(run, `${label}/${f}: not a .mdx file, so it is never shown`);
+  }
+  const examples: { file: string; body: string }[] = [];
+  for (const f of entries.filter((e) => e.endsWith(".mdx"))) {
+    const where = `${label}/${f}`;
+    // Examples are ordered by filename; an unnumbered file sorts unpredictably.
+    if (!/^\d{2}-/.test(f)) fail(run, `${where}: filename must start with a two-digit number (01-…)`);
+    const { data, body } = parseFrontmatter(await fs.readFile(path.join(dir, f), "utf8"));
+    if (!data.id || !data.title) fail(run, `${where}: missing id/title frontmatter`);
+    for (const [key, value] of Object.entries(data)) {
+      if (key !== "id" && key !== "title")
+        fail(run, `${where}: frontmatter key "${key}" is not read — only id and title are`);
+      // lib/frontmatter.ts is not YAML: quotes are kept as part of the value.
+      if (/^(["']).*\1$/.test(value))
+        fail(run, `${where}: frontmatter ${key} is wrapped in quotes, which would be shown — drop them`);
+    }
+    if (data.id) {
+      if (seenIds.has(data.id)) fail(run, `${where}: duplicate id "${data.id}" in this unit`);
+      seenIds.add(data.id);
+    }
+    const problem = markdownProblem(body);
+    if (problem) fail(run, `${where}: ${problem}`);
+    examples.push({ file: f, body });
+  }
+  return examples;
+}
+
 /** Every reading example under one reading block's tier folders. */
 async function checkReadingTiers(run: Run, label: string, dir: string, seenIds: Set<string>) {
   for (const tier of TIERS) {
-    const tierDir = path.join(dir, tier);
-    let entries: string[] = [];
-    try {
-      entries = (await fs.readdir(tierDir)).sort();
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    }
-    // The loader reads only *.mdx files, so anything else here would silently never render.
-    const examples = entries.filter((f) => f.endsWith(".mdx"));
-    for (const f of entries) {
-      if (!f.endsWith(".mdx") && f !== ".DS_Store")
-        fail(run, `${label}/${tier}/${f}: not a .mdx file, so it is never shown`);
-    }
+    const examples = await checkExampleFolder(run, `${label}/${tier}`, path.join(dir, tier), seenIds);
     if (examples.length === 0) fail(run, `${label}: reading tier "${tier}" has no examples`);
+  }
+}
 
-    for (const f of examples) {
-      const where = `${label}/${tier}/${f}`;
-      // Examples are ordered by filename; an unnumbered file sorts unpredictably.
-      if (!/^\d{2}-/.test(f)) fail(run, `${where}: filename must start with a two-digit number (01-…)`);
-      const { data, body } = parseFrontmatter(await fs.readFile(path.join(tierDir, f), "utf8"));
-      if (!data.id || !data.title) fail(run, `${where}: missing id/title frontmatter`);
-      for (const [key, value] of Object.entries(data)) {
-        if (key !== "id" && key !== "title")
-          fail(run, `${where}: frontmatter key "${key}" is not read — only id and title are`);
-        // lib/frontmatter.ts is not YAML: quotes are kept as part of the value.
-        if (/^(["']).*\1$/.test(value))
-          fail(run, `${where}: frontmatter ${key} is wrapped in quotes, which would be shown — drop them`);
-      }
-      if (data.id) {
-        if (seenIds.has(data.id)) fail(run, `${where}: duplicate reading id "${data.id}" in this unit`);
-        seenIds.add(data.id);
-      }
-      const problem = markdownProblem(body);
-      if (problem) fail(run, `${where}: ${problem}`);
-    }
+/** A card is one idea and one example; past these it has become a reading example. */
+const CARD_MAX_WORDS = 150;
+const CARD_MAX_CODE_BLOCKS = 1;
+
+async function checkCards(run: Run, label: string, dir: string, seenIds: Set<string>) {
+  const cards = await checkExampleFolder(run, `${label}/cards`, dir, seenIds);
+  if (cards.length === 0) fail(run, `${label}: cards block has no card files in ${path.basename(dir)}/`);
+  for (const { file, body } of cards) {
+    const codeBlocks = body.match(/```[\s\S]*?```/g) ?? [];
+    const words = body.replace(/```[\s\S]*?```/g, "").split(/\s+/).filter(Boolean).length;
+    // A warning, not an error: the limit is a nudge toward the right block type, not a rule.
+    if (words > CARD_MAX_WORDS || codeBlocks.length > CARD_MAX_CODE_BLOCKS)
+      warn(
+        run,
+        `${label}/cards/${file}: ${words} words and ${codeBlocks.length} code block(s) — a card is one idea and one example (≤${CARD_MAX_WORDS} words, ≤${CARD_MAX_CODE_BLOCKS} code block); split it, or make it a reading`,
+      );
   }
 }
 
@@ -449,9 +482,10 @@ async function checkTrack(
     if (unit.slug !== us) fail(run, `unit ${ts}/${us}: slug "${unit.slug}" does not match its folder`);
     checkSkills(run, `unit ${ts}/${us}`, unit.skills);
 
-    const readingIds = new Set<string>();
+    const readingIds = new Set<string>(); // reading examples and cards share one id space
     for (const b of unit.blocks) {
       if (b.type === "reading") await checkReadingTiers(run, us, path.join(uDir, b.dir), readingIds);
+      if (b.type === "cards") await checkCards(run, us, path.join(uDir, b.dir), readingIds);
       if (b.type === "challenge") {
         referencedChallenges.add(b.challengeSlug);
         if (!challengeSlugs.has(b.challengeSlug))
