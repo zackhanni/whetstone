@@ -1,0 +1,95 @@
+---
+id: edit-a-post-line-by-line
+title: Editing a post — page, form and action, line by line
+---
+
+A realistic edit screen in Next.js 16: a Server Component loads the post, a Client Component
+renders the form, and a Server Action saves it.
+
+```tsx
+// app/posts/[id]/edit/page.tsx
+import { notFound } from "next/navigation";
+import { getPostForEditing } from "@/data/posts"; // server-only: checks session + ownership
+import { EditForm } from "./edit-form";
+import { updatePost } from "./actions";
+
+export default async function EditPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const post = await getPostForEditing(id); // null when missing or not yours
+  if (!post) notFound();
+  return <EditForm post={{ id: post.id, title: post.title }} action={updatePost} />;
+}
+```
+
+```tsx
+// app/posts/[id]/edit/edit-form.tsx
+"use client";
+import { useActionState } from "react";
+
+type State = { error?: string };
+type Props = {
+  post: { id: string; title: string };
+  action: (prev: State, data: FormData) => Promise<State>;
+};
+
+export function EditForm({ post, action }: Props) {
+  const [state, formAction, pending] = useActionState(action, {});
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="id" value={post.id} />
+      <input name="title" defaultValue={post.title} />
+      <button disabled={pending}>{pending ? "Saving…" : "Save"}</button>
+      {state.error && <p role="alert">{state.error}</p>}
+    </form>
+  );
+}
+```
+
+```ts
+// app/posts/[id]/edit/actions.ts
+"use server";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
+
+export async function updatePost(_prev: { error?: string }, formData: FormData) {
+  const session = await auth();
+  if (!session) return { error: "Please sign in again." };
+
+  const id = String(formData.get("id"));
+  const title = String(formData.get("title") ?? "").trim();
+  if (title.length < 1 || title.length > 120) return { error: "Title must be 1–120 characters." };
+
+  const post = await db.post.findUnique({ where: { id } });
+  if (!post || post.authorId !== session.user.id) return { error: "Not allowed." };
+
+  await db.post.update({ where: { id }, data: { title } });
+  revalidatePath(`/posts/${id}`);
+  redirect(`/posts/${id}`);
+}
+```
+
+Why each piece is the way it is:
+
+- **`post={{ id, title }}`, not `post={post}`.** Props are serialised into the page; the whole
+  row would put every column in the browser. Pass what the form renders.
+- **`action={updatePost}`.** A Server Function is the one kind of function allowed to cross the
+  client boundary as a prop.
+- **`useActionState(action, {})`** returns `[state, formAction, pending]`, and the action is
+  called as `(previousState, formData)`. Returning `{ error }` puts the message on screen
+  without throwing.
+- **The action checks the session and the owner again.** The page's check in
+  `getPostForEditing` decided what to *render*. The action is a separate entry point: anyone can
+  POST any `id` to it, so without the `authorId` check this is an IDOR hole.
+- **`String(formData.get(...))` and the length check.** Form values arrive as strings typed by
+  the client. Validate before they reach the database.
+- **`revalidatePath` before `redirect`.** `redirect()` throws, so nothing after it runs. In a
+  Server Action it answers with a `303 See Other`, the status meant for "POST done, now GET this".
+
+<!--more-->
+
+The form works before JavaScript loads. A Server Component form posts natively (progressive
+enhancement); a Client Component form queues the submission until it hydrates, per the
+Mutating Data guide. After hydration the browser doesn't reload on submit: Next sends the action
+and applies the new UI from the same response.

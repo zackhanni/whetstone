@@ -1,0 +1,54 @@
+---
+id: the-status-code-goes-first
+title: The status code goes out with the first byte
+---
+
+An HTTP response starts with its status line and headers. Once the first chunk of a streamed body
+has been sent, they're on the wire and can't be taken back. Node shows it plainly:
+
+```js
+res.write("<p>shell</p>");   // status + headers are sent with this first chunk
+await sleep(100);
+res.statusCode = 404;        // no effect: the client already has 200
+res.setHeader("X-Late", "1"); // throws ERR_HTTP_HEADERS_SENT
+```
+
+```text
+/status: status 200, x-late=null
+  +   2ms  <p>shell</p>
+  + 103ms  <p>notFound() happened here; setHeader threw: ERR_HTTP_HEADERS_SENT</p>
+```
+
+Next.js lives under the same rule. Streaming starts when a Suspense fallback renders (including
+one from `loading.tsx`) or a component suspends under a boundary. After that:
+
+- **`notFound()` can't send a 404.** Next streams the not-found UI and injects
+  `<meta name="robots" content="noindex">` so search engines skip the URL, but the status stays
+  `200`. Some crawlers report it as a "soft 404".
+- **`redirect()` can't send a 307.** It becomes a client-side redirect: Next injects a
+  `<meta http-equiv="refresh">` tag into the stream instead.
+- **An error thrown mid-stream** is caught by the nearest `error.tsx`, which replaces that section;
+  the rest of the page stays, and the status is still `200`.
+
+The trap is how easily a page ends up streaming before its check:
+
+```text
+app/posts/[slug]/
+  loading.tsx   ← makes the whole page a Suspense boundary
+  page.tsx      ← const post = await getPost(slug); if (!post) notFound();
+```
+
+`loading.tsx` wraps the page, so the moment `getPost` suspends, the fallback streams with a `200`,
+and a missing post becomes a soft 404 for every crawler and every uptime check.
+
+When the status code matters (missing resources, auth redirects, analytics), decide it **before
+anything streams**: a fast existence check at the top of the page with no boundary above it, or
+earlier still in `proxy.ts` (rewrite to a not-found route, or return a `404` response) or a
+`next.config` redirect. Both run before rendering, while the status line is still unwritten.
+
+<!--more-->
+
+`generateMetadata` follows a related rule. For bots that only read static HTML (Twitterbot,
+Slackbot and similar), Next resolves metadata **before** streaming begins so the tags land in
+`<head>`; for full browsers it may stream metadata alongside the page. The `htmlLimitedBots`
+option controls which user agents get the blocking behaviour.

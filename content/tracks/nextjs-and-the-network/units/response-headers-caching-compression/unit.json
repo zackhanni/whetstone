@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 3,
+  "slug": "response-headers-caching-compression",
+  "title": "Response headers: HTTP caching & compression",
+  "skills": ["http", "caching", "cache-control", "compression", "nextjs"],
+  "difficulty": "core",
+  "estimatedMinutes": 45,
+  "objectives": [
+    "Write a `Cache-Control` value for a requirement: browser vs shared cache (`max-age` vs `s-maxage`), `private`/`public`, `no-cache` vs `no-store`, `stale-while-revalidate`",
+    "Explain revalidation with `ETag` / `If-None-Match` → `304`, and what `Vary` adds to a cache key",
+    "Explain who compresses a response (`Accept-Encoding` → `Content-Encoding`; `next start`, nginx or the CDN) and check it with curl without fooling yourself",
+    "Predict which `Cache-Control` the client gets when `next.config` `headers()` and a Route Handler both set it, on `next start` and on Vercel",
+    "Prove CDN caching on Vercel from `x-vercel-cache` on a repeat request, not from the `Cache-Control` the browser sees"
+  ],
+  "sources": [
+    { "title": "RFC 9111: HTTP Caching", "url": "https://www.rfc-editor.org/rfc/rfc9111.html" },
+    { "title": "RFC 9110: HTTP Semantics (conditional requests, 304, Vary)", "url": "https://www.rfc-editor.org/rfc/rfc9110.html" },
+    { "title": "RFC 5861: stale-while-revalidate", "url": "https://www.rfc-editor.org/rfc/rfc5861.html" },
+    { "title": "MDN: HTTP caching", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching" },
+    { "title": "MDN: Cache-Control", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cache-Control" },
+    { "title": "MDN: Content-Encoding", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Encoding" },
+    { "title": "Next.js docs: headers (next.config.js)", "url": "https://nextjs.org/docs/app/api-reference/config/next-config-js/headers" },
+    { "title": "Next.js docs: compress", "url": "https://nextjs.org/docs/app/api-reference/config/next-config-js/compress" },
+    { "title": "Next.js docs: CDN Caching", "url": "https://nextjs.org/docs/app/guides/cdn-caching" },
+    { "title": "Vercel docs: Cache-Control headers", "url": "https://vercel.com/docs/caching/cache-control-headers" },
+    { "title": "Vercel docs: Cache status (x-vercel-cache)", "url": "https://vercel.com/docs/caching/cache-status" },
+    { "title": "Vercel docs: CDN compression", "url": "https://vercel.com/docs/how-vercel-cdn-works/compression" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-headers", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-headers",
+      "questions": [
+        {
+          "id": "s-maxage-audience",
+          "prompt": "A response carries `Cache-Control: public, max-age=60, s-maxage=3600`. For how long may each cache use its copy without asking the server?",
+          "options": [
+            { "id": "split", "text": "Browser: 60 seconds. CDN: 3600 seconds" },
+            { "id": "both-long", "text": "Both 3600 seconds; `s-maxage` is the newer directive and replaces `max-age`" },
+            { "id": "both-short", "text": "Both 60 seconds; the stricter value applies everywhere" },
+            { "id": "swapped", "text": "Browser: 3600 seconds. CDN: 60 seconds" }
+          ],
+          "answer": "split",
+          "explanation": "`s-maxage` applies only to **shared** caches, where it overrides `max-age`; private caches (the browser) ignore it and use `max-age`. That split is the whole point: a CDN can hold a copy for an hour while each browser rechecks every minute."
+        },
+        {
+          "id": "no-cache-meaning",
+          "prompt": "What does `Cache-Control: no-cache` tell a cache to do?",
+          "options": [
+            { "id": "revalidate", "text": "Store it, but check with the server (a conditional request) before every reuse" },
+            { "id": "dont-store", "text": "Don't store it anywhere" },
+            { "id": "browser-only", "text": "Store it in the browser only, never in a CDN" },
+            { "id": "zero", "text": "Store it, but delete it immediately" }
+          ],
+          "answer": "revalidate",
+          "explanation": "MDN puts it bluntly: `no-cache` does not mean \"don't cache\". It allows storage and forbids reuse without validation, so an unchanged resource costs a round trip and a bodyless `304`, not a full download. \"Don't store\" is `no-store`; \"browser only\" is `private`."
+        },
+        {
+          "id": "private-dashboard",
+          "prompt": "A Route Handler returns the signed-in user's own order history. The app sits behind a CDN. Which header?",
+          "options": [
+            { "id": "private", "text": "`Cache-Control: private, max-age=0`, or `no-store` if it must never touch a disk" },
+            { "id": "public-short", "text": "`Cache-Control: public, s-maxage=60`: the CDN keeps it fast, and 60 seconds is short" },
+            { "id": "max-age-only", "text": "`Cache-Control: max-age=300`: `max-age` is for browsers, so it's private by default" },
+            { "id": "immutable", "text": "`Cache-Control: max-age=31536000, immutable`, since past orders never change" }
+          ],
+          "answer": "private",
+          "explanation": "A shared cache stores one copy per URL and hands it to everyone, so `public, s-maxage=60` would serve one user's orders to the next visitor for a minute. `max-age` is **not** browser-only: shared caches honour it too unless the response says `private`. `private` is the directive that keeps CDNs out while still letting the user's browser keep a copy."
+        },
+        {
+          "id": "etag-304",
+          "prompt": "The browser's copy of `/api/settings` (with `ETag: \"v7\"`) has gone stale, and the resource hasn't changed. What happens on the next request?",
+          "options": [
+            { "id": "conditional", "text": "The browser sends `If-None-Match: \"v7\"`; the server answers `304 Not Modified` with no body, and the stored copy is reused" },
+            { "id": "full", "text": "The server sends `200` with the same body again, since the copy is stale" },
+            { "id": "silent", "text": "The browser keeps using the stale copy without asking, because the `ETag` proves it's current" },
+            { "id": "body-304", "text": "The server answers `304` with the body, so the browser can compare the two" }
+          ],
+          "answer": "conditional",
+          "explanation": "Stale means \"ask before reuse\", not \"discard\". The `ETag` is the label the browser sends back in `If-None-Match`; if it still matches, the server sends a `304` carrying headers like `ETag` and `Cache-Control` but, per RFC 9110, no content. The browser can't know the copy is current without asking: that's what the round trip is for."
+        },
+        {
+          "id": "vary-encoding",
+          "prompt": "Why does a compressed response carry `Vary: Accept-Encoding`?",
+          "options": [
+            { "id": "key", "text": "So caches key the stored copy on `Accept-Encoding` too, and never hand a brotli body to a client that didn't ask for brotli" },
+            { "id": "ask", "text": "It tells the browser to send its responses compressed" },
+            { "id": "disable", "text": "It disables caching for compressed responses" },
+            { "id": "cors", "text": "It's required for cross-origin requests to read the body" }
+          ],
+          "answer": "key",
+          "explanation": "`Vary` names the request headers that shaped the response, and RFC 9111 (§4.1) says a cache must not reuse the stored response, without revalidating, for a request whose values for those headers differ. Without it, the first visitor's brotli copy could be served to a client that can only decode gzip. Keep `Vary` to low-cardinality headers: `Vary: Cookie` makes nearly every visitor a separate entry, and Vercel won't cache it at all."
+        },
+        {
+          "id": "nginx-brotli",
+          "prompt": "You self-host with `next start` behind nginx, and want nginx to serve brotli. What should change in Next?",
+          "options": [
+            { "id": "compress-false", "text": "Set `compress: false`, so Next stops gzipping and nginx compresses the plain body" },
+            { "id": "route-header", "text": "Set `Content-Encoding: br` in each Route Handler" },
+            { "id": "nothing", "text": "Nothing: nginx's brotli on top of Next's gzip makes the body smaller still" },
+            { "id": "nginx-off", "text": "Turn compression off in nginx, because `next start` already serves brotli" }
+          ],
+          "answer": "compress-false",
+          "explanation": "`next start` compresses with **gzip** by default; the `compress` docs name exactly this case for turning it off: a proxy in front that you want doing the compression. A header saying `br` doesn't compress anything, it only lies about the body. And the two don't stack: nginx would receive a body Next had already gzipped, which brotli can't shrink, so browsers would keep getting gzip."
+        },
+        {
+          "id": "header-collision",
+          "prompt": "`next.config` has a `headers()` rule for `/:all*(pdf|csv)` setting `Cache-Control: public, max-age=3600`. A Route Handler at `/reports/q3.csv` returns `Cache-Control: no-store`. On a self-hosted `next start`, what does the client receive?",
+          "options": [
+            { "id": "config", "text": "`public, max-age=3600`: the config header is already set, and Next doesn't overwrite it with the handler's" },
+            { "id": "handler", "text": "`no-store`: the most specific source (the route) wins" },
+            { "id": "both", "text": "Both values, merged into one header" },
+            { "id": "error", "text": "The build fails because two places set the same header" }
+          ],
+          "answer": "config",
+          "explanation": "On `next start`, config headers are applied first, and Next 16's response writer only copies a handler header that isn't already present, so the handler's `no-store` is dropped silently (its other headers survive). Vercel documents the **opposite** priority: a function's `Cache-Control` beats `next.config` and `vercel.json`. Same code, two answers: fix the overlap in the config's `source`, and check headers on the platform you deploy to."
+        },
+        {
+          "id": "vercel-s-maxage",
+          "prompt": "A Route Handler sends `Cache-Control: public, s-maxage=86400`. On Vercel, the browser's network tab shows no `s-maxage` at all. What does that tell you?",
+          "options": [
+            { "id": "consumed", "text": "Nothing is wrong: Vercel's CDN consumes `s-maxage`. Request twice and look for `x-vercel-cache: HIT`" },
+            { "id": "ignored", "text": "The CDN ignored the header, so add `CDN-Cache-Control`" },
+            { "id": "dynamic", "text": "The route is dynamic, so Vercel can't cache it" },
+            { "id": "stripped-bug", "text": "A proxy between you and Vercel stripped it; the CDN never saw it" }
+          ],
+          "answer": "consumed",
+          "explanation": "Vercel's docs: when `Cache-Control` is the only caching header, the proxy uses `s-maxage` and doesn't forward it, and it always consumes `stale-while-revalidate`. The header the browser sees is the browser's share. Cache behaviour is answered by the cache itself: a `MISS` then `HIT` on `x-vercel-cache` proves the CDN stored it."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-headers",
+      "prompts": [
+        {
+          "id": "route-cache-header",
+          "prompt": "Let the CDN keep this catalog for a day while browsers always recheck.",
+          "code": [
+            "export async function GET() {",
+            "  const catalog = await getCatalog();",
+            "  return Response.json(catalog, {",
+            "    ___: { \"Cache-Control\": \"public, max-age=0, ___=86400\" },",
+            "  });",
+            "}"
+          ],
+          "blanks": [
+            { "id": "a1", "accept": ["headers"] },
+            { "id": "a2", "accept": ["s-maxage"] }
+          ],
+          "explanation": "A Route Handler sets headers on the `Response` it returns (`next/headers`'s `headers()` is read-only). `s-maxage` is the shared-cache lifetime; `max-age=0` keeps browsers from holding a copy the CDN may already have replaced."
+        },
+        {
+          "id": "hashed-asset",
+          "prompt": "A file whose name contains its content hash never changes. Tell caches not even to revalidate it on reload.",
+          "code": "Cache-Control: public, max-age=31536000, ___",
+          "blanks": [{ "id": "b1", "accept": ["immutable"] }],
+          "explanation": "`immutable` says the response won't change while fresh, so a reload needn't revalidate it. It's safe only because a new version gets a new URL, which is why Next sets this header on `/_next/static` files and doesn't let you override it."
+        },
+        {
+          "id": "conditional-request",
+          "prompt": "Complete the conditional request and the server's answer when nothing changed.",
+          "code": [
+            "GET /api/settings HTTP/1.1",
+            "___: \"v7\"",
+            "",
+            "HTTP/1.1 ___ Not Modified",
+            "ETag: \"v7\""
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["If-None-Match"] },
+            { "id": "c2", "accept": ["304"] }
+          ],
+          "explanation": "The client echoes the stored `ETag` in `If-None-Match`; a match means `304`, no body, reuse your copy. (`If-Modified-Since` is the date-based version; when both are sent, `If-None-Match` takes precedence.)"
+        },
+        {
+          "id": "compress-off",
+          "prompt": "nginx in front of `next start` will do brotli. Stop Next from gzipping first.",
+          "code": [
+            "const nextConfig: NextConfig = {",
+            "  ___: false,",
+            "};"
+          ],
+          "blanks": [{ "id": "d1", "accept": ["compress"] }],
+          "explanation": "`compress` (default `true`) makes `next start` gzip responses. Turn it off only when something in front compresses instead; the docs recommend leaving it on otherwise."
+        },
+        {
+          "id": "vercel-only-header",
+          "prompt": "Give Vercel's CDN a one-hour lifetime without changing what browsers or other CDNs are told.",
+          "code": [
+            "headers: {",
+            "  \"Cache-Control\": \"max-age=10\",",
+            "  \"___\": \"max-age=3600\",",
+            "}"
+          ],
+          "blanks": [{ "id": "e1", "accept": ["Vercel-CDN-Cache-Control"] }],
+          "explanation": "Vercel reads `Vercel-CDN-Cache-Control` first, then `CDN-Cache-Control`, then `Cache-Control`. The Vercel-specific one is consumed and never forwarded, and with it set, `Cache-Control` reaches the browser unchanged (including any `s-maxage`)."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-headers",
+      "snippets": [
+        {
+          "id": "curl-no-encoding",
+          "code": [
+            "# A server that supports both gzip and brotli, and compresses JSON",
+            "$ curl -sI https://api.example.com/catalog | grep -i content-encoding"
+          ],
+          "question": "What does this print?",
+          "answer": "Nothing: curl sent no Accept-Encoding, so the body came back uncompressed",
+          "acceptable": ["nothing", "no output", "no Content-Encoding header"],
+          "explanation": "Compression is negotiated: no `Accept-Encoding` in the request, no compression in the response, which is correct behaviour and not a misconfiguration. `--compressed` asks only for what your curl build can decode (often `deflate, gzip`), so it can show gzip while browsers get brotli. To see what a browser gets, send `-H 'Accept-Encoding: br, gzip'`."
+        },
+        {
+          "id": "config-beats-handler",
+          "code": [
+            "// next.config.ts",
+            "async headers() {",
+            "  return [{ source: \"/api/:path*\", headers: [{ key: \"Cache-Control\", value: \"no-store\" }] }];",
+            "}",
+            "",
+            "// app/api/catalog/route.ts",
+            "export async function GET() {",
+            "  return Response.json(await getCatalog(), {",
+            "    headers: { \"Cache-Control\": \"public, s-maxage=600\", \"X-Catalog-Version\": \"42\" },",
+            "  });",
+            "}",
+            "",
+            "// $ next build && next start",
+            "// $ curl -sI http://localhost:3000/api/catalog"
+          ],
+          "question": "What Cache-Control and X-Catalog-Version does curl show?",
+          "answer": "Cache-Control: no-store, and X-Catalog-Version: 42",
+          "acceptable": ["no-store and 42", "the config's no-store; the handler's other header survives"],
+          "explanation": "On `next start` the router sets the config's headers on the response first, and when the handler's `Response` is written Next copies only headers that aren't already there. So `Cache-Control` keeps the config value while the handler's unrelated `X-Catalog-Version` comes through. Deployed to Vercel, the documented priority flips (the function's `Cache-Control` wins over `next.config`), which is why this kind of overlap has to be fixed in the config, not discovered per platform."
+        },
+        {
+          "id": "swr-timeline",
+          "code": [
+            "Cache-Control: public, max-age=60, stale-while-revalidate=300",
+            "",
+            "// Three CDN locations each stored this response at t = 0 s.",
+            "// Each gets its next request at a different time:",
+            "//   Frankfurt  t = 30 s",
+            "//   Tokyo      t = 200 s",
+            "//   São Paulo  t = 500 s"
+          ],
+          "question": "What does each location do with its request?",
+          "answer": "Frankfurt serves it fresh. Tokyo serves the stale copy at once and refreshes in the background. São Paulo waits for the origin before answering",
+          "acceptable": ["fresh; stale + background refresh; revalidate", "HIT, STALE, wait for the origin"],
+          "explanation": "Fresh while age < 60. From 60 to 360 seconds the copy is stale but `stale-while-revalidate=300` lets the cache serve it immediately while it revalidates without blocking (RFC 5861); Vercel's CDN reports that kind of hit as `x-vercel-cache: STALE`. After 360 the permission has run out and the cache must wait. `stale-while-revalidate` stretches serving, not freshness."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-shared-cache", "challengeSlug": "shared-cache-decision" }
+  ]
+}

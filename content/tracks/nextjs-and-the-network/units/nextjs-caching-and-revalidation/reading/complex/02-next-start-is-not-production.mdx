@@ -1,0 +1,47 @@
+---
+id: next-start-is-not-production
+title: next start is not Vercel — read cache behaviour where it runs
+---
+
+`next build` prints a revalidation time for each route, and `next start` honours it. Both describe
+**Next's server**. In production that server sits inside a platform with its own storage and CDN,
+and those decide how long a visitor actually sees a copy. The ISR guide's advice to test with
+`next build && next start` is right for Next's own logic; it can't show what the platform does.
+
+Where cached pages and `use cache` data live:
+
+| | Self-hosted `next start` | Vercel |
+| --- | --- | --- |
+| Rendered pages (ISR) | On the instance's local disk, plus memory | A durable ISR cache per deployment, with the CDN in front |
+| `use cache` at runtime | In-memory LRU in that process | In memory too, but the `use cache` docs warn that on serverless instances entries often don't survive between requests; `'use cache: remote'` gives a shared, durable one |
+| `revalidateTag` / `revalidatePath` | Reaches **only the instance that ran it**, unless you write a shared cache handler | Purges every region (Vercel quotes within 300 ms) |
+| First request after a deploy | Whatever is still on disk | Only what that deployment's build prerendered; everything else starts cold (each deployment has its own cache) |
+
+Next also emits HTTP headers from your lifetimes. A prerendered page that revalidates gets
+`Cache-Control: s-maxage=<revalidate>, stale-while-revalidate=<expire − revalidate>`, which
+any CDN may honour. But the CDN guide warns that `revalidateTag()` and `revalidatePath()` only
+clear Next's cache. A **third-party** CDN in front of a self-hosted app keeps serving its copy
+until its own `s-maxage` runs out unless you also call that CDN's purge API.
+
+**What a real incident looks like.** A team's build output listed `/sitemap.xml` with a 4-hour
+revalidation, and a local production build regenerated it on schedule, so a report that
+"production serves a stale sitemap" was marked wrong. The next day, just before a redeploy, the
+production URL was still returning the copy built at the last deploy, 19 hours old
+(`x-vercel-cache: HIT`, `age: 68562`, build-time dates in the body). The local check was
+accurate about `next start`; it was just evidence about the wrong system.
+
+How to read caching on the real platform:
+
+- **Self-hosted:** `x-nextjs-cache` on the response (`HIT`, `STALE`, `MISS`, `REVALIDATED`), and
+  `NEXT_PRIVATE_DEBUG_CACHE=1` to log hits and misses on the server.
+- **Vercel:** `x-vercel-cache` on a repeat request, the `age` header, and a timestamp you render
+  into the body. Read them some hours after a deploy, before the next one replaces the cache.
+- A finding measured on production can only be overturned by another measurement on production.
+
+<!--more-->
+
+Multi-instance self-hosting needs more than a shared disk. The How Revalidation Works guide
+describes a cache handler whose `updateTags()` writes invalidations to shared storage (Redis, a
+database) and whose `refreshTags()`, called before each request, reads them back. Without that,
+users see different content depending on which instance answers, and an on-demand revalidation
+only fixes the instance that received it.

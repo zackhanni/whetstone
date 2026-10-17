@@ -1,0 +1,60 @@
+---
+id: partial-prerendering
+title: Partial Prerendering — a prerendered shell with holes that stream
+---
+
+In stable Next.js before 16, a route was static **or** dynamic: one `cookies()` call anywhere made
+the whole page render per request. With `cacheComponents: true`, **Partial Prerendering (PPR)** is the
+default instead, and one route can be both.
+
+At `next build`, Next renders each route and sorts every component into one of three buckets:
+
+| The component… | Goes into |
+| --- | --- |
+| does only deterministic work (props, imports, pure computation) | the **static shell**, rendered at build |
+| is wrapped in `use cache` | the static shell, with its cached output |
+| awaits uncached data or reads `cookies()` / `headers()` / `searchParams` | a **hole**: its nearest `<Suspense>` fallback goes in the shell, the content renders per request |
+
+```tsx
+export default function BlogPage() {
+  return (
+    <>
+      <header><h1>Our Blog</h1></header>         {/* static: in the shell */}
+      <BlogPosts />                               {/* 'use cache' + cacheLife('hours'): in the shell */}
+      <Suspense fallback={<p>Loading your preferences…</p>}>
+        <UserPreferences />                       {/* reads cookies(): streams per request */}
+      </Suspense>
+    </>
+  );
+}
+```
+
+A request gets the prerendered shell straight away (from the edge, on a platform that supports
+it), then the preferences stream into the same response. Shell work isn't redone per request.
+
+**The build error is the model working.** When the prerender meets uncached or request-time work,
+it walks up the tree to the nearest `<Suspense>`. If there is none, `next build` fails (and
+`next dev` reports it) with a **blocking route** error: uncached or runtime data accessed outside
+of `<Suspense>`. You answer it one of two ways:
+cache the work (`use cache`) so it joins the shell, or wrap it in `<Suspense>` so it becomes a hole.
+
+Three details the docs spell out:
+
+- **`<Suspense>` alone doesn't make a component dynamic.** A component that only does synchronous
+  work finishes during the prerender, boundary or not.
+- **Per-request values must say so.** Under Cache Components, Next 16 treats `Math.random()`,
+  `Date.now()` and `crypto.randomUUID()` in a Server Component as I/O: rather than freeze one value
+  into the shell, the prerender stops with an error until you choose. Call `await connection()`
+  (from `next/server`) first to render it per request inside a boundary, or put it in `use cache`
+  to share one value until revalidation.
+- **A boundary high in the tree is valid but coarse.** A `loading.tsx` near the root satisfies the
+  check, and then the whole page falls back to one skeleton instead of streaming section by
+  section.
+
+<!--more-->
+
+You can opt a whole app out of the shell with `<Suspense fallback={null}>` wrapping `<body>` in the
+root layout: there's no static shell, and every request waits for the full render, as before PPR.
+The docs suggest multiple root layouts if only some routes should behave that way. PPR in Next 16
+is not the experimental PPR of Next 15 canaries: the `experimental.ppr` flag and the
+`experimental_ppr` route export were removed in favour of `cacheComponents`.
