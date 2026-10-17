@@ -20,8 +20,10 @@ then replace the substance. Don't re-derive the conventions from the schema.
    **New track:** before writing any unit, outline every planned unit in `docs/ROADMAP.md`, one
    line each saying what it teaches that its neighbours don't, then create `track.json` (it has no
    `skills` — a track's tags are its units') and add the track to `content/catalog.json` where it
-   belongs in the learning order. Add the unit slug to the track's ordered `units` array; unit
-   slugs must be unique across all tracks.
+   belongs in the learning order. Add the unit slug to the track's ordered `units` array **when
+   you start that unit** — `pnpm validate` reads every listed unit, so list only units whose
+   folder exists (the full plan lives in the ROADMAP outline). Unit slugs must be unique across
+   all tracks.
    **Objectives first.** Read the sibling units' `objectives`, then write this unit's 2–5
    ("After this unit you can…", each starting with a concrete verb). They must not restate a
    neighbour's, and everything you write next exists to teach or test one of them.
