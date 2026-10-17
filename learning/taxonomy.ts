@@ -304,6 +304,15 @@ export const TAXONOMY: TagNode[] = [
   { slug: "status-codes", label: "Status Codes", parents: ["http"] },
   { slug: "regex", label: "Regular Expressions", parents: ["javascript"] },
   { slug: "terminal", label: "Terminal", parents: ["tooling"] },
+
+  // ── web-security ──
+  { slug: "xss", label: "XSS", parents: ["security"] },
+  { slug: "csp", label: "Content-Security-Policy", parents: ["security", "http"] },
+  { slug: "csrf", label: "CSRF", parents: ["security"] },
+  { slug: "cookies", label: "Cookies", parents: ["http", "security"] },
+  { slug: "secrets", label: "Secrets & Config", parents: ["security"] },
+  { slug: "security-headers", label: "Security Headers", parents: ["security", "http"] },
+  { slug: "owasp", label: "OWASP Top 10", parents: ["security"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
