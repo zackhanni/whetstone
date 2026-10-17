@@ -129,13 +129,15 @@ when the problem is general and sweeps it across lessons. Both append a line to
 
 ### Backend, network & data
 
-- ⬜ **HTTP & APIs in Practice**
-  - ⬜ **`curl` as a debugging tool** — anatomy of a request: `-X`, `-H`, `-d`, `-i`/`-v`, `--data-raw` vs form data, quoting JSON in the shell, saving/sending cookies and bearer tokens. Worked example: `POST /auth/signup` then `/auth/login`, reading the 201/200 + `accessToken` response.
-  - ⬜ Anatomy of request/response — methods, status codes, headers, body, idempotency
-  - ⬜ **REST vs RPC vs gRPC** — resource-shaped vs procedure-shaped APIs, when each fits, gRPC's contract/streaming/perf story, tRPC as the TS middle ground
-  - ⬜ Auth over HTTP — JWT access tokens, refresh, `Authorization: Bearer`, cookies vs headers
-  - ⬜ CORS, preflight, and why it only bites in the browser
-  - ⬜ Sync vs async APIs — polling, webhooks, queues, long-running jobs
+- ✅ **HTTP & APIs in Practice** (`http-and-apis`) — 6 units, 4 challenges (2026-10-17). Boundaries: status-code _lookup_ is Reference cards (`http-status-codes`); token-storage _threats_ (XSS/CSRF) are Web Security; Next.js caching headers are Next.js & the Network.
+  - ✅ **Request & response anatomy** (`request-response-anatomy`) — a request is text (request line, headers, blank line, body); safe vs idempotent per RFC 9110 and therefore what a client may resend on its own; `Content-Type` (what this body is) vs `Accept` (what I want back); reading a status by its class; one `Idempotency-Key` per operation to make a POST retry-safe. Challenge: `retry-safe-client`.
+  - ✅ **curl as a debugging tool** (`curl-for-debugging`) — what `-i`/`-v`/`-s`/`-o` print and to which stream; what `-d` does to the method and `Content-Type`; `--json` (curl 7.82.0+); quoting JSON in zsh/bash and the `@` file trap; the signup → login → bearer GET flow with `-c`/`-b`; `-X`/`-L`/`-f` surprises. No challenge (a terminal skill the sandbox can't run).
+  - ✅ **REST vs RPC vs gRPC** (`rest-rpc-grpc`) — decision unit: resource-shaped vs procedure-shaped APIs and what each gets from HTTP; gRPC's protobuf contract, HTTP/2, four call types, deadlines and why browsers need gRPC-Web; tRPC v11 as the TypeScript-monorepo middle ground; GraphQL in one paragraph. No challenge.
+  - ✅ **Auth over HTTP** (`auth-over-http`) — how credentials travel: cookie sessions vs `Authorization: Bearer`; decoding a JWT by hand (signed, not encrypted); verifying one (pin `alg`, check the signature, then `exp` in seconds); 401 + `WWW-Authenticate` vs 403; refresh tokens and rotation; cookie attributes as mechanics only. Challenge: `bearer-token-guard`.
+  - ✅ **CORS & preflight** (`cors-and-preflight`) — the same-origin policy and CORS as the server relaxing it; simple vs preflighted requests from the Fetch standard's safelists; credentials vs `*`; an exact-match allow-list with `Vary: Origin`; why curl never sees CORS and why it is not server-side protection. Challenge: `cors-allowlist`.
+  - ✅ **Sync vs async APIs** (`sync-vs-async-apis`) — `202 Accepted` + a status URL; polling vs long-polling vs SSE vs WebSockets; webhooks verified with an HMAC over the raw body and a replay window; at-least-once delivery → handlers that dedupe by event id and record it only after the work succeeds; queues between "accepted" and "done". Challenge: `idempotent-webhook-handler`.
+  - ✅ Browser run of all four challenges (2026-10-17, Sandpack in Chrome): starters fail (5/12, 4/9, 4/8, 4/6) and solutions pass. Web Crypto (`crypto.subtle`) works in the Sandpack iframe, so `bearer-token-guard` and `idempotent-webhook-handler` are proven there too.
+  - ⬜ _follow-up:_ `request-response-anatomy` points to "the HTTP status codes reference deck" by name; link it once `reference-cards/http-status-codes` exists.
 - ⬜ **Next.js & the Network** — server components vs actions vs route handlers, cache-control/response headers, gzip/brotli, revalidation & caching layers, streaming/Suspense
 - 🔨 **Backend / NestJS** — first 4 units shipped (see Shipped → Backend with NestJS)
   - ⬜ Redis — cache-aside, sessions, rate limiting (`ThrottlerGuard`), and what to do when the cache is down

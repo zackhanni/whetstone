@@ -191,8 +191,8 @@ export const TAXONOMY: TagNode[] = [
   // backend → areas
   { slug: "nestjs", label: "NestJS", parents: ["backend"] },
   { slug: "validation", label: "Validation", parents: ["backend"] },
-  { slug: "auth", label: "Auth", parents: ["backend"] },
-  { slug: "http", label: "HTTP", parents: ["backend"] },
+  { slug: "auth", label: "Auth", parents: ["backend", "security"] },
+  { slug: "http", label: "HTTP", parents: ["backend", "web"] },
 
   // http
   { slug: "routing", label: "Routing", parents: ["http", "nestjs"] },
@@ -268,6 +268,18 @@ export const TAXONOMY: TagNode[] = [
   { slug: "optimistic-updates", label: "Optimistic Updates", parents: ["mutations"] },
   // A client-side router: not under `routing`, which sits under http/nestjs (server routes).
   { slug: "tanstack-router", label: "TanStack Router", parents: ["react"] },
+
+  // ── http-and-apis ──
+  { slug: "security", label: "Security", parents: [] },
+  { slug: "tooling", label: "Tooling", parents: [] },
+  { slug: "idempotency", label: "Idempotency & Retries", parents: ["http"] },
+  { slug: "curl", label: "curl", parents: ["http", "tooling"] },
+  { slug: "rest", label: "REST", parents: ["http"] },
+  { slug: "rpc", label: "RPC, gRPC & tRPC", parents: ["http"] },
+  { slug: "jwt", label: "JWT", parents: ["auth"] },
+  { slug: "cors", label: "CORS", parents: ["http", "security"] },
+  { slug: "async-apis", label: "Async APIs & Push", parents: ["http"] },
+  { slug: "webhooks", label: "Webhooks", parents: ["async-apis"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */
