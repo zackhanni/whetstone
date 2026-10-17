@@ -1,0 +1,43 @@
+---
+id: dependencies-multiply
+title: Availability multiplies across hard dependencies
+---
+
+The 99.9% target is for the whole redirect, and the redirect has parts. AWS's reliability
+pillar states the rule: when a failure in a dependency is a failure for you — a **hard
+dependency** — your availability is the **product** of the availabilities involved, your own
+included.
+
+```
+redirect service 99.9%  ×  database 99.9%  ×  cache 99.9%
+  = 0.999³ ≈ 0.997  →  99.7%, about 26 hours of downtime a year instead of 8¾
+```
+
+The same page names two ways back up:
+
+- **Redundancy adds nines.** Two independent copies, each 99.9% available, are down together
+  only 0.1% × 0.1% of the time — 99.9999% for that component. The word doing the work is
+  *independent*: the same region, the same deploy or the same bad config is how two copies fail
+  together.
+- **Make it a soft dependency** — one whose failure your application compensates for. If the
+  cache is down, read the database instead, and a cache outage costs latency rather than
+  availability.
+
+The second fix hides a trap that the AWS Builders' Library's caching article describes: once a
+cache has worked for a while, the database behind it gets scaled down to the load the cache lets
+through, so a cold or failed cache sends a surge downstream. Put your own number on it. At a 95%
+hit ratio (an assumption), the database normally sees the 5% of reads that miss; with the cache
+gone it sees all of them — **20× its usual read load**. The "soft" dependency just moved the
+outage one layer down. The fallback needs a cap (shed load, keep a small in-process cache, serve
+fewer requests well), and the article's advice is to run load tests with caches disabled.
+"We fall back to the database" is a claim to test, not a design. (What each Redis-backed piece
+does when Redis is unreachable is the [`nest-redis-caching-and-rate-limits`](/learn/backend-nestjs/nest-redis-caching-and-rate-limits) unit's complex tier.)
+
+<!--more-->
+
+Recovery time is the other lever. The same AWS page estimates availability as
+MTBF ÷ (MTBF + MTTR) — mean time between failures over itself plus mean time to recover. A
+failure every 150 days that takes an hour to fix is 3,600 ÷ 3,601 hours ≈ 99.97%. Unavailability
+is roughly MTTR ÷ MTBF, so halving the recovery time (fast rollback, automated failover) cuts
+downtime about as much as making failures half as frequent — and is often the cheaper of the two
+to build.

@@ -1,0 +1,52 @@
+---
+id: short-codes-and-collisions
+title: Minting short codes, and sizing the collision rate
+---
+
+Three schemes, each right under different requirements:
+
+| Scheme | How | Gives you | Costs you |
+| --- | --- | --- | --- |
+| Counter + base62 | take the next number from one sequence, write it in `0-9a-zA-Z` | no collisions, the shortest codes | codes are sequential, so anyone can enumerate every link; every create goes through one counter |
+| Random | 7 random base62 characters; insert; retry if taken | unguessable, no coordination | a uniqueness check on every insert (the primary key does it) |
+| Hash of the URL | the first 7 base62 characters of a hash of the long URL | the same URL always gets the same code | truncated hashes still collide, so you still check; and two users' links merge, stats included |
+
+The space is plain arithmetic: 62⁶ ≈ 5.7 × 10¹⁰ codes and 62⁷ ≈ 3.5 × 10¹². The estimate was
+6 × 10⁹ links in five years.
+
+For **random codes**, the question that sizes the design is *what fraction of inserts hit a
+taken code?* A fresh random code is equally likely to land anywhere, so that fraction is simply
+**codes already used ÷ size of the space**:
+
+```
+7 characters, after 5 years:  6 × 10⁹ / 3.52 × 10¹²  ≈ 0.17% of inserts need a retry
+6 characters, after 5 years:  6 × 10⁹ / 5.68 × 10¹⁰  ≈ 10.6% of inserts need a retry
+```
+
+Either works with a retry loop; 7 characters keeps retries negligible for the whole retention
+period. The **birthday paradox** — a collision *somewhere* becomes likely after on the order of
+√N codes, about 1.9 million for 7 characters — answers a different question: "will any two codes
+ever collide?" With a unique constraint and a retry, a collision is harmless. What you're sizing
+is the retry rate.
+
+The retry is only safe if the insert itself detects the conflict, atomically:
+
+```sql
+INSERT INTO links (code, long_url) VALUES ($1, $2)
+ON CONFLICT (code) DO NOTHING
+RETURNING code;   -- no row back means the code was taken: generate another and retry
+```
+
+Checking first — `SELECT … WHERE code = $1`, then `INSERT` — leaves a gap in which two creates
+both see the same code free: the check-then-act race that the Databases track's
+[`transactions-and-isolation`](/learn/databases/transactions-and-isolation) unit closes with a unique constraint. Letting the primary key
+arbitrate turns that race into a conflict you handle. (`RETURNING` reports only rows actually inserted, which is what makes "no row" mean
+"taken".)
+
+<!--more-->
+
+The counter's one-sequence bottleneck is real in principle and irrelevant at ~40 creates a
+second — another place the estimate tells you not to build the elaborate version (such as
+handing each app server a pre-allocated block of numbers). Pick between counter and random on
+the requirement that actually differs: can link codes be guessable? For private links, they
+can't.
