@@ -280,6 +280,18 @@ export const TAXONOMY: TagNode[] = [
   { slug: "cors", label: "CORS", parents: ["http", "security"] },
   { slug: "async-apis", label: "Async APIs & Push", parents: ["http"] },
   { slug: "webhooks", label: "Webhooks", parents: ["async-apis"] },
+
+  // ── nextjs-and-the-network ──
+  { slug: "nextjs", label: "Next.js", parents: ["react", "web"] },
+  { slug: "server-components", label: "Server Components", parents: ["nextjs"] },
+  { slug: "server-actions", label: "Server Actions", parents: ["nextjs"] },
+  { slug: "route-handlers", label: "Route Handlers", parents: ["nextjs", "http"] },
+  { slug: "cache-control", label: "Cache-Control & HTTP Caching", parents: ["caching", "http"] },
+  { slug: "compression", label: "Compression", parents: ["http"] },
+  { slug: "cache-components", label: "Cache Components", parents: ["nextjs", "caching"] },
+  { slug: "revalidation", label: "Revalidation", parents: ["caching"] },
+  { slug: "streaming", label: "Streaming", parents: ["nextjs", "http"] },
+  { slug: "suspense", label: "Suspense", parents: ["rendering"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 3,
+  "slug": "nextjs-and-the-network",
+  "title": "Next.js & the Network",
+  "description": "What crosses the wire in a Next.js 16 app, and who decides. Where each piece of code runs — Server Components, Server Actions, Route Handlers — and what that means for auth; the HTTP caching and compression headers every response carries, and which layer wins when two set them; Next's own Cache Components model (use cache, cacheLife, cacheTag, updateTag) and what changed from Next 14/15; and streaming with Suspense, where the status code is fixed at the first byte. Each unit closes on the production traps that pass every local check.",
+  "units": [
+    "server-components-actions-route-handlers",
+    "response-headers-caching-compression",
+    "nextjs-caching-and-revalidation",
+    "streaming-and-suspense"
+  ]
+}
