@@ -1,0 +1,18 @@
+---
+id: flags
+title: Flags — g i m s u v y d
+---
+
+| Flag | Property | Effect |
+| --- | --- | --- |
+| `g` | `global` | find every match; makes `test`/`exec` stateful via `lastIndex` |
+| `i` | `ignoreCase` | case-insensitive |
+| `m` | `multiline` | `^` and `$` also match at each line's start and end |
+| `s` | `dotAll` | `.` also matches line terminators |
+| `u` | `unicode` | works in code points; enables `\p{…}` and `\u{…}` |
+| `v` | `unicodeSets` | upgraded `u` (ES2024): set operations in classes, stricter syntax |
+| `y` | `sticky` | match only exactly at `lastIndex` |
+| `d` | `hasIndices` | add start/end `indices` to each match (ES2022) |
+
+The classic mix-up: `m` doesn't let `.` cross lines — `s` does. `u` and `v` can't be combined
+(`SyntaxError`); `v` works in Node 20+ and every current browser.

@@ -31,7 +31,9 @@ in `AGENTS.md` → "Working with this repo".
     microservices & messaging) and 2 challenges — 7 units in all (PR #24).
   - Authoring-system hardening from what the content phase taught: duplicate test names and
     inline line breaks rejected, comments ignored by the import scan, `<Profiler>` render
-    counters, and `pnpm test:challenges:browser` for the Sandpack check.
+    counters, and `pnpm test:challenges:browser` for the Sandpack check (PR #25).
+  - New track **Reference Cards**: three card units (HTTP status codes and regex basics bloomed
+    with quizzes; CLI flags as cards only).
 - Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
   Vercel build runs both. A new or changed challenge also gets `pnpm test:challenges:browser
   <slug>` (real Sandpack, headless Chrome, needs `pnpm dev`).

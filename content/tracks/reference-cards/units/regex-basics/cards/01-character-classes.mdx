@@ -1,0 +1,21 @@
+---
+id: character-classes
+title: Character classes — [abc], [^abc], \d \w \s and .
+---
+
+A class matches **one** character from a set.
+
+| Syntax | Matches one… |
+| --- | --- |
+| `[aeiou]`, `[a-z0-9]` | listed character, or one in a range |
+| `[^0-9]` | character *not* in the set (`^` first inside the brackets) |
+| `\d` / `\D` | digit `[0-9]` / anything else |
+| `\w` / `\W` | word character `[A-Za-z0-9_]` / anything else |
+| `\s` / `\S` | whitespace, including tabs, newlines and Unicode spaces / anything else |
+| `.` | character except a line terminator (`\n`, `\r`, `\u2028`, `\u2029`), unless the `s` flag is on |
+
+`\d` and `\w` are ASCII-only: `/\w/.test("é")` and `/\d/.test("٣")` are both `false`, even with
+`u`. For letters or digits in any script, use a property escape with `u` or `v`: `/\p{L}/u`,
+`/\p{Nd}/u`.
+
+Inside a class most metacharacters are literal — `[.]` matches a dot.

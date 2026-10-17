@@ -1,0 +1,20 @@
+---
+id: gnu-only-habits
+title: readlink -f, realpath, timeout — Linux habits that bite on macOS
+---
+
+- **`readlink -f path`** resolves every symlink to an absolute path. macOS has had it only since
+  12.3 (earlier, its `readlink` accepted just `-n`), and the two disagree at the edge: GNU accepts
+  a missing last component (`readlink -f build/out.txt` prints a path before `out.txt` exists),
+  while macOS prints nothing and exits 1.
+- **`realpath`** does the same job and ships with current macOS; there it also fails for a path
+  that doesn't exist.
+- **`timeout`**, GNU's "kill it after N seconds", isn't on macOS at all:
+
+```bash
+timeout 30 npm test   # Linux: stops the run after 30 seconds
+                      # macOS: command not found
+```
+
+A script that has to run on both CI (usually Linux) and a Mac needs a run on each before you
+trust it.

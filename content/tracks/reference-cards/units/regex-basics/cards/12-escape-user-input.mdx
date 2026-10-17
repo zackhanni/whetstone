@@ -1,0 +1,20 @@
+---
+id: escape-user-input
+title: Escaping user input — RegExp.escape (ES2025)
+---
+
+`new RegExp(input)` treats the user's text as a pattern: `.` matches anything, `+` repeats, and
+input like `(` or `c++` throws a `SyntaxError`. Escape it first:
+
+```js
+const input = "1.5+";
+new RegExp(input).test("125");                  // true — "." and "+" were syntax
+new RegExp(RegExp.escape(input)).test("125");   // false
+new RegExp(RegExp.escape(input)).test("v1.5+"); // true
+RegExp.escape(input);                           // the string \x31\.5\+
+```
+
+`RegExp.escape` is part of ES2025 and ships in Chrome 136, Firefox 134, Safari 18.2 and Node 24
+(MDN: Baseline 2025). It also escapes a leading digit or letter, as `\x31` above. On older runtimes,
+MDN points to a polyfill (core-js or es-shims) and advises against a hand-rolled `replace`, which
+misses edge cases.

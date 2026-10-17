@@ -1,0 +1,18 @@
+---
+id: method-not-allowed
+title: 405 Method Not Allowed — and the Allow header it must carry
+---
+
+The URL exists, but not for this method: a `POST /users/42` where only `GET`, `PUT` and `DELETE`
+are handled. RFC 9110 says a 405 **must** list what the resource does support:
+
+```http
+HTTP/1.1 405 Method Not Allowed
+Allow: GET, PUT, DELETE
+```
+
+Its neighbours:
+
+- `404 Not Found` — there's no such resource at all.
+- `501 Not Implemented` — the server doesn't recognise the method for **any** resource (a
+  made-up `BREW`, say).

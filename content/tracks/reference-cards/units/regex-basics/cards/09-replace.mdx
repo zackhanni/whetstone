@@ -1,0 +1,20 @@
+---
+id: replace
+title: replace — one match or all, $1, $<name>, or a function
+---
+
+`replace` changes **one** match unless the regex has `g`, and a string pattern is always replaced
+once. `replaceAll` replaces every occurrence (and throws a `TypeError` given a regex without `g`).
+
+```js
+"a-b-c".replace("-", "+");                             // "a+b-c"
+"a-b-c".replace(/-/g, "+");                            // "a+b+c"
+"2026-10-17".replace(/(\d+)-(\d+)-(\d+)/, "$3/$2/$1"); // "17/10/2026"
+"2026-10-17".replace(/(?<y>\d+)-(?<m>\d+)-(?<d>\d+)/, "$<d>/$<m>/$<y>"); // same
+"10 and 25".replace(/\d+/g, (n) => String(n * 2));     // "20 and 50"
+```
+
+In a replacement string, `$&` is the whole match and `$$` a literal `$`. A replacer function gets
+the match, then each group, the offset, the whole string, and a `groups` object when the pattern
+has named groups. Write `"$<d>"`, not a template literal: `${d}` is evaluated before `replace`
+ever runs.

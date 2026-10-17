@@ -1,0 +1,19 @@
+---
+id: test-match-matchall
+title: test, match, matchAll — what each one returns
+---
+
+```js
+const s = "2026-10-17";
+/\d/.test(s);       // true — a boolean, nothing more
+s.match(/(\d+)-/);  // ["2026-", "2026"] plus index, input, groups — first match only
+s.match(/(\d+)-/g); // ["2026-", "10-"] — every match, but no groups or index
+"abc".match(/\d/g); // null, not [] — guard before reading .length
+[...s.matchAll(/(?<n>\d+)/g)].map((m) => m.groups.n); // ["2026", "10", "17"]
+```
+
+- `test` answers yes or no.
+- `match` **without** `g` returns the first match with its groups; **with** `g`, only the matched
+  strings.
+- `matchAll` yields every match *with* its groups and index, as an iterator. It requires the `g`
+  flag and throws a `TypeError` without it.

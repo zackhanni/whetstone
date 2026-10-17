@@ -1,0 +1,22 @@
+---
+id: cp-recursive-archive
+title: cp -R vs cp -a — and the trailing slash macOS cares about
+---
+
+- **`cp -R src dest`** copies a directory tree. In GNU `cp`, `-r` and `-R` are the same; on macOS
+  use `-R` — its `cp -r` copies the files that symlinks point to instead of the links, and its
+  man page discourages `-r`.
+- **`cp -a src dest`** is *archive* mode: recursive, symlinks kept as links, and modes, timestamps
+  and (where permitted) ownership preserved. macOS defines it as `-RpP`; GNU as
+  `-dR --preserve=all`. Reach for it for backups.
+
+When `backup/` already exists, a trailing slash on the source means different things:
+
+```bash
+cp -R src/ backup/   # macOS: copies src's *contents* into backup/
+                     # GNU:   creates backup/src/
+cp -R src backup/    # both:  creates backup/src/
+```
+
+macOS's man page documents the contents-only rule; GNU ignores the slash. A script written on one
+system can scatter files on the other.

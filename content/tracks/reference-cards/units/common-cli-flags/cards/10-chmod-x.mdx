@@ -1,0 +1,19 @@
+---
+id: chmod-plus-x
+title: chmod +x — make a script runnable
+---
+
+A new file isn't executable, so `./deploy.sh` fails with "permission denied" (exit status 126).
+`chmod +x` adds the execute bit:
+
+```bash
+chmod +x deploy.sh   # -rw-r--r--  →  -rwxr-xr-x  (with the usual umask, 022)
+./deploy.sh          # now runs
+```
+
+With no `u`, `g`, `o` or `a` in front, `+x` applies to everyone *except* the bits your umask masks —
+under `umask 077` it adds only the owner's. Say who you mean when it matters: `chmod u+x` for the
+owner alone, or octal `chmod 755` (`rwx` for you, `r-x` for group and others).
+
+Give the script a first line such as `#!/usr/bin/env bash`, so it runs under the interpreter you
+meant. `bash deploy.sh` runs it without the execute bit at all.

@@ -299,6 +299,11 @@ export const TAXONOMY: TagNode[] = [
   { slug: "rate-limiting", label: "Rate Limiting", parents: ["backend", "security"] },
   { slug: "messaging", label: "Messaging & Events", parents: ["backend"] },
   { slug: "microservices", label: "Microservices", parents: ["backend", "architecture"] },
+
+  // ── reference-cards ──
+  { slug: "status-codes", label: "Status Codes", parents: ["http"] },
+  { slug: "regex", label: "Regular Expressions", parents: ["javascript"] },
+  { slug: "terminal", label: "Terminal", parents: ["tooling"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

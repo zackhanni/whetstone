@@ -1,0 +1,17 @@
+---
+id: tail-follow
+title: tail -f and -F — watch a log as it grows
+---
+
+```bash
+tail -n 100 -F logs/app.log
+```
+
+- `-n 100` starts with the last 100 lines (the default is 10).
+- `-f` keeps the file open and prints lines as they're appended. Ctrl-C stops it.
+- `-F` follows the file by **name**: when the log is rotated or recreated, `tail` reopens the new
+  file, and it waits for a file that doesn't exist yet. Plain `-f` follows the open file
+  descriptor, so after a rotation it keeps watching the renamed old file.
+
+Prefer `-F` for anything a logger rotates. Both GNU and macOS `tail` support it. To watch for one
+thing, pipe it on: `tail -F logs/app.log | grep ERROR`.

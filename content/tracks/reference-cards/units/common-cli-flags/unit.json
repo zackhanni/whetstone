@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 3,
+  "slug": "common-cli-flags",
+  "title": "Common CLI flags, and where macOS differs",
+  "skills": ["tooling", "terminal"],
+  "difficulty": "intro",
+  "estimatedMinutes": 15,
+  "objectives": [
+    "Recall what each letter means in `ls -la`, `rm -rf`, `grep -rniE`, `cp -a`, `mkdir -p`, `tail -F` and `ps aux`",
+    "Guard `rm -rf` against an empty variable with `${VAR:?}`, and put `--` before an operand that starts with `-`",
+    "Find the process listening on a port with `lsof -ti tcp:PORT -sTCP:LISTEN`, and stop it with `kill` before reaching for `kill -9`",
+    "Spot the macOS (BSD) vs GNU differences that break scripts: `sed -i ''`, `date -v`, `cp -R src/`, `find` without a path, `xargs` on empty input, `readlink -f`, `timeout`"
+  ],
+  "sources": [
+    { "title": "POSIX.1-2024: Utility Syntax Guidelines (Guideline 10, `--`)", "url": "https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap12.html" },
+    { "title": "POSIX.1-2024: rm", "url": "https://pubs.opengroup.org/onlinepubs/9799919799/utilities/rm.html" },
+    { "title": "POSIX.1-2024: cp", "url": "https://pubs.opengroup.org/onlinepubs/9799919799/utilities/cp.html" },
+    { "title": "GNU coreutils: cp(1)", "url": "https://man7.org/linux/man-pages/man1/cp.1.html" },
+    { "title": "GNU coreutils: tail(1)", "url": "https://man7.org/linux/man-pages/man1/tail.1.html" },
+    { "title": "GNU coreutils: date(1)", "url": "https://man7.org/linux/man-pages/man1/date.1.html" },
+    { "title": "GNU coreutils: readlink(1)", "url": "https://man7.org/linux/man-pages/man1/readlink.1.html" },
+    { "title": "Apple open source: readlink's man page in file_cmds-353.100.22 (macOS 12.3), the first with -f", "url": "https://github.com/apple-oss-distributions/file_cmds/blob/file_cmds-353.100.22/stat/stat.1" },
+    { "title": "GNU sed: sed(1)", "url": "https://man7.org/linux/man-pages/man1/sed.1.html" },
+    { "title": "GNU findutils: find(1)", "url": "https://man7.org/linux/man-pages/man1/find.1.html" },
+    { "title": "FreeBSD manual: sed(1), the BSD sed macOS ships", "url": "https://man.freebsd.org/cgi/man.cgi?query=sed&sektion=1" },
+    { "title": "FreeBSD manual: xargs(1), including the GNU empty-input difference", "url": "https://man.freebsd.org/cgi/man.cgi?query=xargs&sektion=1" },
+    { "title": "lsof(8)", "url": "https://man7.org/linux/man-pages/man8/lsof.8.html" },
+    { "title": "procps-ng: ps(1)", "url": "https://man7.org/linux/man-pages/man1/ps.1.html" },
+    { "title": "npm docs: npm run", "url": "https://docs.npmjs.com/cli/v11/commands/npm-run" },
+    { "title": "Git docs: git checkout (argument disambiguation)", "url": "https://git-scm.com/docs/git-checkout" }
+  ],
+  "blocks": [
+    { "type": "cards", "id": "cards-cli-flags", "dir": "cards" }
+  ]
+}

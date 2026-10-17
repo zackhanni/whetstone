@@ -1,0 +1,20 @@
+---
+id: unicode-mode
+title: u and v — see characters, not UTF-16 halves
+---
+
+Without `u` or `v`, a regex works on UTF-16 code units, so an emoji is two "characters":
+
+```js
+"😀".length;                    // 2
+/^.$/.test("😀");               // false — . matched only half of it
+/^.$/u.test("😀");              // true
+/\p{L}/u.test("é");             // true — a letter in any script
+/\p{L}/.test("p{L}");           // true! without u, \p is just "p"
+/^[\p{L}--[a-z]]$/v.test("é");  // true — v: letters minus a–z
+```
+
+Use `u` (or `v`) whenever the input is human text: `.` and quantifiers then work on whole code
+points, and `\p{…}` property escapes are available. `v` (ES2024) adds set operations inside
+classes — `--` for difference, `&&` for intersection — and properties of strings such as
+`\p{RGI_Emoji}`.

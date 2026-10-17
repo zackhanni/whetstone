@@ -1,0 +1,20 @@
+---
+id: find-name
+title: find . -name — quote the pattern, name the start
+---
+
+```bash
+find . -name '*.log'             # every .log file under the current directory
+find . -iname '*.log' -type f    # any case, regular files only
+find . -name '*.log' -mtime -1   # modified in the last 24 hours
+```
+
+**Quote the pattern.** Unquoted, the *shell* expands `*.log` first: with `a.log` in the current
+folder, `find . -name *.log` becomes `find . -name a.log` and finds only files with exactly that
+name. (When nothing matches, zsh stops with "no matches found" instead.)
+
+**Give the starting directory.** GNU `find` assumes `.` when you leave it out; on macOS,
+`find -name '*.log'` is a usage error.
+
+Add `-delete` or `-exec rm {} +` only after running the same command without it and reading the
+list.

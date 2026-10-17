@@ -1,0 +1,22 @@
+---
+id: lsof-port
+title: lsof -i :PORT — who is using this port?
+---
+
+`lsof -i :3000` lists every process with a socket on port 3000 — including **clients** connected
+to it, not just the server listening there:
+
+```text
+$ lsof -nP -i :3000
+COMMAND   PID USER   … NAME
+node    66529 ada    … TCP 127.0.0.1:3000 (LISTEN)
+node    66529 ada    … TCP 127.0.0.1:3000->127.0.0.1:58475 (ESTABLISHED)
+node    66533 ada    … TCP 127.0.0.1:58475->127.0.0.1:3000 (ESTABLISHED)
+```
+
+PID 66533 is a client; it could just as well be your browser. So `kill $(lsof -ti tcp:3000)` can
+take it down along with the server. Ask for the listener only:
+`lsof -ti tcp:3000 -sTCP:LISTEN`.
+
+`-t` prints bare PIDs (made for piping into `kill`), `-sTCP:LISTEN` keeps only listening sockets,
+and `-n` / `-P` skip host-name and port-name lookups, so it answers faster.

@@ -1,0 +1,19 @@
+---
+id: xargs
+title: xargs — turn lines of input into arguments
+---
+
+`xargs` reads items from its input and runs a command with them as arguments — the bridge from
+`find` or `grep -l` to commands that don't read stdin.
+
+```bash
+find . -name '*.log' | xargs ls -l             # breaks on "my docs/d.log"
+find . -name '*.log' -print0 | xargs -0 ls -l  # safe: items end with a NUL byte
+```
+
+By default `xargs` splits on spaces and newlines, so `my docs/d.log` arrives as two arguments,
+`my` and `docs/d.log`. `-print0` and `-0` separate items with a NUL byte instead, which no filename
+can contain. Also useful: `-n 1` (one item per command) and `-I {}` (put the item where `{}` is).
+
+Empty input differs: GNU `xargs` runs the command once anyway (`-r` stops that); macOS `xargs`
+doesn't run it, and accepts `-r` only for compatibility.

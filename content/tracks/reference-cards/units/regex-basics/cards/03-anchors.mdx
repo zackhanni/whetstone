@@ -1,0 +1,21 @@
+---
+id: anchors-and-word-boundaries
+title: Anchors — ^, $ and \b match positions, not characters
+---
+
+- `^` is the start of the input and `$` the end. With the `m` flag, they also match at the start
+  and end of each **line**.
+- `\b` is a word boundary: between a `\w` character and a non-`\w` one, or the edge of the input.
+  `\B` is every other position.
+
+Validation needs both anchors; without them the pattern only has to appear *somewhere*:
+
+```js
+/\d{5}/.test("123456");         // true — "12345" is in there
+/^\d{5}$/.test("123456");       // false
+/\bcat\b/.test("concatenate");  // false
+/\bcat\b/.test("the cat sat");  // true
+```
+
+Without `m`, JavaScript's `$` matches only at the very end, not before a trailing newline:
+`/^\d{5}$/.test("12345\n")` is `false`.

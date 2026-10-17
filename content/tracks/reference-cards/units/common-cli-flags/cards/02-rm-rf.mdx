@@ -1,0 +1,21 @@
+---
+id: rm-rf
+title: rm -rf — and the empty variable that aims it at your home directory
+---
+
+`-r` removes directories and everything under them; `-f` never prompts and stays quiet about
+missing files. Together: no confirmation and no undo — there's no trash can.
+
+The classic accident is an empty variable:
+
+```bash
+PROJECT=""                     # an unset env var, a typo upstream…
+rm -rf "$HOME/$PROJECT"        # → rm -rf /Users/ada/ — your whole home directory
+rm -rf "$PROJECT"/*            # → rm -rf /Applications /bin /Users …
+rm -rf "$HOME/${PROJECT:?}"    # the shell stops with an error; rm never runs
+```
+
+`rm -rf "$DIR/"` with an empty `DIR` becomes `rm -rf /`, which GNU and macOS `rm` both refuse:
+POSIX says `rm` must skip an operand that resolves to the root directory. Nothing guards the
+other two lines. `${VAR:?}` aborts when the variable is empty *or* unset; `set -u` only catches
+unset ones.

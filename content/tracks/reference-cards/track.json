@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 3,
+  "slug": "reference-cards",
+  "title": "Reference Cards",
+  "description": "Lookup decks for the facts you reach for mid-task rather than learn in a sitting: which HTTP status code a situation calls for, what the everyday command-line flags mean (and where macOS differs from Linux), and how JavaScript regular expressions behave. One idea per card; the HTTP and regex decks end with a short drill.",
+  "units": ["http-status-codes", "common-cli-flags", "regex-basics"]
+}
