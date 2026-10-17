@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "use-ref-focus-input",
   "title": "Auto-focus the search input on mount",
   "prompt": "The search input should be focused as soon as the form mounts, but it isn't. Use useRef plus an effect to focus it on mount.",
@@ -7,7 +7,6 @@
   "difficulty": "core",
   "estimatedMinutes": 10,
   "runner": "in-browser",
-  "stack": ["react", "ts"],
   "entry": "SearchForm.tsx",
   "acceptanceCriteria": [
     "On mount, the search input is the document's active (focused) element",

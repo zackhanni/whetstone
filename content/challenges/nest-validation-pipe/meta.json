@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "nest-validation-pipe",
   "title": "Make the validation pipe behave like Nest's",
   "prompt": "validateBody is the pipe that guards a handler, and it leaks: it trusts unknown keys, never coerces the declared types, gives up after the first error, and lets a missing required field through. Make it whitelist, transform, collect every failure, and reject with 400 — the four behaviours ValidationPipe({ whitelist: true, transform: true }) gives you.",
@@ -7,7 +7,6 @@
   "difficulty": "core",
   "estimatedMinutes": 25,
   "runner": "in-browser",
-  "stack": ["react", "ts"],
   "entry": "validation-pipe.ts",
   "acceptanceCriteria": [
     "A valid body is accepted and returns the parsed value",

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "controlled-vs-uncontrolled",
   "title": "Controlled vs uncontrolled inputs",
   "skills": ["react", "forms", "controlled-components", "refs", "state"],
@@ -95,8 +95,7 @@
     {
       "type": "challenge",
       "id": "challenge-controlled-input",
-      "challengeSlug": "controlled-input-fix",
-      "mode": "in-browser"
+      "challengeSlug": "controlled-input-fix"
     }
   ]
 }

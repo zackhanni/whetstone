@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import Link from "next/link";
 import { loadUnit, loadTrack, listUnits } from "@/lib/content";
 import { UnitView } from "@/components/unit-view";
@@ -17,7 +16,9 @@ export default async function UnitPage({
 }) {
   const { track, unit } = await params;
   const [bundle, trackDetail] = await Promise.all([
-    loadUnit(track, unit).catch(() => notFound()),
+    // No catch: an unknown path 404s before this runs (dynamicParams = false), so a failure
+    // here is broken content and should fail the build, not render as a 404.
+    loadUnit(track, unit),
     loadTrack(track).catch((e) => {
       // Degrade gracefully (no footer) but surface a malformed sibling unit instead of hiding it.
       console.error(`Failed to load track "${track}" for the lesson footer:`, e);

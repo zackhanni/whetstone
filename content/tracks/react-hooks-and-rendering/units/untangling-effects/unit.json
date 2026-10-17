@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "untangling-effects",
   "title": "Untangling a component with too many effects",
   "skills": [
@@ -282,8 +282,7 @@
     {
       "type": "challenge",
       "id": "challenge-untangle-effects",
-      "challengeSlug": "untangle-description-editor",
-      "mode": "in-browser"
+      "challengeSlug": "untangle-description-editor"
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "memoization",
   "title": "Memoization: memo, useMemo & useCallback",
   "skills": ["react", "hooks", "memo", "useMemo", "useCallback", "rendering", "performance", "referential-identity"],
@@ -121,8 +121,7 @@
     {
       "type": "challenge",
       "id": "challenge-stop-rerender",
-      "challengeSlug": "memoization-stop-rerender",
-      "mode": "in-browser"
+      "challengeSlug": "memoization-stop-rerender"
     }
   ]
 }

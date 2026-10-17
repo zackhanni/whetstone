@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "context-vs-store-vs-server-state",
   "title": "Context vs client store vs server state",
   "skills": ["react", "state-management", "context", "zustand", "server-state", "tanstack-query", "architecture"],

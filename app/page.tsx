@@ -8,11 +8,9 @@ const MESSAGE_CLASS = "rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400 rin
 
 export default async function Home() {
   const slugs = await listTrackSlugs();
-  // Skip a track whose content fails to load rather than failing the whole page (parity with
-  // the old listTracks() filtering); each track.json is parsed once, via loadTrack.
-  const details = (await Promise.all(slugs.map((s) => loadTrack(s).catch(() => null)))).filter(
-    (d): d is TrackDetail => d !== null,
-  );
+  // No catch: this page is built once (SSG), so skipping a track that fails to load would ship
+  // a catalog with that track silently missing. A broken track.json fails the build instead.
+  const details: TrackDetail[] = await Promise.all(slugs.map((s) => loadTrack(s)));
 
   const allUnits: UnitRef[] = details.flatMap((d) =>
     d.units.map((u) => ({
@@ -35,18 +33,12 @@ export default async function Home() {
     skills: [...new Set(d.units.flatMap((u) => u.skills))], // deduped union (matches CatalogTrack.skills contract)
   }));
 
-  // Distinguish "no tracks authored" from "tracks exist but none loaded" without layering
-  // ternaries (see AGENTS.md → Patterns to avoid).
-  let tracksContent: ReactNode;
-  if (slugs.length === 0) {
-    tracksContent = <p className={MESSAGE_CLASS}>No tracks yet — check back soon.</p>;
-  } else if (details.length === 0) {
-    tracksContent = (
-      <p className={MESSAGE_CLASS}>Tracks are temporarily unavailable — please try again later.</p>
+  const tracksContent: ReactNode =
+    slugs.length === 0 ? (
+      <p className={MESSAGE_CLASS}>No tracks yet — check back soon.</p>
+    ) : (
+      <TrackCatalog tracks={catalogTracks} />
     );
-  } else {
-    tracksContent = <TrackCatalog tracks={catalogTracks} />;
-  }
 
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-12">

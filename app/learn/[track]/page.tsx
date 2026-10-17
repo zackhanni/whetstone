@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { loadTrack, listTrackSlugs } from "@/lib/content";
 import { UnitProgress } from "@/components/unit-progress";
 import { TagChips } from "@/components/tag-chips";
@@ -18,7 +17,9 @@ const DIFFICULTY: Record<string, string> = {
 
 export default async function TrackPage({ params }: { params: Promise<{ track: string }> }) {
   const { track } = await params;
-  const detail = await loadTrack(track).catch(() => notFound());
+  // No catch: with dynamicParams = false an unknown slug 404s before this runs, so a failure
+  // here is broken content and should fail the build, not render as a 404.
+  const detail = await loadTrack(track);
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-12">
       <Link href="/" className="text-sm text-slate-500 hover:text-slate-300">

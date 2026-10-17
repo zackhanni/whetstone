@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "slug": "use-ref",
   "title": "useRef: mutable values & DOM refs",
   "skills": ["react", "hooks", "useRef", "refs", "dom"],
@@ -101,8 +101,7 @@
     {
       "type": "challenge",
       "id": "challenge-focus-input",
-      "challengeSlug": "use-ref-focus-input",
-      "mode": "in-browser"
+      "challengeSlug": "use-ref-focus-input"
     }
   ]
 }

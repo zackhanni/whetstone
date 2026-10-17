@@ -1,5 +1,12 @@
 # State management: Context now, Zustand later
 
+> **Status (2026-10-17): the trigger has fired, the migration below has not run.** The interest
+> filter's store (`lib/stores/interests-store.ts`) is the 2nd persisted store and the first
+> Zustand one, so `zustand` is already installed (skip step 1). Progress and drill history are
+> still on Context. Note that the interests store gates hydration with `useMounted`
+> (`lib/use-mounted.ts`), not the persisted `hasHydrated` flag sketched below; follow that
+> precedent unless the port turns up a reason not to.
+
 Whetstone's client-side, local-first state (unit progress; drill history) is currently held in
 a small React Context (`components/progress-provider.tsx`) backed by hand-rolled localStorage
 helpers (`lib/progress.ts`, `lib/drill-history.ts`). This doc records **why**, and the concrete

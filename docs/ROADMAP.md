@@ -4,7 +4,7 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 
 ## Phases
 
-### Phase 0 — Foundation (nearly complete)
+### Phase 0 — Foundation (done)
 
 - ✅ Content schema (`learning/schema.ts`) + authoring `PLAYBOOK.md`
 - ✅ First vertical slice: `react-hooks-and-rendering` → `use-effect` (all 5 block types)
@@ -25,12 +25,13 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 - 🔨 Drill polish — results history ✅ (best/recent attempts); per-unit time config ⬜
 - ✅ Local-first progress tracking — dashboard, per-track/unit bars, "continue where you left off"
 - ⬜ **Swipe feed** — a third study mode (alongside Browse + Drill) for micro-learning. Design note in "Planned features" below; build later.
-- ⬜ **Tags & interest filtering** — formalize the flat `skills` field into a validated, multi-parent tag taxonomy (`learning/taxonomy.ts`), show rolled-up tags on cards, and add an "interest filter" that soft-reorders the catalog. Downward-closure matching (select `react` → all React; select `useEffect` → just that). Full design + build order in `docs/tags-design.md`. Steps 1–3 (taxonomy + validator, `lib/tags.ts`, card chips) ship independently of the filter UI.
+- ✅ **Tags & interest filtering** — validated multi-parent taxonomy (`learning/taxonomy.ts`), rolled-up chips on cards, and an interest filter that soft-reorders the catalog (PR #9). Design record: `docs/tags-design.md`.
+- ✅ **Authoring-system hardening (2026-10-17)** — challenge graders run headlessly in `pnpm check` (starter must fail, solution must pass); schema v2 (`.strict()` objects, dead fields removed, quiz answers must name real options, block order checked); validator checks slugs vs folders, unlisted unit folders, globally unique unit slugs, reading-file rules, and every challenge folder; challenges may declare pinned `dependencies`.
 
 ### Phase 2 — Multi-user
 
 - ⬜ Supabase auth
-- ⬜ Progress tracking (per user, per block)
+- ⬜ Progress tracking (per user, per block) — key it by **unit slug alone** (`pnpm validate` has required unit slugs to be unique across tracks since 2026-10-17), not today's `track/unit`, so moving a unit to another track keeps its progress
 - ⬜ Ratings on examples/questions → rate-to-reorder
 - ⬜ Issue reports + comments on lessons
 - ⬜ Self-improvement loop wired to real feedback (`/improve-lesson`)
@@ -43,7 +44,9 @@ challenge where the skill is codeable). Units marked _card_ are candidates for t
 
 **How these get built:** author every new unit with the **`/new-lesson`** skill
 (`.claude/skills/new-lesson`) — it scaffolds against `learning/schema.ts`, follows
-`learning/PLAYBOOK.md`, and gates on `pnpm validate` + `pnpm build`. Edits to a unit that already
+`learning/PLAYBOOK.md`, and gates on `pnpm check` + `pnpm build`. Before the first unit of a
+**new** track, outline all of its units below (one line each: what it teaches that its
+neighbours don't). Edits to a unit that already
 shipped (feedback in `content/feedback/`, a wrong explanation, a better example) go through
 **`/improve-lesson`** (`.claude/skills/improve-lesson`) instead, which also fixes the schema/template
 when the problem is general and sweeps it across lessons. Both append a line to
@@ -60,13 +63,13 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ Choosing where state lives (local → lift → Context → client store → server state → URL)
   - ✅ **Context vs client store vs server state** (`context-vs-store-vs-server-state`) — who _owns_ a value, the failure mode of each wrong choice, and how one screen combines URL + query cache + store. Decision unit: reading + quiz + fill-blank, no challenge.
   - ✅ **Zustand basics** (`zustand-basics`) — `create`, atomic vs object selectors, `set` shallow-merge, `getState`/`setState` outside React, `persist` (`partialize`, `version`, hydration gate), testing a singleton. Challenge: `selector-store-subscription` (rebuild the hook on `useSyncExternalStore`).
-  - ⬜ _blocked:_ a challenge that imports **real** `zustand` — `components/challenge-runner.tsx` hard-codes the Sandpack dependency list, so challenges can't declare their own deps yet. Either add an optional `dependencies` field to the challenge schema + runner, or keep teaching the mechanism with the hand-rolled store.
+  - ⬜ _now possible:_ a challenge that imports **real** `zustand` — challenges can declare pinned `dependencies` in `meta.json` (plus a matching devDependency). Worth it only if it teaches more than the hand-rolled store already does.
 - ✅ **Backend with NestJS** — 4 units
   - ✅ **Nest vocabulary: the words before the wiring** (`nest-vocabulary`) — controller/service/module/provider, decorators as metadata that runs once, HTTP verbs + prefix-plus-path routes + `@Param`/`@Query`/`@Body`, the `constructor(private readonly x: T)` line unpacked, singleton = one shared instance, and a plain-words tour of middleware/guard/interceptor/pipe/filter. Authored from feedback that the DI unit assumed its own vocabulary.
   - ✅ **Modules, providers & the injector** (`nest-modules-and-providers`) — modules as registries, the four `@Module` keys, reading the "can't resolve dependencies" error, duplicate registration → two instances, tokens for interfaces, `useFactory`/`inject`, scopes vs state-on-a-singleton, `forwardRef` as a smell. No challenge (no `@nestjs/*` in the sandbox).
   - ✅ **DTOs & validation** (`nest-dtos-and-validation`) — the DTO as trust boundary, why the type alone validates nothing, `whitelist` as mass-assignment defence, coercion, `@ValidateNested` + `@Type`, `PartialType`, uniqueness as 409 in the service. Challenge: `nest-validation-pipe` (hand-rolled ValidationPipe).
   - ✅ **The request lifecycle** (`nest-request-lifecycle`) — guards → interceptors → pipes → handler → filters, `Reflector` + custom decorators, `map`/`tap`/`finalize` on `next.handle()`, 401 vs 403, one filter per exception, `APP_GUARD`/`APP_FILTER` for injectable globals.
-  - ⬜ _blocked:_ any challenge that imports `@nestjs/common` — the same runner dependency limit as the zustand note above. The lifecycle unit therefore ends at predict-output; a hand-rolled "compose the pipeline" challenge is the workaround if it's worth one.
+  - ⬜ _untested:_ a challenge that imports `@nestjs/common` via `dependencies`. Nest also needs decorator metadata and `reflect-metadata`, which may not work in Sandpack's transpiler — prove a one-file spike in the browser before designing a unit around it. Fallback: a hand-rolled "compose the pipeline" challenge.
 
 ### Frontend
 
@@ -106,7 +109,7 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ⬜ CORS, preflight, and why it only bites in the browser
   - ⬜ Sync vs async APIs — polling, webhooks, queues, long-running jobs
 - ⬜ **Next.js & the Network** — server components vs actions vs route handlers, cache-control/response headers, gzip/brotli, revalidation & caching layers, streaming/Suspense
-- 🔨 **Backend / NestJS** — first 3 units shipped (see Shipped → Backend with NestJS)
+- 🔨 **Backend / NestJS** — first 4 units shipped (see Shipped → Backend with NestJS)
   - ⬜ Redis — cache-aside, sessions, rate limiting (`ThrottlerGuard`), and what to do when the cache is down
   - ⬜ Microservices & message patterns — request-response vs event, transports, retries/idempotency, `@MessagePattern`/`@EventPattern`
   - ⬜ Controllers & routing in their own right — route ordering, versioning, `@Res()` and what it costs you
@@ -155,10 +158,10 @@ snippet has already been turned into `debounced-input-and-autosave`.
 - ⬜ **Cards & variable lesson depth** — a lightweight `card` block (info + example, flash-card style) so a "lesson" can range from a reminder to a full mastery unit, and cards can _bloom_ by appending blocks. Inline first; graduate to referenced/shared cards (challenge pattern) only when reuse is real. Proposal: `docs/cards-and-lesson-depth.md`.
 - ⬜ zod 3 → 4 migration (`schema.ts`, `validate.ts`)
 - ⬜ TypeScript 5 → 6
-- ⬜ **Context → Zustand** for client state — switch when a 2nd/3rd persisted store lands (settings, streaks, drill history). Plan + triggers: `docs/zustand-migration.md`.
+- ⬜ **Context → Zustand** for progress + drill history — the trigger fired when the interests store landed (the first Zustand store). Plan: `docs/zustand-migration.md`.
 - ⬜ Pick-N / difficulty-mix quizzes (schema already supports the shape)
 - ⬜ More "Go deeper" reading tiers across units
-- ⬜ CI — run `pnpm check` + build on PRs
+- ⬜ CI — run `pnpm check` + build on PRs (about a minute; it draws on the Actions minutes shared by every private repo, so consider `paths-ignore` for docs-only pushes)
 
 ## Planned features (design later)
 

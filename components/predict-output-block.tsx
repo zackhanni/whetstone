@@ -76,6 +76,13 @@ function SnippetView({
           <div className="text-slate-200">
             <span className="font-semibold text-sky-300">Answer:</span> {s.answer}
           </div>
+          {/* Self-graded, so show the other phrasings that count before the learner marks ✓/✗. */}
+          {s.acceptable && s.acceptable.length > 0 && (
+            <div className="text-slate-300">
+              <span className="font-semibold text-sky-300">Also counts:</span>{" "}
+              {s.acceptable.join(" · ")}
+            </div>
+          )}
           <Markdown>{s.explanation}</Markdown>
           <div className="flex items-center gap-2 pt-1">
             <span className="text-slate-400">Did you get it?</span>
