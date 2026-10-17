@@ -1,0 +1,73 @@
+---
+id: keys-that-lie
+title: Keys that lie — production traps in hashing and matching
+---
+
+A key is wrong in one of two directions. **Too coarse**: two different pieces of data share an
+entry (the missing-variable bug). **Too fine**: one piece of data is spread over several
+entries, or the key changes when the data didn't. The coarse kind shows wrong data; the fine
+kind shows stale data, duplicate requests, or a request loop.
+
+## `"5"` is not `5`
+
+The list renders rows with numeric ids. The detail route reads its id from the URL, where
+everything is a string:
+
+```ts
+// list row: prime the detail cache so the detail page opens instantly
+queryClient.setQueryData(todoKeys.detail(todo.id), todo); // ["todos", "detail", 5]
+
+// detail route, key written by hand
+const { id } = useParams(); // "5"
+useQuery({ queryKey: ["todos", "detail", id], queryFn: () => fetchTodo(id) }); // another entry
+```
+
+The detail page never sees the primed data, fetches again, and a later
+`invalidateQueries({ queryKey: todoKeys.detail(5) })` misses it. Normalise at the boundary
+(`Number(id)`) and go through the factory, whose `id: number` parameter makes TypeScript refuse
+the string.
+
+## A value that changes every render
+
+```ts
+const since = new Date().toISOString(); // ❌ a new value on every render
+useQuery({ queryKey: ["feed", { since }], queryFn: () => fetchFeed(since) });
+```
+
+Each response re-renders the component a few milliseconds later, which builds a new key, so a
+new entry and another request. Run headlessly against a fake fetch that takes 20 ms, this made
+**44 requests and 44 cache entries in one second**, and it doesn't stop. Fix the value once
+(in state, or let the server decide what "latest" means) — a key holds *inputs*, not clocks.
+
+## Values JSON can't represent
+
+The hash comes from the key's JSON form (with object keys sorted), so non-JSON values collapse:
+
+- `Map` and `Set` hash as `{}` — **every** Set-valued key is the same entry. Pass
+  `[...selectedTags].sort()` instead.
+- `undefined` inside an array hashes as `null`, so `["todos", undefined]` and
+  `["todos", null]` are one entry. (Inside an object, an `undefined` property is dropped.)
+- A `Date` hashes as its ISO string, which is fine for a fixed date and fatal for `new Date()`.
+
+## Prefixes reach into objects
+
+Matching is partial *inside* objects too: `["todos", "list", { status: "open" }]` matches
+`["todos", "list", { status: "open", page: 2 }]`. That's handy — "every page of open todos" —
+and it means a filter object that's a subset of another is a prefix of it.
+
+## What does *not* go in the key
+
+The docs' rule is "every variable the `queryFn` uses that **changes**." The function you call
+and a stable API client are not data inputs. `@tanstack/eslint-plugin-query` has an
+`exhaustive-deps` rule that flags a missing variable — the lint version of this whole unit —
+with an `allowlist` for things like an API client.
+
+<!--more-->
+
+**Custom hashing.** `queryKeyHashFn` (a query option) replaces the default hash for keys that
+genuinely need it, but a key you can't hash with `JSON.stringify` is usually a key holding the
+wrong thing. Convert at the edge instead.
+
+**Reading the key inside the `queryFn`.** The function receives a context with `queryKey`
+(plus `signal` and `client`), so `queryFn: ({ queryKey: [, , filters] }) => fetchTodos(filters)`
+reads its inputs *from* the key — it can't then use a variable the key lacks.

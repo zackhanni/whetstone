@@ -1,0 +1,57 @@
+---
+id: four-ways-to-hear-back
+title: Polling, long-polling, SSE, WebSockets — and webhooks
+---
+
+Once work finishes later, someone has to find out. The options differ in **who opens the
+connection** and **which way data can flow**.
+
+| Technique | How it works | Direction | Good for |
+| --- | --- | --- | --- |
+| **Polling** | Client asks every N seconds; most answers are "nothing yet" | client pulls | Job status, low-frequency updates; simplest to run |
+| **Long-polling** | Client asks; server holds the request open until there's news or a timeout, then the client asks again (RFC 6202) | server answers when ready | Near-real-time where only plain request/response gets through |
+| **Server-Sent Events** | One long `GET` with `Content-Type: text/event-stream`; the server writes events down it (`EventSource` in browsers) | server → client only | Notifications, progress, live feeds, streamed text |
+| **WebSockets** | An HTTP request upgraded (`101 Switching Protocols`) to a two-way message channel | both ways | Chat, collaboration, games — the client talks a lot too |
+| **Webhooks** | *Your server* exposes a URL; the other service `POST`s to it when something happens | server → server | Payment succeeded, repo pushed — events from someone else's system |
+
+An SSE response is readable text — this is the whole wire format:
+
+```text
+id: 41
+event: progress
+data: {"jobId":"7","percent":60}
+
+id: 42
+data: {"jobId":"7","status":"succeeded"}
+
+```
+
+Each event ends with an empty line. If the connection drops, `EventSource` reconnects by itself and
+sends the last `id` it saw in a `Last-Event-ID` request header, so the server can resume (the HTML
+standard). A server that wants it to stop reconnecting answers with something other than `200`,
+such as `204 No Content`.
+
+How to choose, roughly in order:
+
+1. Updates every few seconds or less often, and you control neither the client nor the network?
+   **Poll.** It survives every proxy and is trivial to cache and debug.
+2. The server pushes, the client mostly listens, it's a browser? **SSE** — plain HTTP, automatic
+   reconnect, works through most infrastructure.
+3. Both sides send often and latency matters? **WebSockets** — and budget for reconnect logic,
+   heartbeats and auth on the upgrade request, which you write yourself.
+4. The events come from another company's system to yours? **Webhooks** — the rest of this unit.
+
+<!--more-->
+
+**Connection limits.** MDN warns that over HTTP/1.1, browsers allow only about six connections per
+domain — shared by all tabs — so six tabs each holding an SSE stream can starve that site's other
+requests. Over HTTP/2, streams share one connection and the limit becomes the number of
+concurrent streams the two sides negotiate (MDN: 100 by default), so it rarely bites.
+
+**Idle connections get cut.** Proxies drop connections that look idle. The HTML standard suggests an
+SSE comment line (starting with `:`) about every 15 seconds as a keep-alive; WebSocket apps send
+pings for the same reason.
+
+**Backpressure.** MDN notes the `WebSocket` API has no backpressure: if messages arrive faster than
+you handle them, they buffer in memory. (`WebSocketStream` adds it but is non-standard and
+supported in only one engine.)

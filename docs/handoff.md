@@ -20,7 +20,13 @@ in `AGENTS.md` → "Working with this repo".
   - New track **JavaScript & TypeScript Fundamentals** (5 units, 4 challenges), first in the
     catalog (PR #18).
   - New track **Dates & Time** (4 mastery units + 1 card unit, 1 challenge) (PR #19).
-  - New track **Async JavaScript & Timing** (5 units, 4 challenges), second in the catalog.
+  - New track **Async JavaScript & Timing** (5 units, 4 challenges), second in the catalog (PR #20).
+  - New track **Data Fetching with TanStack** (6 units, 6 challenges): the first challenges to
+    use `dependencies` (real `@tanstack/react-query` / `@tanstack/react-router`), proven in Sandpack
+    (PR #21).
+  - New track **HTTP & APIs in Practice** (6 units, 4 challenges) (PR #22).
+  - New track **Next.js & the Network** (4 units, 2 challenges), written for Next 16 (checked
+    against 16.2.9, which the repo runs, and 16.4.2, npm `latest`).
 - Gates: `pnpm check` (about 25 s, including the headless grader) and `pnpm build`; every
   Vercel build runs both.
 

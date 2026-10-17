@@ -1,0 +1,49 @@
+---
+id: loading-tsx-is-a-boundary
+title: loading.tsx is a Suspense boundary you get by dropping in a file
+---
+
+Put `loading.tsx` next to `page.tsx` and Next wraps the page in `<Suspense>` with your component as
+the fallback:
+
+```text
+app/dashboard/
+  layout.tsx    ← renders immediately, part of the shell
+  loading.tsx   ← the fallback, shown at once (and prefetched for navigations)
+  page.tsx      ← streams in when its data is ready
+```
+
+```tsx
+// app/dashboard/loading.tsx
+export default function Loading() {
+  return <div className="h-40 animate-pulse rounded bg-slate-800" />;
+}
+```
+
+Conceptually Next renders:
+
+```tsx
+<Layout>
+  <Suspense fallback={<Loading />}>
+    <Page />
+  </Suspense>
+</Layout>
+```
+
+That picture explains its one big limit: **`loading.tsx` wraps the page, not the layout in the
+same folder.** If `layout.tsx` itself awaits `cookies()` or an uncached query, there's no boundary
+above that `await`. Without Cache Components, navigation then blocks until the layout finishes;
+with Cache Components, the build stops and asks you to wrap that access in `<Suspense>`.
+
+**`loading.tsx` or `<Suspense>`?**
+
+| | `loading.tsx` | `<Suspense>` |
+| --- | --- | --- |
+| Scope | the whole page segment | any component |
+| Effort | add one file | wrap components yourself |
+| On navigation | the fallback is prefetched, so it shows instantly | not prefetched by default (with Cache Components, fallbacks in the static shell are prefetched with it) |
+| Best for | pages where nothing useful renders before the data | most pages: stream each slow section on its own |
+
+The Streaming guide's advice is to prefer `<Suspense>` placed close to the slow data. A `loading.tsx`
+replaces the whole page with a skeleton when only one panel was slow; three boundaries let the
+fast panels show real content while the slow one loads.

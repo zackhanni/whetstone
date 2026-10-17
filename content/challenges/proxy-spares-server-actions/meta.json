@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "proxy-spares-server-actions",
+  "title": "Make the auth proxy redirect page visits only",
+  "skills": ["nextjs", "server-actions", "auth"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "proxy.ts",
+  "acceptanceCriteria": [
+    "A signed-out visit to a private page redirects (307) to `/login?next=<path and query>`",
+    "A signed-in visit to `/login` or `/signup` redirects to `/`",
+    "`HEAD` is treated like `GET`",
+    "A `POST` (a Server Action call) is never redirected, signed in or not",
+    "Files under `/_next/` and paths ending in a file name with an extension, like `/logo.png`, are never redirected"
+  ]
+}

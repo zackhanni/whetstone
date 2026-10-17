@@ -1,0 +1,74 @@
+---
+id: render-a-query-over-time
+title: Rendering one query through its whole life
+---
+
+A paged list has to render five situations correctly: first load, data, background refetch,
+failed refetch, and page change. The order of the checks decides which of them work.
+
+```tsx
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+
+function TodoList() {
+  const [page, setPage] = useState(1);
+  const { data, error, isError, isPending, isFetching, isPlaceholderData, refetch } = useQuery({
+    queryKey: ["todos", { page }],
+    queryFn: () => fetchTodoPage(page),
+    placeholderData: keepPreviousData,
+  });
+
+  if (isPending) return <Spinner />;
+  if (data === undefined) return <ErrorPanel message={error?.message} />;
+
+  return (
+    <>
+      <button onClick={() => refetch()}>Refresh</button>
+      {isFetching && <small>Refreshing…</small>}
+      {isError && <Banner>Couldn't refresh: {error.message}</Banner>}
+      {data.items.length === 0 ? <p>No todos.</p> : <Table rows={data.items} dimmed={isPlaceholderData} />}
+      <button disabled={isPlaceholderData || !data.hasMore} onClick={() => setPage((p) => p + 1)}>
+        Next
+      </button>
+    </>
+  );
+}
+```
+
+Line by line:
+
+- **`if (isPending)` first.** Pending means *no data*, so it's the only state that earns the
+  full-screen spinner. A background refetch is `success` + fetching and never reaches it.
+- **`if (data === undefined)` second.** Past `isPending`, missing data means this key's
+  **first** load failed — the first page, or a page change (see below the table): show the
+  error panel, with a retry and a way back. The tempting `if (isError)` here is a bug: when a
+  *refetch* fails, `status` becomes `"error"` but `data` keeps the last good result. Checking
+  `isError` first throws a perfectly good list away because one refresh failed.
+- **Error *and* data → a banner.** Below the gates, `isError` can only mean "a refetch failed".
+  (`isRefetchError` says exactly that, if you prefer the explicit flag.)
+- **The empty state lives after the gates.** `data.items.length === 0` is only "nothing here"
+  once data exists. Written as `(data?.items ?? []).length === 0` *before* the pending check,
+  the user sees "No todos." flash during every first load.
+- **`placeholderData: keepPreviousData`.** Each page is a new key, so a new entry with no data —
+  without this, `Next` drops back to `pending` and the spinner. With it, the query reports
+  `success`, `data` is the **previous page**, and `isPlaceholderData` is `true` until page 2
+  lands. The placeholder is never written into page 2's cache entry.
+- **`disabled={isPlaceholderData || …}`.** While showing page 1 as a placeholder, `hasMore` is
+  page 1's answer, not page 2's — don't let the user click ahead on stale information.
+
+Run against the real library (v5.104), the page change reads like this, render by render:
+
+| Render | `status` | `fetchStatus` | `isPlaceholderData` | `data` |
+| --- | --- | --- | --- | --- |
+| page 1 loaded | success | idle | false | page 1 |
+| clicked Next | success | fetching | true | page 1 |
+| page 2 arrived | success | idle | false | page 2 |
+
+Without `keepPreviousData` the middle row is `pending` / `fetching` with `data: undefined`. And
+if page 2's fetch fails, the last row is `error` / `idle` / `false` / `undefined`: the placeholder
+lasts only while the new key is pending, so page 1 is gone and the error panel shows.
+
+<!--more-->
+
+`keepPreviousData` is just the identity function `(previousData) => previousData`. v4 had a
+`keepPreviousData: true` option and an `isPreviousData` flag; v5 removed both in favour of this
+`placeholderData` function and `isPlaceholderData`.

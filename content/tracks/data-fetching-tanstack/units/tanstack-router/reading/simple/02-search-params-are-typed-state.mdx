@@ -1,0 +1,51 @@
+---
+id: search-params-are-typed-state
+title: Search params are typed state — validate them at the door
+---
+
+The state-and-data-flow track gave filters, tabs and page numbers to the URL. TanStack Router
+makes that state as convenient as `useState`, with two steps: **parse** and **validate**.
+
+**Parse.** The router turns the query string into JSON. The first level stays URL-friendly, but
+values keep their types: `?page=2&desc=true` arrives as `{ page: 2, desc: true }` — a number and
+a boolean, not strings. Arrays and objects are stored as JSON in the URL.
+
+**Validate.** It's still text a user can edit, so each route says what it accepts with
+`validateSearch`. It receives the parsed object (typed `Record<string, unknown>`) and returns the
+typed search the rest of the route will see:
+
+```tsx
+type PostsSearch = { page: number; tag?: string };
+
+const postsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "posts",
+  validateSearch: (search: Record<string, unknown>): PostsSearch => {
+    const page = Number(search.page);
+    return {
+      page: Number.isInteger(page) && page > 0 ? page : 1,
+      tag: typeof search.tag === "string" && search.tag !== "" ? search.tag : undefined,
+    };
+  },
+});
+```
+
+The docs recommend falling back to sensible defaults rather than throwing, so a mangled link
+still shows *something*. (If `validateSearch` throws, the route's error component renders
+instead.)
+
+**Read it** with the route's hook — typed, already validated:
+
+```tsx
+const { page, tag } = postsRoute.useSearch(); // page: number, tag: string | undefined
+```
+
+**Write it** with `Link` or `navigate`. `search` can be an object or a function of the previous
+search; the function form is the one that keeps the other params:
+
+```tsx
+<Link from="/posts" search={(prev) => ({ ...prev, page: prev.page + 1 })}>Next</Link>
+```
+
+`search={{ page: page + 1 }}` would *replace* the search, silently dropping `tag` — and still
+type-check, because `tag` is optional.

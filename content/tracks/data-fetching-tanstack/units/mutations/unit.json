@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 3,
+  "slug": "mutations",
+  "title": "Mutations: writes, callbacks and the cache",
+  "skills": [
+    "tanstack-query",
+    "mutations"
+  ],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Write a custom hook around `useMutation` that owns the `mutationFn` and the cache follow-up, and block a double submit with `isPending`",
+    "Choose `mutate` or `mutateAsync`, and handle the rejection that `mutateAsync` throws",
+    "Predict when hook-level and call-level `onSuccess`/`onError`/`onSettled` run: their order, after an unmount, and for consecutive `mutate` calls",
+    "Keep a mutation pending until its invalidation has refetched, by returning the promise from a hook-level callback"
+  ],
+  "sources": [
+    {
+      "title": "TanStack Query v5 docs: Mutations",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/mutations"
+    },
+    {
+      "title": "TanStack Query v5 docs: Invalidations from Mutations",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/invalidations-from-mutations"
+    },
+    {
+      "title": "TanStack Query v5 reference: useMutation",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/reference/useMutation"
+    },
+    {
+      "title": "TanStack Query v5 docs: Network Mode",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/network-mode"
+    },
+    {
+      "title": "TanStack Query docs: Migrating to TanStack Query v5",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/migrating-to-v5"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-mutations",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-mutations",
+      "questions": [
+        {
+          "id": "no-auto-refresh",
+          "prompt": "`useMutation({ mutationFn: createTodo })` POSTs successfully, but the todo list on the same screen keeps showing the old rows. Why?",
+          "options": [
+            {
+              "id": "not-connected",
+              "text": "A mutation has no link to any query; nothing told the cache that the list changed"
+            },
+            {
+              "id": "mutation-key",
+              "text": "The mutation needs a `mutationKey` equal to the list's query key, so the library knows what to refresh"
+            },
+            {
+              "id": "stale-time",
+              "text": "The list's `staleTime` is too long; with `staleTime: 0` it would refetch after the write"
+            },
+            {
+              "id": "retrying",
+              "text": "The mutation is still retrying in the background, so the list is waiting for it"
+            }
+          ],
+          "answer": "not-connected",
+          "explanation": "Queries are keyed; mutations aren't tied to any of them. A `mutationKey` identifies the *mutation* (for defaults, `useMutationState`, `isMutating`) — it never refreshes queries. Staleness only matters when a trigger fires, and a mutation isn't one. And mutations don't retry by default. Invalidate the affected keys (or write the response with `setQueryData`) in the mutation's `onSuccess`."
+        },
+        {
+          "id": "double-click",
+          "prompt": "A user double-clicks **Save**, which calls `addTodo.mutate(draft)`. Nothing else guards it. What happens?",
+          "options": [
+            {
+              "id": "two-posts",
+              "text": "Two POSTs go out and two todos are created; disable the button while `isPending`"
+            },
+            {
+              "id": "deduped",
+              "text": "One POST: identical `mutate` calls are deduplicated, like queries with the same key"
+            },
+            {
+              "id": "ignored",
+              "text": "One POST: `mutate` is ignored while the mutation is already pending"
+            },
+            {
+              "id": "cancelled",
+              "text": "Two POSTs, but the first is cancelled, so only one todo is created"
+            }
+          ],
+          "answer": "two-posts",
+          "explanation": "Mutations run in parallel by default — no deduping, no queue, no cancellation. Each `mutate` is a new write. Disable the trigger while `isPending`, or give the mutation a `scope` so calls run one at a time (they'd still both run)."
+        },
+        {
+          "id": "uncaught-async",
+          "prompt": "`<button onClick={() => save.mutateAsync(draft)}>` — and the save fails. What happens?",
+          "options": [
+            {
+              "id": "unhandled",
+              "text": "`save.error` is set, and the promise nobody handles becomes an unhandled rejection"
+            },
+            {
+              "id": "swallowed",
+              "text": "`save.error` is set and nothing else happens: `mutateAsync` catches its own rejection, like `mutate`"
+            },
+            {
+              "id": "boundary",
+              "text": "The nearest error boundary catches it and renders its fallback"
+            },
+            {
+              "id": "sync-throw",
+              "text": "The click handler throws synchronously and React logs the error"
+            }
+          ],
+          "answer": "unhandled",
+          "explanation": "`mutateAsync` returns a promise that rejects on failure; `mutate` is the variant that catches for you. The hook's state updates either way, so the UI can show `save.error` — but the dropped promise is also reported as an unhandled rejection. Error boundaries catch errors thrown while rendering, not rejections in event handlers. Use `mutate` here, or `await` inside `try/catch`."
+        },
+        {
+          "id": "unmount-callback",
+          "prompt": "A dialog calls `save.mutate(draft, { onSuccess: () => queryClient.invalidateQueries({ queryKey: todoKeys.all }) })` and then immediately `onClose()`, which unmounts it. The save succeeds. What happens to the list behind the dialog?",
+          "options": [
+            {
+              "id": "stays-stale",
+              "text": "It stays stale: callbacks passed to `mutate` don't run once their component has unmounted"
+            },
+            {
+              "id": "refreshes",
+              "text": "It refreshes: the mutation still finishes, so every callback passed to it still runs"
+            },
+            {
+              "id": "refreshes-late",
+              "text": "It refreshes when the dialog is next opened, when the callback finally runs"
+            },
+            {
+              "id": "error",
+              "text": "React warns about a state update on an unmounted component and nothing runs"
+            }
+          ],
+          "answer": "stays-stale",
+          "explanation": "The docs are explicit: call-level callbacks \"won't run if your component unmounts *before* the mutation finishes\". Hook-level callbacks still run — the mutation lives in the `MutationCache`, not in the component. That's why cache follow-up belongs in the hook; keep call-level callbacks for UI the component owns. (React 18 also removed the unmounted-update warning.)"
+        },
+        {
+          "id": "consecutive",
+          "prompt": "`for (const t of ['A', 'B', 'C']) addTodo.mutate(t, { onSuccess: (todo) => toast(todo.title) })`, where `useAddTodo` also has a hook-level `onSuccess`. All three saves succeed. How often does each callback run?",
+          "options": [
+            {
+              "id": "hook-3-call-1",
+              "text": "The hook's: 3 times. The `mutate` one: once, for `'C'`"
+            },
+            {
+              "id": "both-3",
+              "text": "Both run 3 times"
+            },
+            {
+              "id": "both-1",
+              "text": "Both run once — only the last `mutate` call is sent"
+            },
+            {
+              "id": "call-1-first",
+              "text": "The hook's: 3 times. The `mutate` one: once, for whichever save finished first"
+            }
+          ],
+          "answer": "hook-3-call-1",
+          "explanation": "All three requests are sent, and the hook-level callback runs for each. But each `mutate` re-subscribes the hook's observer to the newest mutation, so callbacks passed to `mutate` fire once, for the last call — `'C'` — regardless of which response arrives last. Per-item effects belong at the hook level, or in `await Promise.all(items.map((t) => addTodo.mutateAsync(t)))`."
+        },
+        {
+          "id": "missing-return",
+          "prompt": "`onSuccess: () => { queryClient.invalidateQueries({ queryKey: todoKeys.lists() }); }` — the Save button is `disabled={isPending}`. What does the user see after a successful POST?",
+          "options": [
+            {
+              "id": "early-enable",
+              "text": "The button re-enables while the list still shows the old rows"
+            },
+            {
+              "id": "waits",
+              "text": "The button stays disabled until the list has refetched, because `onSuccess` is awaited"
+            },
+            {
+              "id": "no-refetch",
+              "text": "The list never refetches, because an invalidation that isn't awaited is dropped"
+            },
+            {
+              "id": "stays-pending",
+              "text": "The button stays disabled forever, because the dropped promise never settles the mutation"
+            }
+          ],
+          "answer": "early-enable",
+          "explanation": "The invalidation still runs — it just isn't returned, so the mutation doesn't wait for it and becomes `success` as soon as the POST resolves. Returning the promise (`onSuccess: () => queryClient.invalidateQueries(...)`, no braces) keeps `isPending` true until the refetch settles, so the user can't act on a list that doesn't show their todo yet."
+        },
+        {
+          "id": "callback-order",
+          "prompt": "A successful `addTodo.mutate(t, { onSuccess, onSettled })` on a hook that defines `onSuccess` and `onSettled` too. In what order do the four run?",
+          "options": [
+            {
+              "id": "hook-then-call",
+              "text": "hook `onSuccess` → hook `onSettled` → call `onSuccess` → call `onSettled`"
+            },
+            {
+              "id": "interleaved",
+              "text": "hook `onSuccess` → call `onSuccess` → hook `onSettled` → call `onSettled`"
+            },
+            {
+              "id": "call-first",
+              "text": "call `onSuccess` → call `onSettled` → hook `onSuccess` → hook `onSettled`"
+            },
+            {
+              "id": "parallel",
+              "text": "All four at once; the order isn't defined"
+            }
+          ],
+          "answer": "hook-then-call",
+          "explanation": "The hook's callbacks are part of the mutation itself — each is awaited, then the next runs — and the mutation settles after its `onSettled`. Only then does the observer notify the `mutate` call's callbacks. (Checked against v5.104; the error path is the same shape with `onError`.) So by the time a call-level callback runs, a returned invalidation from the hook has already finished."
+        },
+        {
+          "id": "no-retry",
+          "prompt": "A mutation's endpoint answers 500. With default options, how many times does `mutationFn` run?",
+          "options": [
+            {
+              "id": "once",
+              "text": "Once — mutations don't retry unless you set `retry`"
+            },
+            {
+              "id": "four",
+              "text": "4 — the first attempt plus 3 retries, like queries"
+            },
+            {
+              "id": "three",
+              "text": "3 — `retry: 3` means three attempts in total"
+            },
+            {
+              "id": "until-success",
+              "text": "Until it succeeds, with exponential backoff"
+            }
+          ],
+          "answer": "once",
+          "explanation": "Mutations default to `retry: 0`; it's queries that retry 3 times on the client. Repeating a write is only safe when the endpoint is idempotent, so opt in deliberately (`retry: 3`). A mutation started *offline* is different: it isn't attempted at all — it waits, paused, and runs on reconnect."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-mutations",
+      "prompts": [
+        {
+          "id": "hook-invalidates",
+          "prompt": "The hook refreshes every list after a save, and stays pending until the refetch is done.",
+          "code": [
+            "export function useAddTodo() {",
+            "  const queryClient = ___();",
+            "  return useMutation({",
+            "    mutationFn: (title: string) => api.createTodo(title),",
+            "    onSuccess: () => {",
+            "      ___ queryClient.invalidateQueries({ queryKey: todoKeys.lists() });",
+            "    },",
+            "  });",
+            "}"
+          ],
+          "blanks": [
+            {
+              "id": "h1",
+              "accept": [
+                "useQueryClient"
+              ]
+            },
+            {
+              "id": "h2",
+              "accept": [
+                "return"
+              ]
+            }
+          ],
+          "explanation": "`useQueryClient()` reads the client from `QueryClientProvider`. Returning the invalidation's promise makes the mutation await it, so `isPending` covers the refetch too. (Since v5.89 the callback's fourth argument also carries the client: `context.client`.)"
+        },
+        {
+          "id": "form-reaction",
+          "prompt": "Clear the input only after a successful save, and block a second submit while one is running.",
+          "code": [
+            "addTodo.mutate(title, { ___: () => setTitle(\"\") });",
+            "",
+            "<button type=\"submit\" disabled={addTodo.___}>Save</button>"
+          ],
+          "blanks": [
+            {
+              "id": "f1",
+              "accept": [
+                "onSuccess"
+              ]
+            },
+            {
+              "id": "f2",
+              "accept": [
+                "isPending"
+              ]
+            }
+          ],
+          "explanation": "A call-level `onSuccess` is this form's own reaction: it runs after the hook's callbacks, and only while the form is mounted. `isPending` is true from `mutate` until the hook's last callback settles, which is exactly the window a second click must not start another POST."
+        },
+        {
+          "id": "async-compose",
+          "prompt": "Create the post, then navigate to it — and handle a failed create yourself.",
+          "code": [
+            "async function onPublish() {",
+            "  try {",
+            "    const post = await createPost.___(draft);",
+            "    navigate(`/posts/${post.id}`);",
+            "  } ___ {",
+            "    // the error is also on createPost.error",
+            "  }",
+            "}"
+          ],
+          "blanks": [
+            {
+              "id": "a1",
+              "accept": [
+                "mutateAsync"
+              ]
+            },
+            {
+              "id": "a2",
+              "accept": [
+                "catch",
+                "catch (error)",
+                "catch (err)",
+                "catch (e)"
+              ]
+            }
+          ],
+          "explanation": "`mutateAsync` resolves with the mutation's data, so the next step can use it, and rejects on failure — which makes the `catch` mandatory. `mutate` would return nothing to await."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-mutations",
+      "snippets": [
+        {
+          "id": "order-log",
+          "code": [
+            "const add = useMutation({",
+            "  mutationFn: createTodo,",
+            "  onMutate: () => log(\"hook onMutate\"),",
+            "  onSuccess: () => log(\"hook onSuccess\"),",
+            "  onSettled: () => log(\"hook onSettled\"),",
+            "});",
+            "",
+            "add.mutate(\"Buy milk\", {",
+            "  onSuccess: () => log(\"call onSuccess\"),",
+            "  onSettled: () => log(\"call onSettled\"),",
+            "});",
+            "// createTodo succeeds."
+          ],
+          "question": "In what order are the five lines logged?",
+          "answer": "hook onMutate, hook onSuccess, hook onSettled, call onSuccess, call onSettled",
+          "explanation": "`onMutate` runs before the `mutationFn`. The hook-level callbacks run inside the mutation, one after another; once the mutation has settled, the observer runs the callbacks you passed to `mutate`. (Logged in exactly this order headlessly against v5.104.)"
+        },
+        {
+          "id": "three-mutates",
+          "code": [
+            "const add = useMutation({",
+            "  mutationFn: (title) => api.createTodo(title), // \"Todo 1\" is the slowest to answer",
+            "  onSuccess: (todo) => hookLog.push(todo.title),",
+            "});",
+            "",
+            "for (const title of [\"Todo 1\", \"Todo 2\", \"Todo 3\"]) {",
+            "  add.mutate(title, { onSuccess: (todo) => callLog.push(todo.title) });",
+            "}",
+            "// All three succeed; Todo 2 answers first, then Todo 3, then Todo 1."
+          ],
+          "question": "What are `hookLog` and `callLog` at the end?",
+          "answer": "hookLog: [\"Todo 2\", \"Todo 3\", \"Todo 1\"]; callLog: [\"Todo 3\"]",
+          "acceptable": [
+            "hook: Todo 2, Todo 3, Todo 1 — call: Todo 3 only"
+          ],
+          "explanation": "Three requests run in parallel and the hook-level callback fires for each, in the order the responses arrive. Each `mutate` re-subscribes the observer to the newest mutation, so the call-level callback fires only for the last *call* — \"Todo 3\" — even though \"Todo 1\" finished last. (Run headlessly against v5.104.)"
+        },
+        {
+          "id": "status-during-refetch",
+          "code": [
+            "const save = useMutation({",
+            "  mutationFn: saveTodo,",
+            "  onSuccess: () => {",
+            "    queryClient.invalidateQueries({ queryKey: [\"todos\"] }); // not returned",
+            "  },",
+            "});",
+            "const list = useQuery({ queryKey: [\"todos\"], queryFn: fetchTodos }); // takes ~500 ms",
+            "",
+            "// After save.mutate(…) succeeds, the list refetch is under way:",
+            "console.log(save.status, list.fetchStatus);"
+          ],
+          "question": "What's logged while the list is refetching? And with `return` added before `queryClient`?",
+          "answer": "\"success fetching\"; with the return, \"pending fetching\"",
+          "acceptable": [
+            "success / fetching, then pending / fetching with return"
+          ],
+          "explanation": "Without the return, the invalidation starts but nothing waits for it, so the mutation is `success` while the list is still fetching — a Save button keyed on `isPending` re-enables early. Returned, the promise is awaited inside the mutation, and it stays `pending` until the refetch settles. (Both orders were observed headlessly against v5.104.)"
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-mutations",
+      "challengeSlug": "mutation-save-button"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+---
+id: a-mutation-is-a-write
+title: A mutation is a write you trigger — and the cache doesn't know about it
+---
+
+`useQuery` reads: it runs by itself when a component needs data. `useMutation` writes: it runs
+**only when you call `mutate`**, and it has no key, so the query cache has no idea which data
+your write just changed. Telling it is your job.
+
+```tsx
+function AddTodo() {
+  const queryClient = useQueryClient();
+  const addTodo = useMutation({
+    mutationFn: (title: string) => api.createTodo(title),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["todos"] }),
+  });
+
+  return (
+    <button disabled={addTodo.isPending} onClick={() => addTodo.mutate("Buy milk")}>
+      {addTodo.isPending ? "Saving…" : "Add"}
+    </button>
+  );
+}
+```
+
+A mutation is always in one of four states — in TanStack Query v5:
+
+| `status` | Flag | Meaning |
+| --- | --- | --- |
+| `idle` | `isIdle` | not called yet, or `reset()` |
+| `pending` | `isPending` | `mutationFn` is running (v4 called this `loading` / `isLoading`) |
+| `error` | `isError` | it failed; see `error` |
+| `success` | `isSuccess` | it worked; see `data` |
+
+Alongside: `variables` (what you passed to the latest `mutate` — kept after an error, handy for
+"Retry"), `data`, `error`, and `reset()` to clear it all back to `idle`.
+
+Three facts that surprise people coming from queries:
+
+- **No retries by default.** A failed write fails once (`retry: 0`). Queries retry 3 times;
+  mutations don't, because repeating a write isn't always safe. Opt in with `retry` when the
+  endpoint is idempotent.
+- **No deduping.** Calling `mutate` twice sends two requests — mutations run in parallel. A
+  double-clicked Save button creates two todos unless you disable it while `isPending`.
+- **No automatic refresh.** Without that `onSuccess`, the list keeps showing the old data
+  until something else refetches it. The fix is one of the previous unit's calls: invalidate
+  the affected keys, or write the response with `setQueryData`.
+
+Writes usually live in a **custom hook** (`useAddTodo`) that owns the `mutationFn` *and* the
+cache follow-up, so every screen that adds a todo refreshes the same queries.

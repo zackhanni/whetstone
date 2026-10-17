@@ -1,0 +1,65 @@
+---
+id: a-request-is-text
+title: A request is text you can read
+---
+
+Strip away the client library and an HTTP/1.1 request is a few lines of text. This is exactly
+what curl sent to a local API (captured with `curl -v`, which the next unit covers):
+
+```http
+POST /orders HTTP/1.1
+Host: localhost:4123
+User-Agent: curl/8.7.1
+Content-Type: application/json
+Accept: application/json
+Content-Length: 23
+
+{"sku":"TEA-1","qty":2}
+```
+
+Four parts, always in this order (RFC 9112, section 2.1):
+
+1. **The request line** — `method SP target SP version`. `POST` is what to do, `/orders` is
+   what to do it to, `HTTP/1.1` is the protocol.
+2. **Header fields** — one `Name: value` per line. Metadata about the request: who the host
+   is, what the body is, what the client wants back.
+3. **An empty line** — the only thing that says "headers are over".
+4. **The body** (optional) — exactly `Content-Length` bytes of data. A `GET` usually has none.
+
+The response has the same shape; only the first line differs:
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+Content-Length: 32
+Location: /orders/43
+Date: Sat, 17 Oct 2026 06:45:44 GMT
+
+{"id":43,"sku":"TEA-1","qty":2}
+```
+
+The **status line** carries the version, a three-digit **status code** and a reason phrase.
+Software reads the code; the phrase is for humans and may be anything. `201 Created` plus a
+`Location` header is how a server says "I made a new thing, and here's its URL" (RFC 9110,
+section 9.3.3).
+
+Three habits this gives you:
+
+- When an API "ignores your body", look for the missing or wrong `Content-Type` before you
+  look at the server code.
+- Header **names** are case-insensitive (`content-type` and `Content-Type` are the same
+  field); header **values** often aren't.
+- Debugging HTTP means reading these lines. Everything else — `fetch`, axios, a NestJS
+  controller — builds or parses them for you.
+
+<!--more-->
+
+**Line endings.** Each line ends in CR LF (`\r\n`), not just LF. `curl -v` shows this if you
+pipe its trace through `cat -v` — the trace goes to stderr, so `curl -v … 2>&1 | cat -v` — and
+every request and response header line ends in `^M`.
+
+**HTTP/2 and HTTP/3** carry the same fields in binary frames instead of text lines. The request
+line becomes pseudo-header fields (`:method`, `:path`, `:authority`), and field names must be
+lowercase (RFC 9113, section 8.2.1). That's why `curl -i https://…` against a modern site prints
+`HTTP/2 200` followed by `content-type: application/json` in lowercase. The *meaning* of
+methods, status codes and headers is defined once, in RFC 9110, for every version.

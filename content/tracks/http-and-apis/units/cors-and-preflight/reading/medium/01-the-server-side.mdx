@@ -1,0 +1,85 @@
+---
+id: the-server-side
+title: Writing the server side — an allow-list, credentials, and Vary
+---
+
+An API at `https://api.example.com` serves a web app at `https://app.example.com` (and an admin app
+on another origin). The app sends cookies, so requests are **credentialed**. Here's the whole CORS
+layer in plain Node:
+
+```ts
+const ALLOWED_ORIGINS = new Set(["https://app.example.com", "https://admin.example.com"]);
+
+/** Returns true when it answered the request itself (a preflight). */
+function handleCors(req: IncomingMessage, res: ServerResponse): boolean {
+  const origin = req.headers.origin;
+  const allowedOrigin = origin && ALLOWED_ORIGINS.has(origin) ? origin : null; // exact match only
+
+  res.setHeader("Vary", "Origin");                   // the answer depends on Origin: tell caches
+  if (allowedOrigin) {
+    res.setHeader("Access-Control-Allow-Origin", allowedOrigin);   // the one origin, never "*"
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+
+  const isPreflight = req.method === "OPTIONS" && req.headers["access-control-request-method"] !== undefined;
+  if (!isPreflight) return false;                    // a real request: let the route run
+
+  if (!allowedOrigin) {
+    res.writeHead(403).end();                        // no grant headers: the browser stops here
+    return true;
+  }
+  res.writeHead(204, {
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE",
+    "Access-Control-Allow-Headers": "authorization, content-type",
+    "Access-Control-Max-Age": "600",
+  }).end();
+  return true;
+}
+```
+
+Probed with curl (Node 24): a preflight from `https://app.example.com` gets `204` with all the grant
+headers; one from `https://app.example.com.evil.test` gets `403` with only `Vary: Origin`; a request
+with no `Origin` at all gets the data and no CORS headers.
+
+## The credential rules
+
+From the Fetch standard's table of legal and illegal combinations:
+
+| Request sends credentials? | `Access-Control-Allow-Origin` | `Access-Control-Allow-Credentials` | Shared? |
+| --- | --- | --- | --- |
+| no | `*` | — | yes |
+| no | `https://app.example.com/` | — | **no** — an origin has no trailing slash |
+| yes | `*` | `true` | **no** — with credentials it can't be `*` |
+| yes | `https://app.example.com` | `true` | yes |
+| yes | `https://app.example.com` | `True` | **no** — `true` is case-sensitive |
+
+And with credentials, `*` in `Access-Control-Allow-Methods`, `-Allow-Headers` or `-Expose-Headers`
+is not a wildcard either — it means a method or header literally named `*`. Tested in Chrome: a
+credentialed request to an endpoint answering `Allow-Headers: *` failed its preflight; the same
+request without credentials passed.
+
+## Why each line is there
+
+- **Exact match from a list.** `Access-Control-Allow-Origin` holds exactly one origin or `*`; you
+  can't list several. To serve several, compare the request's `Origin` against your list and echo
+  the match.
+- **`Vary: Origin` on every response,** allowed or not. The response now differs by `Origin`, and
+  the Fetch standard spells out the failure without it: a cache stores a response that has no
+  `Access-Control-Allow-Origin` (say, from a navigation) and later serves it to a CORS request,
+  which then fails.
+- **No grant on a refused preflight.** A `403` without CORS headers is how the standard suggests
+  saying no explicitly.
+
+<!--more-->
+
+**`Authorization` and `*`, spec vs browsers.** The Fetch standard says `Authorization` is never
+covered by `Access-Control-Allow-Headers: *`, even without credentials. MDN's compatibility data
+(late 2026) shows Chrome and Safari not implementing that yet and Firefox only behind a
+preference — and in the Chrome build this unit was tested with, a non-credentialed
+`Authorization` request against `Allow-Headers: *` went through. List `authorization` explicitly anyway: it's what the standard requires, and it's
+the only thing that works once credentials are involved.
+
+**Exposing response headers.** A script can only read a few response headers on a cross-origin
+response unless the server lists more in `Access-Control-Expose-Headers` — that's why a
+`Location` or `X-Request-Id` header can be visible in the network tab but `null` from
+`res.headers.get()`.

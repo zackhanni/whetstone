@@ -1,0 +1,44 @@
+---
+id: fresh-stale-gone
+title: Fresh, stale, gone — staleTime vs gcTime
+---
+
+Cached data moves through three stages, and two separate timers control them.
+
+**Fresh → stale: `staleTime`** (default `0`). Fresh data is served from the cache with no
+request. Stale data is *still served* — stale doesn't mean hidden — but the next **trigger**
+refetches it in the background. With the default of 0, data is stale the moment it arrives.
+
+The triggers, all on by default:
+
+- a component using the query **mounts** (`refetchOnMount`);
+- the window **regains focus** (`refetchOnWindowFocus` — since v5 that means the
+  `visibilitychange` event, so switching back to the tab);
+- the network **reconnects** (`refetchOnReconnect`);
+- plus anything you ask for: `invalidateQueries`, `refetch()`, `refetchInterval`.
+
+A trigger on fresh data does nothing. That's why `staleTime` is the knob for "too many
+requests": `staleTime: 60_000` means a minute of cache hits, then background refreshes again.
+
+**In use → gone: `gcTime`** (default 5 minutes). It only starts when the **last** component
+using a query unmounts. The entry then sits in the cache, *inactive*; mount it again within
+`gcTime` and you get the data instantly (plus a background refetch if it's stale). After
+`gcTime`, the entry is garbage-collected and the next mount starts from `pending` again.
+
+```ts
+useQuery({
+  queryKey: ["todos"],
+  queryFn: fetchTodos,
+  staleTime: 60_000,     // no refetches for a minute after each fetch
+  gcTime: 10 * 60_000,   // keep it 10 minutes after the last user unmounts
+});
+```
+
+The two timers don't interact: `gcTime` does nothing while the query is on screen, and
+`staleTime` never deletes anything. v4 called `gcTime` `cacheTime` — the docs renamed it in v5
+because people read it as "how long data is cached", which it isn't.
+
+**When a fetch fails**, a query retries **3 times** by default, with a delay that doubles from
+1 s (capped at 30 s). During those retries the query stays `pending` (or keeps its old data)
+and only then flips to `error` — about 7 seconds after the first failure. `failureCount` and
+`failureReason` show the retries as they happen. Mutations don't retry by default.

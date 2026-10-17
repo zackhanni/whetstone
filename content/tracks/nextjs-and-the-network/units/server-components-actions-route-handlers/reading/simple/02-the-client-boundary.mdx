@@ -1,0 +1,40 @@
+---
+id: the-client-boundary
+title: The client boundary — only serialisable props cross it
+---
+
+`'use client'` marks a **module and everything it imports** as client code. You put it on the
+file that a Server Component imports, not on every component below it. So keep the boundary as
+low as you can: mark the search box, not the whole layout, and the rest stays server-only.
+
+Props passed from a Server Component to a Client Component travel over the network inside the
+RSC payload, so React has to serialise them. The rule, from React's `'use client'` reference:
+
+- **Cross fine:** strings, numbers, booleans, `null`/`undefined`, arrays, plain objects, `Map`,
+  `Set`, `Date`, Promises, JSX elements, and **Server Functions** (`'use server'`).
+- **Don't cross:** ordinary functions, class instances, symbols not created with `Symbol.for`.
+
+The classic mistake is handing a callback down:
+
+```tsx
+// ❌ page.tsx (Server Component) — a plain function can't be serialised
+<ProductPicker products={products} onPick={(id) => addToCart(id)} />
+
+// ✅ move the handler into the Client Component, or pass a Server Action
+<ProductPicker products={products} addToCart={addToCartAction} />
+```
+
+`children` is the escape hatch for nesting server UI inside client UI:
+
+```tsx
+// page.tsx (Server Component)
+<Modal>          {/* 'use client': owns the open/closed state */}
+  <Cart />       {/* Server Component: queries the DB */}
+</Modal>
+```
+
+`Cart` is not imported by `Modal`, so it never joins the client module graph. Next renders it
+on the server and hands `Modal` the finished output. The DB query stays on the server.
+
+One more consequence of "props travel over the network": **everything you pass is readable in
+the browser.** Pass the three fields the component renders, not the whole database row.

@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 3,
+  "slug": "curl-for-debugging",
+  "title": "curl as a debugging tool",
+  "skills": ["http", "curl"],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Predict what `-i`, `-v`, `-s` and `-o` show, and which parts go to stdout and which to stderr",
+    "Say what `-d` does to the method and `Content-Type`, and send JSON with `--json` (curl 7.82.0+) or explicit headers",
+    "Quote JSON, URLs and variables correctly in zsh and bash, and use `--data-raw` to avoid the `@` file trap",
+    "Replay a signup → login → authenticated request, carrying a bearer token and cookies with `-c`/`-b`",
+    "Predict what `-X` and `-L` change on the wire, and make a script fail when the server returns a `5xx`"
+  ],
+  "sources": [
+    { "title": "curl man page", "url": "https://curl.se/docs/manpage.html" },
+    { "title": "curl: HTTP cookies", "url": "https://curl.se/docs/http-cookies.html" },
+    { "title": "curl changelog (8.3.0: missing input file is an error)", "url": "https://curl.se/changes.html" },
+    { "title": "RFC 9110: HTTP Semantics (GET content, redirects)", "url": "https://www.rfc-editor.org/rfc/rfc9110" },
+    { "title": "zsh manual: options (NOMATCH)", "url": "https://zsh.sourceforge.io/Doc/Release/Options.html" },
+    { "title": "jq 1.8 manual", "url": "https://jqlang.org/manual/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-curl", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-curl",
+      "questions": [
+        {
+          "id": "d-defaults",
+          "prompt": "`curl -d 'name=ada' https://api.example.com/users` — what method and `Content-Type` go out?",
+          "options": [
+            { "id": "post-form", "text": "`POST` with `Content-Type: application/x-www-form-urlencoded`" },
+            { "id": "get-query", "text": "`GET` with `?name=ada` appended to the URL" },
+            { "id": "post-plain", "text": "`POST` with `Content-Type: text/plain`" },
+            { "id": "post-none", "text": "`POST` with no `Content-Type` — curl leaves labelling to you" }
+          ],
+          "answer": "post-form",
+          "explanation": "`-d` sends data \"in the same way that a browser does when a user has filled in an HTML form\": the method becomes `POST` and curl adds the form content type. Putting data in the query string is what `-G` does. `text/plain;charset=UTF-8` is `fetch`'s default for a string body, not curl's."
+        },
+        {
+          "id": "json-labelled-form",
+          "prompt": "`curl -d '{\"email\":\"ada@example.com\"}' http://localhost:4123/auth/signup` gets `400 email is required` from an Express API using `express.json()`. The JSON is valid. Why?",
+          "options": [
+            { "id": "label", "text": "`-d` labels the body `application/x-www-form-urlencoded`, so the JSON parser skips it — use `--json`" },
+            { "id": "quotes", "text": "The JSON must be wrapped in double quotes, not single quotes" },
+            { "id": "method", "text": "`-d` sends a `GET`, and `GET` bodies are ignored" },
+            { "id": "strip", "text": "curl strips the braces from data that isn't a file" }
+          ],
+          "answer": "label",
+          "explanation": "The bytes on the wire are exactly the JSON — but the `Content-Type` says form, and body parsers trust the label, not the content. `--json` (curl 7.82.0+) sends `Content-Type: application/json` and `Accept: application/json`; on older curl add `-H 'Content-Type: application/json'`. Single quotes are the *right* choice for literal JSON in the shell."
+        },
+        {
+          "id": "which-flag-shows-request",
+          "prompt": "You suspect your `Authorization` header never actually goes out. Which flag shows you?",
+          "options": [
+            { "id": "v", "text": "`-v` — the lines starting with `>` are the request curl sent" },
+            { "id": "i", "text": "`-i` — it prints the headers" },
+            { "id": "I", "text": "`-I` — it prints only headers, so it's easier to read" },
+            { "id": "s", "text": "`-s` — it removes the noise so headers stand out" }
+          ],
+          "answer": "v",
+          "explanation": "`-i` prints the *response* headers only; it can't tell you what was sent. `-I` sends a different request (`HEAD`) and also shows only the response. `-v` prints both directions: `>` for sent, `<` for received, `*` for curl's notes. (`-s` hides the progress meter and errors; it shows nothing extra.)"
+        },
+        {
+          "id": "single-quoted-token",
+          "prompt": "`TOKEN` holds a valid access token, yet `curl -H 'Authorization: Bearer $TOKEN' http://localhost:4123/me` returns `401` with `error=\"invalid_token\"`. Why?",
+          "options": [
+            { "id": "literal", "text": "Single quotes stop the shell expanding `$TOKEN`, so the server receives the literal text `$TOKEN`" },
+            { "id": "expired", "text": "The token expired between the two commands" },
+            { "id": "lowercase", "text": "The scheme must be lowercase: `bearer`" },
+            { "id": "flag", "text": "Bearer tokens must be sent with `--oauth2-bearer`, not `-H`" }
+          ],
+          "answer": "literal",
+          "explanation": "The shell expands `$VAR` inside double quotes and leaves it alone inside single quotes. Use `-H \"Authorization: Bearer $TOKEN\"`. The auth scheme is case-insensitive in HTTP, and `--oauth2-bearer` is just a shortcut for the same header. An expired token would also be `invalid_token` — which is why `-v` (showing the `> Authorization:` line) is the faster way to tell the two apart."
+        },
+        {
+          "id": "at-in-data",
+          "prompt": "A script posts user comments with `curl -d \"$COMMENT\" …`. One comment is `@channel please review`. With curl 8.3.0 or later, what happens?",
+          "options": [
+            { "id": "file-error", "text": "curl tries to read a file named `channel please review`, fails, and exits with code 26 — nothing is sent" },
+            { "id": "sent", "text": "The comment is sent as typed; `@` is only special in URLs" },
+            { "id": "encoded", "text": "curl URL-encodes the `@` as `%40` and sends it" },
+            { "id": "empty", "text": "curl sends an empty `POST`" }
+          ],
+          "answer": "file-error",
+          "explanation": "For `-d`, data that **starts with** `@` is a filename to read the body from. Since curl 8.3.0 a missing file is an error (exit 26); older versions only printed a warning and sent an empty `POST` — the last option. If a file with that name existed, its contents would be posted. `--data-raw` sends the value literally."
+        },
+        {
+          "id": "zsh-no-matches",
+          "prompt": "In zsh, `curl http://localhost:4123/search?q=tea` prints `zsh: no matches found: http://localhost:4123/search?q=tea` and curl never runs. What's the fix?",
+          "options": [
+            { "id": "quote", "text": "Quote the URL: `curl 'http://localhost:4123/search?q=tea'`" },
+            { "id": "g", "text": "Add `-g` to switch off curl's URL globbing" },
+            { "id": "encode", "text": "Write the `?` as `%3F`" },
+            { "id": "bash", "text": "Nothing — the server is down" }
+          ],
+          "answer": "quote",
+          "explanation": "zsh treats an unquoted `?` as a filename wildcard and, with its default `NOMATCH` option, refuses to run a command whose pattern matched no files. The error comes from the shell, so no curl flag can fix it. `%3F` would make the `?` part of the *path* (`/search%3Fq=tea`) instead of starting a query string. Quote every URL that contains `?`, `&` or `[`."
+        },
+        {
+          "id": "health-check-exit",
+          "prompt": "A deploy step runs `curl -s https://api.example.com/health` and moves on if it exits `0`. The service is down and answers `503`. What happens?",
+          "options": [
+            { "id": "exit0", "text": "curl exits `0`: the transfer worked, so the deploy continues — add `--fail-with-body` (or `-f`) to get exit 22 on any status of 400 or more" },
+            { "id": "exit503", "text": "curl's exit code is the status, `503`, so the step fails" },
+            { "id": "exit1", "text": "curl exits `1` for every `5xx`, so the step fails" },
+            { "id": "silent", "text": "`-s` hides the error; removing it makes curl exit non-zero" }
+          ],
+          "answer": "exit0",
+          "explanation": "By default curl reports on the *transfer*, not on the HTTP status: a `503` delivered intact is a success. `-f`/`--fail` exits 22 for statuses ≥ 400 and prints no body; `--fail-with-body` (curl 7.76.0+) exits 22 and keeps the body for the log. `-s` only silences the progress meter and curl's own messages."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-curl",
+      "prompts": [
+        {
+          "id": "json-shortcut",
+          "prompt": "Send this body as JSON in one flag (curl 7.82.0+).",
+          "code": "curl ___ '{\"email\":\"ada@example.com\",\"password\":\"correct-horse\"}' http://localhost:4123/auth/signup",
+          "blanks": [{ "id": "a1", "accept": ["--json"] }],
+          "explanation": "`--json` = `--data-binary` + `Content-Type: application/json` + `Accept: application/json`, and it makes the request a `POST`. No `-X POST` needed."
+        },
+        {
+          "id": "json-long-form",
+          "prompt": "The same request on a curl older than 7.82.0, with the data sent literally even if it starts with `@`.",
+          "code": "curl -H '___: application/json' ___ '{\"email\":\"ada@example.com\"}' http://localhost:4123/auth/signup",
+          "blanks": [
+            { "id": "b1", "accept": ["Content-Type"] },
+            { "id": "b2", "accept": ["--data-raw"] }
+          ],
+          "explanation": "Without the header, `-d`-style options label the body as a form. `--data-raw` is `-d` without the `@`-means-file rule; `-d` would work for this literal too, but not for a value that happens to start with `@`."
+        },
+        {
+          "id": "bearer",
+          "prompt": "Send the captured access token. (Note the double quotes.)",
+          "code": "curl -H \"Authorization: ___ $TOKEN\" http://localhost:4123/me",
+          "blanks": [{ "id": "c1", "accept": ["Bearer"] }],
+          "explanation": "`Authorization: Bearer <token>` is the RFC 6750 header form. Double quotes let the shell expand `$TOKEN`; `--oauth2-bearer \"$TOKEN\"` builds the same header."
+        },
+        {
+          "id": "cookie-jar",
+          "prompt": "Save the cookies from login, then send them (and save the rotated one) on refresh.",
+          "code": [
+            "curl ___ jar.txt --json \"$CREDENTIALS\" http://localhost:4123/auth/login",
+            "curl ___ jar.txt -c jar.txt -X POST http://localhost:4123/auth/refresh"
+          ],
+          "blanks": [
+            { "id": "d1", "accept": ["-c", "--cookie-jar"] },
+            { "id": "d2", "accept": ["-b", "--cookie"] }
+          ],
+          "explanation": "`-c` / `--cookie-jar` writes every cookie curl holds to the file when it finishes; `-b` / `--cookie` reads the file and sends the cookies that match the URL. Naming the same file for both carries a session across commands."
+        },
+        {
+          "id": "status-only",
+          "prompt": "Print just the status code — no body, no progress meter.",
+          "code": "curl -s -o /dev/null -w '___\\n' http://localhost:4123/boom",
+          "blanks": [{ "id": "e1", "accept": ["%{http_code}", "%{response_code}"] }],
+          "explanation": "`-w` prints variables after the transfer; `%{http_code}` (also `%{response_code}`) is the last response's status. `-o /dev/null` throws the body away and `-s` hides the meter, so the output is exactly `500`."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-curl",
+      "snippets": [
+        {
+          "id": "i-into-file",
+          "code": [
+            "$ curl -s -i http://localhost:4123/orders/42 > out.txt",
+            "$ head -1 out.txt"
+          ],
+          "question": "What does `head -1` print?",
+          "answer": "HTTP/1.1 200 OK",
+          "acceptable": ["the status line", "HTTP/1.1 200"],
+          "explanation": "`-i` writes the status line and response headers into the **same** stream as the body — stdout — so the file starts with `HTTP/1.1 200 OK`. Handy for saving a whole response; a trap if a later step expects `out.txt` to be pure JSON."
+        },
+        {
+          "id": "v-into-file",
+          "code": [
+            "$ curl -s -v http://localhost:4123/orders/42 > out.txt",
+            "$ cat out.txt"
+          ],
+          "question": "What does `cat out.txt` print?",
+          "answer": "{\"id\":42,\"status\":\"open\"}",
+          "acceptable": ["only the body", "just the JSON body"],
+          "explanation": "`-v` writes its `*`, `>` and `<` lines to **stderr**, so they appear on your screen while only the body goes into the file. That's the opposite of `-i`. To capture the conversation too, redirect stderr as well: `2> trace.txt`."
+        },
+        {
+          "id": "x-post-with-l",
+          "code": [
+            "# /old-echo answers 301 Moved Permanently, Location: /echo",
+            "# /echo replies with the method and body it received",
+            "$ curl -s -X POST -L -d 'a=1' http://localhost:4123/old-echo"
+          ],
+          "question": "What method and body does `/echo` receive?",
+          "answer": "POST with an empty body",
+          "acceptable": ["POST, body empty", "a POST with no body"],
+          "explanation": "After a `301`, `302` or `303`, `-L` re-sends a `POST` as a `GET` without the body. `-X POST` forces the method *word* back to `POST` on every hop, but it doesn't bring the body back — the server gets an empty `POST` (curl 8.7.1 output: `{\"method\":\"POST\",…,\"body\":\"\"}`). Drop `-X` (you get a `GET`), or redirect with `307`/`308`, which keep method and body. Since curl 8.16.0, `--follow` applies `-X` the way the spec intends."
+        }
+      ]
+    }
+  ]
+}

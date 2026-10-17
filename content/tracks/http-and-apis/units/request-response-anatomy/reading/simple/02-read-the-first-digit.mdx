@@ -1,0 +1,54 @@
+---
+id: read-the-first-digit
+title: Read a status code by its first digit
+---
+
+You don't need to memorise status codes to react to one correctly. RFC 9110 (section 15) gives
+the first digit a fixed meaning, and a client **must** understand the class even when it doesn't
+know the code:
+
+| Class | Meaning | What the client does next |
+| --- | --- | --- |
+| `1xx` | Informational, more is coming | Usually nothing — your HTTP library handles it |
+| `2xx` | Success | Use the body |
+| `3xx` | Redirection | Look at `Location`; follow it or not |
+| `4xx` | Client error — the request as sent is the problem | Fix the request; resending the same bytes usually gets the same answer |
+| `5xx` | Server error — a valid-looking request failed on the server | Maybe retry later, if retrying is safe (next reading) |
+
+The RFC's own example: a client that receives an unknown `471` must treat it like `400 Bad
+Request` — "something is wrong with what I sent". An unknown `5xx` is treated like `500`.
+
+```ts
+const res = await fetch("/api/orders", { method: "POST", body, headers });
+
+if (res.ok) {
+  // res.ok is true for 200–299 only
+} else if (res.status >= 500) {
+  // server-side: a candidate for a retry
+} else if (res.status >= 400) {
+  // our request is wrong: show the error, don't loop
+}
+```
+
+`fetch` does **not** reject on a 404 or a 500. The promise resolves with a `Response` whose
+`ok` is `false`. It rejects only when it has no response to give you: a network failure (DNS,
+refused connection), a CORS block, or an abort. Forgetting that is how "the save failed
+silently" bugs happen.
+
+Two `4xx` codes mean "later", not "never": `429 Too Many Requests` (RFC 6585) and
+`408 Request Timeout`. Both are about timing, and a `429` often says how long to wait in a
+`Retry-After` header.
+
+Which specific code to *send* for each situation — `400` vs `422`, `401` vs `403`, `502` vs
+`504` — is a lookup, and lives in the HTTP status codes reference deck. This unit only needs
+the classes.
+
+<!--more-->
+
+**Interim responses.** One request can get several `1xx` responses before its one final
+response. You'll meet `101 Switching Protocols` when a connection upgrades to a WebSocket and
+`103 Early Hints` from CDNs; `fetch` never hands you either.
+
+**Out-of-range codes.** Valid codes are 100–599. RFC 9110 says a client receiving anything else
+should treat it as a `5xx`. (The RFC notes that implementations often use 600–999 internally for
+non-HTTP errors such as library failures — those should never reach the wire.)

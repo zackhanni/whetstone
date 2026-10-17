@@ -1,0 +1,60 @@
+---
+id: fresh-stale-304-vary
+title: Fresh, stale, 304 and Vary — the life of a cached response
+---
+
+A stored response is **fresh** while its age is below its lifetime, and **stale** after. RFC
+9111 picks the lifetime in a fixed order: in a shared cache `s-maxage` first, then `max-age`,
+then `Expires` minus `Date`, then a heuristic. Fresh responses are served without asking the
+server. Stale ones are usually **revalidated**, not thrown away.
+
+**Revalidation with an `ETag`.** The server labels each version of a resource; the cache sends
+the label back:
+
+```text
+$ curl -s -o /dev/null -D - -H 'If-None-Match: "v1"' http://127.0.0.1:4517/data
+HTTP/1.1 304 Not Modified
+Cache-Control: public, max-age=0, must-revalidate
+ETag: "v1"
+Vary: Accept-Encoding
+Date: Sat, 17 Oct 2026 10:13:21 GMT
+```
+
+That transcript is from a 25-line `node:http` server (connection headers trimmed): when
+`If-None-Match` matches the current `ETag`, it answers `304` with no body. RFC 9110 requires a 304 to repeat the headers a 200 would
+have sent among `Cache-Control`, `ETag`, `Vary` and `Date`, so the cache can update its copy, and
+forbids it from carrying content. A changed resource gets a normal `200` with a new `ETag`. Next.js
+generates ETags for pages by default (`generateEtags` in `next.config`).
+
+**`stale-while-revalidate=N`** (RFC 5861) lets a cache keep serving the stale copy for up to N
+more seconds **while** it revalidates in the background:
+
+```http
+Cache-Control: public, max-age=60, stale-while-revalidate=300
+```
+
+For the first 60 seconds: fresh, served directly. From 60 to 360: served stale instantly, with a
+refresh in the background so the next visitor gets new content. After 360: the cache must wait
+for the server. `must-revalidate` is the opposite promise: once stale, never serve without
+checking.
+
+**`Vary` widens the cache key.** By default a cache keys on method and URL. If the response
+depends on a request header, name it:
+
+```http
+Vary: Accept-Encoding
+```
+
+Now the cache stores a gzip copy and a brotli copy separately and never hands brotli to a client
+that didn't ask for it. Choose `Vary` headers with few distinct values. `Vary: Cookie` makes
+nearly every visitor a separate entry, and Vercel's CDN refuses to cache such responses
+altogether. Per-user content belongs behind `Cache-Control: private` instead.
+
+<!--more-->
+
+Next.js sets `Vary` on App Router responses for its own request headers (`rsc`,
+`next-router-state-tree`, `next-router-prefetch`, …) because the same URL returns HTML for a page
+load and an RSC payload for a client navigation. Since many CDNs ignore `Vary`, Next also adds an
+`_rsc` query parameter so the two variants get different URLs. A CDN that strips query strings
+from its cache key can still serve HTML to a client navigation; the Next.js CDN Caching guide
+covers what to preserve.

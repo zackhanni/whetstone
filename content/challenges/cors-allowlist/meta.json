@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "cors-allowlist",
+  "title": "Fix the API's CORS allow-list",
+  "skills": ["cors", "http"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "cors.ts",
+  "acceptanceCriteria": [
+    "An allowed origin is echoed exactly in `access-control-allow-origin` (never `*`), with `access-control-allow-credentials: true` when the config allows credentials",
+    "Lookalike origins — a longer host, another port, another scheme — get no `access-control-allow-origin`",
+    "Every response says `vary: Origin`, including refused ones and ones without an `Origin` header",
+    "An allowed preflight gets `204` with the configured methods, the configured header names (not `*`) and the max age",
+    "A preflight from an unlisted origin gets `403` and no grant headers",
+    "A request without `Origin`, or an `OPTIONS` without `access-control-request-method`, is passed to the route; the former gets no `access-control-*` headers"
+  ]
+}

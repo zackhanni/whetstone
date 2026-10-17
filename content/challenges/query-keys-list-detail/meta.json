@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "slug": "query-keys-list-detail",
+  "title": "Fix the keys behind a list + detail screen",
+  "skills": ["tanstack-query", "query-keys", "caching"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "TodoScreen.tsx",
+  "dependencies": { "@tanstack/react-query": "5.104.1" },
+  "acceptanceCriteria": [
+    "Switching the filter shows that filter's todos",
+    "Switching back to a filter you've already viewed shows its cached list at once (each filter has its own cache entry)",
+    "Selecting a todo shows **that** todo's details",
+    "`invalidateQueries({ queryKey: todoKeys.all })` refetches the list **and** the open detail",
+    "`invalidateQueries({ queryKey: todoKeys.lists() })` refetches lists only, not the detail"
+  ]
+}

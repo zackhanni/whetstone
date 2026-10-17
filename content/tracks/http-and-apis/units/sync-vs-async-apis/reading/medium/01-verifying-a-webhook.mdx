@@ -1,0 +1,73 @@
+---
+id: verifying-a-webhook
+title: Verifying a webhook — HMAC over the raw bytes
+---
+
+A webhook endpoint is a public URL that changes your data when it's called: "payment succeeded →
+mark the order paid". Anyone who finds the URL can `POST` to it. Providers therefore **sign** each
+delivery with a secret only you and they share, and your first job is to check that signature.
+
+## The common scheme: HMAC-SHA-256
+
+GitHub's version: the `X-Hub-Signature-256` header is `sha256=` followed by the hex HMAC-SHA-256 of
+the payload, keyed with your webhook secret. GitHub's docs give a test vector — secret
+`It's a Secret to Everybody`, payload `Hello, World!`, signature
+`757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17` — and this Web Crypto version
+reproduces it:
+
+```ts
+const encoder = new TextEncoder();
+
+async function verifyGitHubSignature(secret: string, rawBody: string, header: string | null) {
+  if (!header?.startsWith("sha256=")) return false;
+  const given = hexToBytes(header.slice("sha256=".length));   // null if it isn't hex
+  if (!given) return false;
+  const key = await crypto.subtle.importKey(
+    "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
+  );
+  return crypto.subtle.verify("HMAC", key, given, encoder.encode(rawBody));
+}
+```
+
+`crypto.subtle.verify` recomputes the HMAC and compares it for you. If you compute the hex yourself
+and compare strings, GitHub's docs say "never use a plain `==` operator" — use a constant-time
+comparison such as Node's `crypto.timingSafeEqual`.
+
+## Sign the bytes you received, not the object you parsed
+
+The signature covers the **exact bytes** of the body. Re-serialising changes them:
+
+```ts
+const raw = '{"id": "evt_1", "type": "payment.succeeded"}';    // 44 characters, with spaces
+JSON.stringify(JSON.parse(raw));                                 // 41 characters, without
+```
+
+Verified against the HMAC of `raw`, the re-serialised string fails. That's why Stripe's docs warn
+that "any manipulation to the raw body of the request causes the verification to fail" — and why a
+framework that parses JSON before your handler runs must be told to hand this one route the raw
+body.
+
+## Add a timestamp, and the signature expires
+
+A signature alone can be **replayed**: capture one valid delivery, send it again tomorrow. Stripe
+signs `timestamp + "." + body` and sends the timestamp alongside (`Stripe-Signature: t=…,v1=…`).
+Because the timestamp is inside the signature, an attacker can't change it, and the receiver
+rejects deliveries older than a tolerance — five minutes by default in Stripe's libraries, which
+also warn that a tolerance of `0` disables the check entirely.
+
+## Then acknowledge quickly
+
+Providers time out slow endpoints and treat that as a failure: GitHub expects a `2xx` within
+10 seconds. Verify, record the event, return `2xx` — and do the slow work (emails, invoices) from a
+queue afterwards. The next example is what "record the event" has to handle.
+
+<!--more-->
+
+**Treat the event as a nudge, not the truth.** Stripe's docs suggest retrieving the related object
+from its API (its newer "thin" event handlers are built around fetching the related object) instead
+of depending on event order. Acting on the current state also sidesteps the ordering problem in the next
+example.
+
+**Rotate secrets with overlap.** Stripe can keep an old and a new endpoint secret active for up to
+24 hours and sends one signature per active secret, so a receiver should accept a delivery if
+*any* `v1` signature verifies.

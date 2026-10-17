@@ -1,0 +1,68 @@
+---
+id: redirect-is-a-throw
+title: redirect() and notFound() are throws — and a catch can eat them
+---
+
+`redirect()`, `permanentRedirect()` and `notFound()` don't return. They **throw** an error that
+Next catches higher up and turns into a redirect or a 404 page. Code that wraps them in
+`try/catch` intercepts the signal before Next sees it:
+
+```ts
+"use server";
+export async function publish(formData: FormData) {
+  try {
+    await savePost(formData);
+    redirect("/posts"); // throws NEXT_REDIRECT…
+  } catch {
+    return { error: "Could not publish." }; // …caught here
+  }
+}
+```
+
+The post **is** saved, then the redirect's throw lands in the `catch`, and the user sees "Could
+not publish." on a form that worked. Two fixes, simplest first:
+
+```ts
+// 1. Keep the throwing call outside the try (what the redirect() docs recommend)
+try {
+  await savePost(formData);
+} catch {
+  return { error: "Could not publish." };
+}
+redirect("/posts");
+```
+
+```ts
+// 2. When a catch must wrap them, rethrow Next's signals first
+import { unstable_rethrow } from "next/navigation";
+
+try {
+  const post = await getPost(id); // may call notFound() inside
+  return render(post);
+} catch (err) {
+  unstable_rethrow(err); // rethrows redirect / notFound / Next's internal signals; no-op otherwise
+  logger.error(err);
+}
+```
+
+`unstable_rethrow` (still `unstable_` as of Next 16.4) must be the **first** line of the `catch`,
+and works the same in a `.catch()` handler.
+
+**The build-time version of this bug.** The same family of internal throws covers rendering.
+Without Cache Components, `next build` first tries each page as a static page; when a layout
+calls `cookies()`, Next throws a "Dynamic server usage" error to switch that page to per-request
+rendering. A `.catch()` around a cookie-reading loader catches it and logs a failure — on every
+healthy build. With Cache Components the build interrupts the prerender with a different internal
+error, and `unstable_rethrow` covers that one too.
+
+`next dev` never does that static attempt, so this shows up only in a **production build log**:
+after adding a `catch` in a layout, page or loader, run `next build` and grep the output for your
+handler's message.
+
+<!--more-->
+
+Why redirect throws at all: it has to stop rendering at that point, in whatever nested function
+called it, without every caller checking a return value. An exception is the only control flow
+that unwinds an arbitrary call stack. The docs list the throwing APIs: `notFound()`,
+`redirect()`, `permanentRedirect()`, plus the request-time APIs (`cookies()`, `headers()`,
+`searchParams`, uncached `fetch`) whenever Next is trying to render statically.

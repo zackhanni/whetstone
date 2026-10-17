@@ -1,0 +1,70 @@
+---
+id: states-that-surprise
+title: States that surprise in production
+---
+
+The table in the simple tier covers the happy path. These are the combinations that ship as
+bugs, each checked against TanStack Query v5.104.
+
+## The spinner that never stops: a disabled query
+
+```tsx
+const { data, isPending } = useQuery({
+  queryKey: ["orders", { customerId }],
+  queryFn: () => fetchOrders(customerId!),
+  enabled: customerId !== null, // wait until a customer is picked
+});
+if (isPending) return <Spinner />; // ❌ spins forever while no customer is picked
+```
+
+A disabled query with no data is `pending` + `idle`: no data, and nothing fetching. `isPending`
+is true until a customer is chosen, so the spinner never stops. Two honest renders: show the
+"pick a customer" state when the query is disabled, and use `isLoading` (`isPending &&
+isFetching`) for the spinner — it's true only while a first load is actually running. (The
+docs' "lazy queries" section recommends exactly this.)
+
+## Pending, but paused: offline
+
+With the default `networkMode: "online"`, a query that mounts offline doesn't call its
+`queryFn` at all. It sits at `pending` + `paused` (`isPaused` true), so **both** `isFetching`
+and `isLoading` are false. A screen that shows its spinner on `isLoading` and its empty state
+otherwise tells an offline user they have *no orders*. Check `isPaused` (or `fetchStatus ===
+"paused"`) and say "You're offline". When the connection returns, the fetch continues by
+itself.
+
+## Errors that take seven seconds
+
+On the client, a failing query is retried 3 times with 1 s, 2 s and 4 s delays before `status`
+becomes `error`. Two consequences:
+
+- **Tests time out.** A test that expects an error message waits ~7 s. The testing guide's
+  answer is a test `QueryClient` with `retry: false`, created fresh per test.
+- **Retrying a 404 is pointless.** `retry` accepts a function:
+  `retry: (failureCount, error) => !isNotFound(error) && failureCount < 3`. Meanwhile
+  `failureCount` and `failureReason` let you show "retrying…" honestly.
+
+## "It refetches when I switch tabs"
+
+With the default `staleTime: 0`, every return to the tab refetches every mounted query. Since
+v5 the trigger is `visibilitychange` (the tab becoming visible), not the window `focus` event,
+so clicking between two side-by-side windows doesn't refetch. If the refetches are too
+frequent, raise `staleTime` for that data; turning `refetchOnWindowFocus` off everywhere hides
+the symptom and keeps stale data on screen.
+
+## `gcTime: 0` turns navigation into hard loads
+
+A query with no mounted users is removed after `gcTime`. With the default 5 minutes, going back
+to a page shows its data instantly and refetches in the background. Set `gcTime: 0` (to "save
+memory") and every return trip is `pending` and a spinner again.
+
+<!--more-->
+
+**`initialData` vs `placeholderData`.** `initialData` is written into the cache: the query
+starts `success`, other components see it, and `staleTime` applies to it (pass
+`initialDataUpdatedAt` if it's older than "now"). `placeholderData` is not persisted: it's shown
+only while the real fetch runs, with `isPlaceholderData: true`. Use placeholder data for
+anything partial or fake.
+
+**`staleTime: Infinity` vs `"static"`.** Both stop staleness-based refetches. `Infinity` can
+still be invalidated by hand; `"static"` ignores `invalidateQueries` and the `"always"` refetch
+options too. Reserve `"static"` for data that truly can't change while the app runs.

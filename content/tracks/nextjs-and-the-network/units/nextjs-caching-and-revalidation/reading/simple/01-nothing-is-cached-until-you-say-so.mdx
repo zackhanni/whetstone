@@ -1,0 +1,64 @@
+---
+id: nothing-is-cached-until-you-say-so
+title: In Next.js 16, nothing is cached until you say so
+---
+
+This unit is about **Next's own caches**: results stored inside the Next.js server and the
+browser's router, keyed by function and arguments. The previous unit's HTTP headers are a
+separate layer that Next also writes.
+
+Next.js 16 introduced **Cache Components**, switched on with one flag:
+
+```ts
+// next.config.ts
+const nextConfig: NextConfig = { cacheComponents: true };
+```
+
+(Since Next 16.3 the docs also set `partialPrefetching: true` next to it. That option changes
+what `<Link>` prefetches, not what the server caches, and leaving it unset logs a warning.)
+
+With it on, data work in a page, layout or `GET` Route Handler (a database query, a `fetch`,
+`cookies()`) runs **at request time** by default. Caching is opt-in, with a directive:
+
+```ts
+import { cacheLife } from "next/cache";
+
+export async function getProducts() {
+  "use cache";
+  cacheLife("hours");
+  return db.product.findMany();
+}
+```
+
+The first call runs the query and stores the result; later calls with the same arguments get
+the stored result until its lifetime runs out. Arguments are part of the key, so a
+`getProduct(id)` written the same way stores `getProduct("a")` and `getProduct("b")` as separate
+entries.
+
+If you learned Next on an older version, your habits point the other way:
+
+| | Next 14 | Next 15 | Next 16 + `cacheComponents` |
+| --- | --- | --- | --- |
+| `fetch()` in a Server Component | cached by default | not cached by default | not cached; wrap the work in `use cache` |
+| `GET` Route Handler | static by default | dynamic by default | request time, unless it touches nothing uncached (then prerendered) |
+| How you opt in | `fetch` options, `unstable_cache`, `export const revalidate` | same, plus experimental `use cache` | `use cache`, `cacheLife`, `cacheTag` (stable) |
+
+Two consequences:
+
+- **Old tutorials are wrong for new code.** `export const revalidate = 3600` and
+  `fetch(url, { next: { revalidate } })` belong to the previous model. Under Cache Components
+  the migration guide replaces segment configs like `revalidate` and `dynamic` with `use cache`
+  plus `cacheLife`.
+- **The flag matters.** A Next 16 app **without** `cacheComponents` still runs the previous model
+  (`fetch` not cached by default, `cache: 'force-cache'`, `unstable_cache`, segment config). Check
+  `next.config` before you reason about a codebase.
+
+<!--more-->
+
+What about uncached work in a page? With Cache Components, anything that can't finish at build
+time (an uncached query, `cookies()`, `headers()`) must sit inside a `<Suspense>` boundary or a
+`use cache` scope. Otherwise `next dev` reports, and `next build` fails with, what the docs call
+a **blocking route** error: uncached or runtime data was accessed outside of `<Suspense>` (Next
+16.2 words it "Uncached data was accessed outside of `<Suspense>`"; 16.4 rephrased it). That
+error is the model telling you to decide, and the Streaming & Suspense unit covers the
+`<Suspense>` half.

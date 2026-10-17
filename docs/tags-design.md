@@ -171,18 +171,19 @@ when it migrates.
 ## Planned dimensions
 
 Roots (dimensions) are the top row of the interest filter, so they should be few and stable.
-Today there are two: `frontend` and `backend`. The backlog in `docs/ROADMAP.md` needs more. The
-list below is where new roots should go, so that each authoring session doesn't invent its own.
+The first two were `frontend` and `backend`; every row marked **landed** below is a root too. The
+backlog in `docs/ROADMAP.md` needs more. The list below is where new roots should go, so that each
+authoring session doesn't invent its own.
 **Add a root only when a lesson needs it** (an unused root is an orphan warning):
 
 | Root (slug) | For tracks like | Re-parent when it lands |
 | --- | --- | --- |
 | `languages` → `javascript`, `typescript` — **landed** with `javascript-typescript-fundamentals` | JS & TS fundamentals, Async JS & Timing, Dates & Time | `async` gains `javascript` as a parent — **done** with `async-javascript` (and `AbortController` gains `async`) |
-| `web` | HTTP & APIs, Next.js & the Network, CORS/caching | `http` (today under `backend` only) gains `web` |
-| `security` | Web Security (XSS, CSP, CSRF, OWASP) | `auth` gains `security` |
+| `web` — **landed** with `data-fetching-tanstack` (with the shared `caching` node under `web` + `backend`) | HTTP & APIs, Next.js & the Network, CORS/caching | `http` gains `web` — **done** with `http-and-apis` |
+| `security` — **landed** with `http-and-apis` | Web Security (XSS, CSP, CSRF, OWASP) | `auth` gains `security` — **done** |
 | `testing` | Testing & Quality (Vitest, Playwright) | — |
 | `databases` | Databases | — |
-| `tooling` | Terminal, Git & GitHub | — |
+| `tooling` — **landed** with `http-and-apis` (`curl`) | Terminal, Git & GitHub | — |
 | `system-design`, `infrastructure` | Capstone tracks | `architecture` may gain `system-design` |
 
 Re-parenting is free: a tag gaining a parent changes no content file, because units store only

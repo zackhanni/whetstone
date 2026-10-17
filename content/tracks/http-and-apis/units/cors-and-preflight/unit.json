@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 3,
+  "slug": "cors-and-preflight",
+  "title": "CORS & preflight: the browser's rule, the server's opt-in",
+  "skills": ["http", "cors"],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Explain the same-origin policy and what CORS relaxes: the request may still run; CORS decides whether the page can read the response",
+    "Predict whether a `fetch` call is preflighted from its method, headers and `Content-Type` (the Fetch standard's safelists)",
+    "Write the response headers for a credentialed cross-origin API: the exact origin, `Allow-Credentials: true`, explicit header names, `Vary: Origin`",
+    "Explain why curl and server-to-server calls never see CORS, and why CORS is not server-side access control"
+  ],
+  "sources": [
+    { "title": "Fetch Standard: CORS protocol", "url": "https://fetch.spec.whatwg.org/#http-cors-protocol" },
+    { "title": "Fetch Standard: CORS-safelisted request-header", "url": "https://fetch.spec.whatwg.org/#cors-safelisted-request-header" },
+    { "title": "MDN: Cross-Origin Resource Sharing (CORS)", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS" },
+    { "title": "MDN: Same-origin policy", "url": "https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Same-origin_policy" },
+    { "title": "MDN: Access-Control-Allow-Headers", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Access-Control-Allow-Headers" },
+    { "title": "MDN: Access-Control-Max-Age", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Access-Control-Max-Age" },
+    { "title": "MDN: Origin header", "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Origin" },
+    { "title": "MDN browser-compat-data: Access-Control-Allow-Headers", "url": "https://github.com/mdn/browser-compat-data/blob/main/http/headers/Access-Control-Allow-Headers.json" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-cors", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-cors",
+      "questions": [
+        {
+          "id": "same-origin",
+          "prompt": "Which URL is the **same origin** as `https://app.example.com`?",
+          "options": [
+            { "id": "path", "text": "`https://app.example.com/settings?tab=2`" },
+            { "id": "subdomain", "text": "`https://api.example.com`" },
+            { "id": "scheme", "text": "`http://app.example.com`" },
+            { "id": "port", "text": "`https://app.example.com:8443`" }
+          ],
+          "answer": "path",
+          "explanation": "An origin is scheme + host + port; path and query don't count. A different subdomain is a different host, `http` is a different scheme, and `:8443` is a different port from the default `443` — each of those is cross-origin, so a call from the app needs the other origin's CORS permission."
+        },
+        {
+          "id": "works-in-curl",
+          "prompt": "`curl https://api.partner.test/rates` returns JSON. The same URL from your web app's `fetch` fails with a CORS error. Where is the fix?",
+          "options": [
+            { "id": "server", "text": "On the server: it must send `Access-Control-Allow-Origin` for your origin — or you call it from your own backend instead" },
+            { "id": "no-cors", "text": "In the page: add `mode: \"no-cors\"` to the `fetch`" },
+            { "id": "request-header", "text": "In the page: send `Access-Control-Allow-Origin: *` as a request header" },
+            { "id": "http1", "text": "Force HTTP/1.1; curl works because it doesn't use HTTP/2" }
+          ],
+          "answer": "server",
+          "explanation": "CORS is the *responding* origin granting permission; nothing in the request can grant it. `mode: \"no-cors\"` makes the request succeed with an opaque response whose body and headers your script can't read — the error goes away and so does the data. curl works because it isn't a browser and doesn't implement CORS at all. If you don't control the API, proxy it through your own server, where CORS doesn't apply."
+        },
+        {
+          "id": "did-it-run",
+          "prompt": "A page calls `fetch(\"https://api.other.test/track?event=click\")` — a plain `GET`. The endpoint sends no CORS headers, and the script gets `TypeError: Failed to fetch`. Did the endpoint's handler run?",
+          "options": [
+            { "id": "yes", "text": "Yes — the request was sent and handled; the browser only withheld the response from the script" },
+            { "id": "no-blocked", "text": "No — the browser blocked the request before sending it" },
+            { "id": "no-preflight", "text": "No — the preflight failed, so the `GET` was never sent" },
+            { "id": "403", "text": "It ran, but the browser replaced the response with a `403`" }
+          ],
+          "answer": "yes",
+          "explanation": "A plain `GET` is a simple request: no preflight, sent immediately. The server logged it and ran the handler; then the browser checked the response, found no `Access-Control-Allow-Origin` for the page's origin, and gave the script a generic network error. That's why a `GET` that changes state is dangerous whatever your CORS headers say — and why CORS errors don't mean \"nothing happened\"."
+        },
+        {
+          "id": "which-is-simple",
+          "prompt": "Which cross-origin call goes out **without** a preflight?",
+          "options": [
+            { "id": "form", "text": "`fetch(url, { method: \"POST\", body: new URLSearchParams({ q: \"tea\" }) })`" },
+            { "id": "json", "text": "`fetch(url, { method: \"POST\", headers: { \"Content-Type\": \"application/json\" }, body })`" },
+            { "id": "auth", "text": "`fetch(url, { headers: { Authorization: \"Bearer …\" } })`" },
+            { "id": "put", "text": "`fetch(url, { method: \"PUT\", body: \"x\" })`" }
+          ],
+          "answer": "form",
+          "explanation": "No preflight needs a safelisted method (`GET`, `HEAD`, `POST`) *and* only safelisted headers. `URLSearchParams` sends `application/x-www-form-urlencoded;charset=UTF-8`, which is one of the three safelisted `Content-Type` values — it's what an HTML form could send anyway. `application/json` isn't safelisted, `Authorization` isn't a safelisted header, and `PUT` isn't a safelisted method."
+        },
+        {
+          "id": "credentials-and-star",
+          "prompt": "The API answers `200` with `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Credentials: true`. The app calls it with `credentials: \"include\"`. What does the app's script get?",
+          "options": [
+            { "id": "refused", "text": "A `TypeError` — with credentials, `*` doesn't count, so the browser won't share the response" },
+            { "id": "works", "text": "The JSON — `Allow-Credentials: true` makes the wildcard acceptable" },
+            { "id": "no-cookies", "text": "The JSON, but the cookies weren't sent" },
+            { "id": "rewritten", "text": "The JSON — the browser treats `*` as the page's origin" }
+          ],
+          "answer": "refused",
+          "explanation": "The Fetch standard's table: credentials mode `include` + `Access-Control-Allow-Origin: *` is not shared, whatever `Allow-Credentials` says. The request *was* sent with cookies and the server *did* answer `200` — the browser just won't hand it to the script. The fix is to echo the exact origin. (Tested in Chrome: `TypeError: Failed to fetch`.)"
+        },
+        {
+          "id": "two-frontends",
+          "prompt": "Two front-ends, `https://app.example.com` and `https://admin.example.com`, call the same API with cookies. How does the API allow both?",
+          "options": [
+            { "id": "echo", "text": "Compare the request's `Origin` with a list of both, echo the matching one, and send `Vary: Origin`" },
+            { "id": "list", "text": "`Access-Control-Allow-Origin: https://app.example.com, https://admin.example.com`" },
+            { "id": "star", "text": "`Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true`" },
+            { "id": "two-headers", "text": "Send two `Access-Control-Allow-Origin` headers, one per origin" }
+          ],
+          "answer": "echo",
+          "explanation": "The header holds exactly one origin or `*`, and two copies combine into the same comma-separated list — which matches no origin. With credentials `*` is refused. So the server picks the one origin that matches the request, and because the response now depends on `Origin`, adds `Vary: Origin` so a cache can't serve app's response to admin (or a response with no CORS headers to either)."
+        },
+        {
+          "id": "cors-as-auth",
+          "prompt": "\"The admin API is safe: its CORS allow-list only contains `https://admin.example.com`.\" What's wrong with that?",
+          "options": [
+            { "id": "not-auth", "text": "CORS only controls which *browser pages* may read responses; curl or a script can call the API with any `Origin`, so it still needs real authentication and authorization" },
+            { "id": "nothing", "text": "Nothing — requests from other origins are rejected" },
+            { "id": "need-star", "text": "It should use `*` so the allow-list can't be bypassed" },
+            { "id": "max-age", "text": "It also needs `Access-Control-Max-Age` to be safe" }
+          ],
+          "answer": "not-auth",
+          "explanation": "Outside a browser nothing enforces CORS, and `Origin` is just a header anyone can set: `curl -H 'Origin: https://admin.example.com' …` works. Even in a browser, simple requests reach the server before CORS is consulted. CORS protects users' browsers from other sites reading responses *as them*; every request still needs credentials checked on the server."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-cors",
+      "prompts": [
+        {
+          "id": "preflight-request",
+          "prompt": "The browser asks permission before a `PUT` with JSON and a bearer token.",
+          "code": [
+            "OPTIONS /cart HTTP/1.1",
+            "Origin: https://app.example.com",
+            "Access-Control-Request-___: PUT",
+            "Access-Control-Request-___: authorization,content-type"
+          ],
+          "blanks": [
+            { "id": "a1", "accept": ["Method"] },
+            { "id": "a2", "accept": ["Headers"] }
+          ],
+          "explanation": "A preflight is an `OPTIONS` request carrying the method the real request will use and the names of its non-safelisted headers (lowercased, sorted, comma-separated). It never carries cookies."
+        },
+        {
+          "id": "credentialed-response",
+          "prompt": "Grant the app's credentialed request, and keep caches honest.",
+          "code": [
+            "Access-Control-Allow-Origin: ___",
+            "Access-Control-Allow-Credentials: ___",
+            "Vary: ___"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["https://app.example.com"] },
+            { "id": "b2", "accept": ["true"] },
+            { "id": "b3", "accept": ["Origin"] }
+          ],
+          "explanation": "The exact origin (no trailing slash, never `*` with credentials), `true` in lowercase — the Fetch standard compares it case-sensitively — and `Vary: Origin` because the answer depends on which origin asked."
+        },
+        {
+          "id": "send-cookies",
+          "prompt": "Make a cross-origin `fetch` send the user's cookies.",
+          "code": "await fetch(\"https://api.example.com/cart\", { ___: \"include\" });",
+          "blanks": [{ "id": "c1", "accept": ["credentials"] }],
+          "explanation": "`fetch` defaults to `credentials: \"same-origin\"`, so a cross-origin call carries no cookies unless you ask. With `\"include\"`, the response is only readable if the server echoes your origin and sends `Access-Control-Allow-Credentials: true`."
+        },
+        {
+          "id": "cache-preflight",
+          "prompt": "Let browsers reuse this preflight's answer for ten minutes instead of the default five seconds.",
+          "code": "Access-Control-___: 600",
+          "blanks": [{ "id": "d1", "accept": ["Max-Age"] }],
+          "explanation": "`Access-Control-Max-Age` is in seconds; the Fetch standard's default is 5. Browsers cap it — MDN lists 24 hours for Firefox and 2 hours for Chromium (since v76)."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-cors",
+      "snippets": [
+        {
+          "id": "json-without-header",
+          "code": [
+            "// Page on http://localhost:4124, API on http://localhost:4123",
+            "await fetch(\"http://localhost:4123/api/cart\", {",
+            "  method: \"POST\",",
+            "  body: JSON.stringify({ sku: \"TEA-1\" }),",
+            "});"
+          ],
+          "question": "How many HTTP requests reach the API?",
+          "answer": "1 — the POST itself, no preflight",
+          "acceptable": ["1", "one", "just the POST"],
+          "explanation": "No `Content-Type` was set, so `fetch` sends the string as `text/plain;charset=UTF-8` — a safelisted value. `POST` is a safelisted method, so the browser sends it straight away. Add `\"Content-Type\": \"application/json\"` and Chrome sends two: an `OPTIONS` preflight, then the `POST`. (Both observed in the API's request log.)"
+        },
+        {
+          "id": "wildcard-with-credentials",
+          "code": [
+            "// Page on http://localhost:4124, API on http://localhost:4123",
+            "// The API answers every request with:",
+            "//   200 OK",
+            "//   Access-Control-Allow-Origin: *",
+            "const res = await fetch(\"http://localhost:4123/api-wild/9\", { credentials: \"include\" });",
+            "console.log(res.status);"
+          ],
+          "question": "What does the page see?",
+          "answer": "Nothing is logged — fetch rejects with TypeError: Failed to fetch",
+          "acceptable": ["TypeError: Failed to fetch", "an exception, not 200", "it throws"],
+          "explanation": "The server logged the `GET` and answered `200`, but with credentials included, `Access-Control-Allow-Origin: *` doesn't count. The browser withholds the whole response, so `fetch` rejects before there's a `res` to log. The script can't even learn the status — the details are only in the browser console."
+        },
+        {
+          "id": "method-not-allowed",
+          "code": [
+            "// Preflight answer: 204, Allow-Origin: http://localhost:4124,",
+            "//   Allow-Methods: GET, POST, PUT, DELETE",
+            "await fetch(\"http://localhost:4123/api/cart\", { method: \"PATCH\", body: \"{}\" });"
+          ],
+          "question": "Does the `PATCH` reach the API?",
+          "answer": "No — only the OPTIONS preflight arrives; fetch rejects with TypeError",
+          "acceptable": ["no", "only the preflight", "the PATCH is never sent"],
+          "explanation": "`PATCH` isn't safelisted, so the browser preflights it. The `204` grants the origin but its `Allow-Methods` doesn't include `PATCH`, so the preflight fails and the real request is never sent — the API's log shows the `OPTIONS` and nothing after it. Unlike the simple `GET` earlier, a failed preflight really does stop the request."
+        }
+      ]
+    },
+    { "type": "challenge", "id": "challenge-cors", "challengeSlug": "cors-allowlist" }
+  ]
+}

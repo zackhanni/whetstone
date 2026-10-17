@@ -1,0 +1,69 @@
+---
+id: what-goes-into-the-key
+title: What goes into the cache key, and what can't go into a cached scope
+---
+
+A `use cache` entry's key is built from the **build ID**, a **function ID** (a hash of where the
+function lives), and its **serialisable inputs**: arguments for a function, props for a component,
+plus any variable it **closes over** from an outer scope. Most cache bugs are a wrong guess about
+that last part.
+
+**Closures are keys.**
+
+```tsx
+async function Orders({ userId }: { userId: string }) {
+  const load = async (status: string) => {
+    "use cache";
+    return db.order.findMany({ where: { userId, status } }); // userId is captured
+  };
+  return <List orders={await load("open")} />;
+}
+```
+
+`userId` comes from the closure, so it's part of `load`'s key: user A and user B get separate
+entries. That is how you cache per-user data safely. The dangerous version is a value the key
+can't see. `React.cache` storage set outside the scope isn't visible inside it (a `use cache` scope
+has its own), and a module-level `Map` shared between cached and uncached code can hand the cached
+code a promise that never resolves during the build (the docs show this hanging the build until
+it times out).
+
+**Request data stays outside.** `cookies()`, `headers()` and `searchParams` are per request; a
+cached result is shared. Calling `cookies()` inside a `use cache` scope throws.
+(`'use cache: private'` does allow it, because its results are never kept in a server cache
+across requests, only in the browser's router cache; Next 16.2 still marks it experimental.)
+Passing the `cookies()` **promise** in as a prop is worse: during `next build` the cached function
+waits on request data that doesn't exist, and the build hangs until "Filling a cache during
+prerender timed out". Await it outside and pass the **value**:
+
+```tsx
+async function Prices() {
+  const currency = (await cookies()).get("currency")?.value ?? "USD"; // outside: per request
+  return <PriceList currency={currency} />;                           // a string, in the key
+}
+
+async function PriceList({ currency }: { currency: string }) {
+  "use cache";
+  cacheLife("hours");
+  return renderPrices(await getPrices(currency));
+}
+```
+
+**Only serialisable things cross in.** Arguments follow React's Server Component rules (no class
+instances, no functions you call). `children` and Server Actions may be **passed through** a cached
+component as long as it doesn't look inside them, which is how a cached shell can wrap a dynamic
+part.
+
+**Nested lifetimes.** An outer `use cache` **without** its own `cacheLife` runs on `default` (15
+minutes), and an inner cache with a shorter `revalidate` silently shortens it; a longer one can't
+lengthen it. With an explicit `cacheLife` on the outer scope, the outer value wins either way. The
+docs recommend always writing it, so a cache's lifetime can be read where it's declared.
+
+<!--more-->
+
+The browser has a cache too. Next's client router keeps payloads for the profile's `stale` time
+(sent to it in the `x-nextjs-stale-time` header) with a **30-second minimum** however low you set
+it, so prefetched links don't expire before they're clicked. (The `cacheLife` docs for Next 16.4
+also keep a cache with a `stale` under 30 seconds out of prerenders, so a low `stale` costs you the
+static shell too.) Calling `updateTag`,
+`revalidateTag`, `revalidatePath` or `refresh` from a Server Action clears that client cache
+completely, so revalidation from an action is never blocked by the floor.

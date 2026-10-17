@@ -1,0 +1,50 @@
+---
+id: the-key-is-the-entry
+title: The key is the cache entry — the queryFn only fills it
+---
+
+TanStack Query (this track targets **v5**) keeps one cache per `QueryClient`. Picture a map:
+each entry is filed under the **hash of a query key** and holds that query's data, error and
+status. When a component calls `useQuery({ queryKey, queryFn })`, the library:
+
+1. hashes `queryKey` and looks up that entry;
+2. returns whatever data the entry already has, straight away;
+3. runs `queryFn` if the entry has no data yet (or its data is stale), and stores the result
+   **under that key**.
+
+The `queryFn` is not part of the identity. It is only "how to fill this entry". So two calls
+with the same key are one entry, whatever their functions do:
+
+```tsx
+function OpenTodos() {
+  const { data } = useQuery({ queryKey: ["todos"], queryFn: () => fetchTodos("open") });
+  return <TodoList todos={data} />;
+}
+
+function DoneTodos() {
+  const { data } = useQuery({ queryKey: ["todos"], queryFn: () => fetchTodos("done") });
+  return <TodoList todos={data} />;
+}
+```
+
+Render both on one page and only **one** request goes out — the library dedupes fetches for
+the same key — so both components show the same list: whichever one mounted first ran its
+`queryFn` (with `OpenTodos` first, the open todos), and the second `queryFn` didn't run at all.
+
+The rule that prevents this is the one the docs state outright: **if the `queryFn` reads a
+variable, the variable goes in the key.**
+
+```tsx
+// ❌ status changes, the key doesn't: same entry, no new request
+useQuery({ queryKey: ["todos"], queryFn: () => fetchTodos(status) });
+
+// ✅ one entry per status
+useQuery({ queryKey: ["todos", { status }], queryFn: () => fetchTodos(status) });
+```
+
+With `status` in the key, the key behaves like a dependency array. Change `status` and the
+hook moves to a **different entry**: if that entry already has data you see it immediately,
+and if it has none (or it's stale) the `queryFn` runs and fills it.
+
+Two shape rules: the key must be an **array** at the top level (since v4), and everything in
+it must be serialisable with `JSON.stringify`.

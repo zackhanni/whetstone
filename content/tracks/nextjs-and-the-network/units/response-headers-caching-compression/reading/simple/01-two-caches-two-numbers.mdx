@@ -1,0 +1,54 @@
+---
+id: two-caches-two-numbers
+title: Two caches, two numbers — max-age and s-maxage
+---
+
+Between your server and the user sit two kinds of HTTP cache (RFC 9111):
+
+- a **private cache**: the browser's, for one user;
+- a **shared cache**: a CDN or reverse proxy, serving the same stored response to everyone.
+
+`Cache-Control` talks to both, and the two most-used directives each pick an audience:
+
+- `max-age=N`: fresh for N seconds, in **any** cache.
+- `s-maxage=N`: fresh for N seconds in **shared** caches only. It overrides `max-age` there, and
+  browsers ignore it.
+
+So one header can say "the CDN may keep this for a day, the browser must check every time":
+
+```ts
+// app/api/catalog/route.ts — the same JSON for every visitor
+export async function GET() {
+  const catalog = await getCatalog();
+  return Response.json(catalog, {
+    headers: { "Cache-Control": "public, max-age=0, s-maxage=86400" },
+  });
+}
+```
+
+The CDN answers from its copy for a day, so your function runs roughly once a day per CDN
+location instead of once per visitor (on Vercel, each new deployment starts with an empty cache).
+The browser keeps nothing fresh, so users never sit on an old copy the CDN has already replaced.
+
+Four recipes cover most responses:
+
+| Response | Header |
+| --- | --- |
+| Hashed build asset (`app.3f9a1c.js`) | `public, max-age=31536000, immutable` |
+| Same for every visitor, can be a little stale | `public, max-age=0, s-maxage=86400` |
+| Personal (a dashboard, "my orders") | `private, max-age=0` |
+| Must never be written to any cache (tokens, statements) | `no-store` |
+
+`private` keeps shared caches out: a CDN must not store it, but the user's own browser may.
+`public` is the reverse permission, and you rarely need it: a `max-age` or `s-maxage` already
+makes a normal response cacheable. Its real job is overriding the rule that a shared cache won't
+store the answer to a request that carried an `Authorization` header (`s-maxage` and
+`must-revalidate` lift that rule too).
+
+<!--more-->
+
+What if you send no `Cache-Control` at all? HTTP allows **heuristic caching**: a cache may
+reuse a `200` (and a few other status codes) for a while, guessing a lifetime from its
+`Last-Modified` date; RFC 9111 calls 10% of the time since that date a typical setting. "I didn't
+say cache it" is not "don't cache it", which is why MDN recommends an explicit `Cache-Control` on
+every response.

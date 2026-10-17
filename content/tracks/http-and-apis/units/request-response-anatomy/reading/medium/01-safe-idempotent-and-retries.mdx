@@ -1,0 +1,68 @@
+---
+id: safe-idempotent-and-retries
+title: Safe, idempotent, and what a client may resend on its own
+---
+
+Two properties of a method decide what browsers, proxies, prefetchers and retry loops are
+allowed to do with your request. RFC 9110 (section 9.2) defines both.
+
+**Safe** — the client asks for no state change. A crawler, a link prefetcher or a cache may
+send it without fear. **Idempotent** — sending it N times has the same *intended effect on the
+server* as sending it once.
+
+| Method | Safe | Idempotent | Why |
+| --- | --- | --- | --- |
+| `GET`, `HEAD`, `OPTIONS` | yes | yes | read-only, so repeating changes nothing |
+| `PUT` | no | yes | "make the resource equal to this" — the second PUT finds it already equal |
+| `DELETE` | no | yes | the second DELETE finds it already gone |
+| `POST` | no | **no** | "process this" — two calls can mean two orders |
+| `PATCH` | no | **no** | RFC 5789: depends on the patch (`set note` repeats fine, `increment qty` doesn't) |
+
+Every safe method is idempotent; not every idempotent method is safe.
+
+## Idempotent is about the effect, not the response
+
+```http
+DELETE /orders/7   ->  204 No Content
+DELETE /orders/7   ->  404 Not Found
+```
+
+Different responses, same effect: order 7 doesn't exist. RFC 9110 says so explicitly — the
+repeat has "the same intended effect, even if the original request succeeded, though the
+response might differ". Logging, metrics and audit rows don't count against idempotency
+either; only what the client asked for does.
+
+## Why it matters: retries after a lost response
+
+The dangerous moment is a request sent and no response received — a timeout, a dropped
+connection. Did the server do it? The client can't know. RFC 9110 draws the line:
+
+- An **idempotent** request "can be repeated automatically" after a communication failure:
+  if the first one landed, the second changes nothing.
+- A client **SHOULD NOT** automatically retry a non-idempotent request unless it has some way
+  to know it's safe. A proxy **MUST NOT**.
+
+So a retry helper that wraps every call in "try three times" is fine for `GET` and `PUT` and a
+double-charge bug for `POST /payments`.
+
+## Safe is a promise you make as a server
+
+```http
+GET /emails/42?action=archive
+```
+
+If that archives the email, every link checker, preview bot and prefetcher that follows the
+URL archives it too. RFC 9110 puts this on the resource owner: an unsafe action reached through a
+safe method must be disabled. Use `POST /emails/42/archive` (or `PATCH` the email's state)
+instead.
+
+<!--more-->
+
+**PUT vs PATCH in practice.** `PUT` replaces the whole representation, so a `PUT` that omits a
+field is asking for that field to be cleared — and that's what makes it repeatable. A `PATCH`
+of `{ "note": "x" }` happens to be idempotent; a `PATCH` of `{ "op": "increment", "path": "/qty" }`
+isn't. Because the method can't promise it, generic clients treat every `PATCH` as non-idempotent.
+
+**"Idempotent" methods your server breaks.** The property is a contract, not a guarantee. A
+`PUT /counters/7` handler that does `count += 1` is a bug in the server, and every retrying
+client in the chain will expose it.

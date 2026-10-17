@@ -1,0 +1,68 @@
+---
+id: key-factories-and-prefixes
+title: A key factory, and what each prefix reaches
+---
+
+Once a feature has a list, a filtered list and a detail view, hand-written keys drift: one
+file writes `["todo", id]`, another `["todos", "detail", id]`, and an invalidation misses one
+of them. The fix is to spell every key in **one place**, general → specific:
+
+```ts
+type TodoFilters = { status: "open" | "done"; page: number };
+
+export const todoKeys = {
+  all: ["todos"] as const,
+  lists: () => [...todoKeys.all, "list"] as const,
+  list: (filters: TodoFilters) => [...todoKeys.lists(), filters] as const,
+  details: () => [...todoKeys.all, "detail"] as const,
+  detail: (id: number) => [...todoKeys.details(), id] as const,
+};
+```
+
+Line by line:
+
+- **`all` is the root.** Every todo key starts with it, so one prefix reaches the whole
+  feature.
+- **`lists()` and `details()` are the branches.** They exist mostly to be *matched*: you
+  rarely query `["todos", "list"]` itself, but you will invalidate it.
+- **`list(filters)` ends with the filter object**, so every input of `fetchTodos(filters)` is
+  in the key, and property order doesn't matter.
+- **`as const`** keeps each key a readonly tuple type instead of `string[]`, which helps when
+  you pass it around typed.
+
+Keys are matched as **prefixes, element by element from the start.** That's how
+`invalidateQueries`, `removeQueries` and the other filter-taking methods decide what to touch:
+
+| Filter key | Matches |
+| --- | --- |
+| `todoKeys.all` | every list and every detail |
+| `todoKeys.lists()` | every list, any filters — no details |
+| `todoKeys.list({ status: "open", page: 1 })` | that list (and any longer key starting with it) |
+| `todoKeys.detail(5)` | todo 5 (and any longer key starting with it) — no other todo |
+
+`["todos"]` does **not** match `["user", "todos"]` (position 0 differs) or `["todos-archive"]`
+(strings aren't prefix-matched). Add `exact: true` when you mean only the key itself.
+
+## Co-locating the key with its function
+
+The key and the `queryFn` must stay in sync, so v5's `queryOptions` helper lets you define them
+together. At runtime it returns what you pass in; in TypeScript it ties the data type to the key:
+
+```ts
+import { queryOptions } from "@tanstack/react-query";
+
+export const todoQueries = {
+  list: (filters: TodoFilters) =>
+    queryOptions({ queryKey: todoKeys.list(filters), queryFn: () => fetchTodos(filters) }),
+  detail: (id: number) =>
+    queryOptions({ queryKey: todoKeys.detail(id), queryFn: () => fetchTodo(id) }),
+};
+
+// in a component
+const { data } = useQuery(todoQueries.detail(id));
+// elsewhere — the same key, typed: data is inferred as a Todo
+queryClient.setQueryData(todoQueries.detail(id).queryKey, updatedTodo);
+```
+
+Components never spell a key again; they ask the factory. The next units lean on this: an
+invalidation after a save is one line, and it can't miss a variant.

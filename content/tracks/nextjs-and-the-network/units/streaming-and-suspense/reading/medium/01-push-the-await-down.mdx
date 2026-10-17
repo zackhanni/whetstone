@@ -1,0 +1,89 @@
+---
+id: push-the-await-down
+title: Which await blocks the route — push it down to where the value is used
+---
+
+An `await` blocks **everything rendered after it in the same component**, and everything below
+that component. So the higher an `await` sits, the more of the page waits for it.
+
+```tsx
+// ❌ app/products/[id]/page.tsx — one slow call holds the whole page
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = await getProduct(id);                 // 80 ms
+  const recommendations = await getRecommendations(id); // 2.5 s
+  return (
+    <>
+      <ProductDetails product={product} />
+      <Recommendations items={recommendations} />
+    </>
+  );
+}
+```
+
+Nothing can stream until the 2.5-second call returns, because the JSX that would contain the
+`<Suspense>` boundaries hasn't been produced yet. Move the slow `await` into the component that
+needs it and give that component a boundary:
+
+```tsx
+// ✅ the details render now; only the recommendations wait
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const product = await getProduct(id);
+  return (
+    <>
+      <ProductDetails product={product} />
+      <Suspense fallback={<RecommendationsSkeleton />}>
+        <Recommendations productId={id} />
+      </Suspense>
+    </>
+  );
+}
+
+async function Recommendations({ productId }: { productId: string }) {
+  const items = await getRecommendations(productId); // suspends only this boundary
+  return <ul>{items.map((item) => <li key={item.id}>{item.name}</li>)}</ul>;
+}
+```
+
+That is how it plays out without Cache Components: the page still waits 80 ms for the product,
+then streams. With `cacheComponents: true` the build enforces the same idea more strictly: the
+remaining top-level work must be cacheable too (`getProduct` under `use cache`, `params` covered by
+`generateStaticParams`), or it also moves behind a boundary. The next reading covers why.
+
+The Streaming guide applies the same rule to request data in a **layout**. Don't `await cookies()`
+at the top; start it and hand the promise to the component that reads it:
+
+```tsx
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = cookies(); // started, not awaited
+  return (
+    <div>
+      <Nav>
+        <Suspense fallback={<p>Loading user…</p>}>
+          <UserMenu cookiePromise={cookieStore} />
+        </Suspense>
+      </Nav>
+      {children}
+    </div>
+  );
+}
+```
+
+`<Nav>` and `{children}` stay in the shell; only `UserMenu` waits.
+
+**Sibling or nested?** Sibling boundaries resolve independently, each in whatever order its data
+arrives. Nested boundaries reveal in order: the inner fallback can only appear once the outer
+content has rendered. Use siblings for unrelated panels and nesting for "details, then reviews
+below them".
+
+**A Client Component can wait too.** Start the fetch in a Server Component without awaiting it,
+pass the promise as a prop, and read it in the Client Component with React's `use(promise)` inside
+a `<Suspense>`. The fallback ships in the shell; the data streams in when the promise resolves.
+
+<!--more-->
+
+Pushing an `await` down doesn't make sequential calls parallel. If one component awaits A and
+then B, B still starts after A finishes. Start both first (`Promise.all`, or two sibling
+components) when neither depends on the other: the Fetching Data guide shows the waterfall and
+the fix.

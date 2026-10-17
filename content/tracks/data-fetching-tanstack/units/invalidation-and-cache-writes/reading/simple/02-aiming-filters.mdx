@@ -1,0 +1,50 @@
+---
+id: aiming-filters
+title: Aiming the call — query filters
+---
+
+`invalidateQueries`, `refetchQueries`, `resetQueries`, `removeQueries` and `cancelQueries` all
+take the same **query filters** object. With the key factory from the query-keys unit
+(`todoKeys.all` → `lists()` → `list(filters)`, and `details()` → `detail(id)`):
+
+```ts
+// prefix (the default): every key that starts with ["todos", "list"]
+queryClient.invalidateQueries({ queryKey: todoKeys.lists() });
+
+// exact: only the key itself, not the keys under it
+queryClient.invalidateQueries({ queryKey: todoKeys.all, exact: true });
+
+// type: only entries components are using right now ("active"), or only unused ones
+queryClient.removeQueries({ queryKey: todoKeys.all, type: "inactive" });
+
+// predicate: anything a key can't express, checked against each Query in the cache
+queryClient.invalidateQueries({
+  predicate: (query) => query.queryKey[0] === "todos" && query.queryKey[1] !== "detail",
+});
+```
+
+What each filter does:
+
+- **`queryKey`** — matched as a **prefix**, element by element. `['todos']` reaches every
+  todo key; `['todos', 'list']` reaches every list and no details.
+- **`exact: true`** — turns the prefix into an exact match.
+- **`type`** — `"active"` (has a mounted observer), `"inactive"`, or `"all"` (the default).
+- **`stale`** / **`fetchStatus`** — match only stale (or fresh) queries, or only those that are
+  `fetching`, `paused` or `idle`.
+- **`predicate`** — a final filter run on each matching `Query`; with no other filter, on
+  every query in the cache.
+
+`invalidateQueries` adds one more option, **`refetchType`**, which decides what gets
+**refetched** after everything matching is marked stale:
+
+| `refetchType` | Refetched now |
+| --- | --- |
+| `"active"` (default) | matches that are on screen |
+| `"inactive"` | matches nobody is using |
+| `"all"` | every match |
+| `"none"` | nothing — they're only marked stale |
+
+So `invalidateQueries({ queryKey: todoKeys.lists() })` and
+`refetchQueries({ queryKey: todoKeys.lists() })` differ in two ways: the first only refetches
+lists on screen (the others wait until they're shown), and it marks them all stale; the second
+fetches every cached list immediately and marks nothing.

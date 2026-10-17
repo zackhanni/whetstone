@@ -1,0 +1,405 @@
+{
+  "schemaVersion": 3,
+  "slug": "query-keys",
+  "title": "Query keys: the cache's identity",
+  "skills": [
+    "tanstack-query",
+    "query-keys",
+    "caching"
+  ],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Explain why the query key — not the `queryFn` — decides which cache entry a `useQuery` call reads, fetches and shares",
+    "Diagnose a key that misses a `queryFn` input from its symptoms: a filter change that never fetches, or two components sharing one entry",
+    "Predict whether two keys are the same entry: object property order and `undefined` properties don't count; array order, `5` vs `\"5\"` and per-render values do",
+    "Write a key factory ordered general → specific, and predict which cached keys a prefix such as `todoKeys.lists()` matches"
+  ],
+  "sources": [
+    {
+      "title": "TanStack Query v5 docs: Query Keys",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/query-keys"
+    },
+    {
+      "title": "TanStack Query v5 docs: Caching Examples",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/caching"
+    },
+    {
+      "title": "TanStack Query v5 docs: Query Options",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/query-options"
+    },
+    {
+      "title": "TanStack Query v5 docs: Filters",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/filters"
+    },
+    {
+      "title": "TanStack Query ESLint plugin: exhaustive-deps",
+      "url": "https://tanstack.com/query/v5/docs/eslint/exhaustive-deps"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-query-keys",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-query-keys",
+      "questions": [
+        {
+          "id": "shared-key",
+          "prompt": "`<OpenTodos />` calls `useQuery({ queryKey: ['todos'], queryFn: () => fetchTodos('open') })` and `<DoneTodos />` calls `useQuery({ queryKey: ['todos'], queryFn: () => fetchTodos('done') })`. Both mount on the same page. What happens?",
+          "options": [
+            {
+              "id": "one-entry",
+              "text": "One request; both components show the same list — the one fetched by whichever mounted first"
+            },
+            {
+              "id": "two-entries",
+              "text": "Two requests; each component shows its own filter, because each has its own `queryFn`"
+            },
+            {
+              "id": "last-wins",
+              "text": "Two requests; both components show whichever response arrives last"
+            },
+            {
+              "id": "throws",
+              "text": "TanStack Query throws, because two different functions are registered for one key"
+            }
+          ],
+          "answer": "one-entry",
+          "explanation": "The key is the cache entry; the `queryFn` only says how to fill it. Same key → same entry, and the second component joins the fetch already in flight (fetches are deduped by key), so its function doesn't run. Nothing throws: the library has no way to know the two functions fetch different things — that's what the key is for. Two requests would need two keys: `['todos', { status }]`."
+        },
+        {
+          "id": "tab-no-fetch",
+          "prompt": "Clicking the **Done** tab updates `status` and the tab highlight, but the list still shows open todos and no request appears in the network tab. The query is `useQuery({ queryKey: ['todos', 'list'], queryFn: () => fetchTodos(status) })`. What's going on?",
+          "options": [
+            {
+              "id": "key-unchanged",
+              "text": "`status` isn't in the key, so the hook stays on the same entry and nothing triggers a fetch"
+            },
+            {
+              "id": "stale-closure",
+              "text": "The `queryFn` closure is stale: it still captures `open` from the first render's scope"
+            },
+            {
+              "id": "stale-time",
+              "text": "`staleTime` is too long; with `staleTime: 0` a change to `status` would trigger a refetch"
+            },
+            {
+              "id": "needs-effect",
+              "text": "Nothing is wrong with the key; you're expected to call `refetch()` in an effect when `status` changes"
+            }
+          ],
+          "answer": "key-unchanged",
+          "explanation": "Fetches are triggered by events — a new entry, a mount, a window focus, an invalidation — not by the `queryFn` changing. The hook receives the new function on every render (so it isn't stale), but with an unchanged key nothing asks it to run. `staleTime` is already 0 by default, and staleness only matters once something triggers a fetch. A `refetch()` effect would fetch, but into the *same* entry: the two filters keep overwriting each other, and switching back shows the wrong list until the request lands. Put `status` in the key."
+        },
+        {
+          "id": "same-entry",
+          "prompt": "Which pair of keys refers to the **same** cache entry?",
+          "options": [
+            {
+              "id": "object-order",
+              "text": "`['todos', { status: 'open', page: 2 }]` and `['todos', { page: 2, status: 'open' }]`"
+            },
+            {
+              "id": "array-order",
+              "text": "`['todos', 'open', 2]` and `['todos', 2, 'open']`"
+            },
+            {
+              "id": "number-string",
+              "text": "`['todo', 5]` and `['todo', '5']`"
+            },
+            {
+              "id": "empty-object",
+              "text": "`['todos', { status: 'open' }]` and `['todos', { status: 'open', sort: null }]`"
+            }
+          ],
+          "answer": "object-order",
+          "explanation": "Keys are hashed from their JSON with object properties sorted, so property order inside an object never matters. Array positions do, and `5` and `\"5\"` serialise differently. The `null` pair is the subtle one: only `undefined` properties are dropped from the hash — `null` is a real JSON value, so `sort: null` makes a different key."
+        },
+        {
+          "id": "what-goes-in",
+          "prompt": "`api` is a module-level HTTP client. Which values belong in the key for `queryFn: ({ signal }) => api.get('/projects', { params: { orgId, archived }, signal })`?",
+          "options": [
+            {
+              "id": "inputs",
+              "text": "`orgId` and `archived`"
+            },
+            {
+              "id": "plus-client",
+              "text": "`orgId`, `archived` and `api`"
+            },
+            {
+              "id": "plus-signal",
+              "text": "`orgId`, `archived` and `signal`"
+            },
+            {
+              "id": "label-only",
+              "text": "Only a label such as `'projects'` — the closure always reads the latest `orgId` and `archived`"
+            }
+          ],
+          "answer": "inputs",
+          "explanation": "The key holds the values that identify the data and can change: `orgId` and `archived`. The client is the thing you call, not an input — the official `exhaustive-deps` lint rule says function call targets aren't key dependencies. `signal` is created by the library for each fetch and handed to the `queryFn`; it isn't yours to key on. And a label-only key brings back both bugs: different orgs share one entry, and changing `orgId` triggers no fetch."
+        },
+        {
+          "id": "lists-prefix",
+          "prompt": "With the reading's factory (`lists: () => [...todoKeys.all, 'list']`), which cached queries does `invalidateQueries({ queryKey: todoKeys.lists() })` match? Pick all that apply.",
+          "options": [
+            {
+              "id": "open-list",
+              "text": "`['todos', 'list', { status: 'open', page: 1 }]`"
+            },
+            {
+              "id": "done-list",
+              "text": "`['todos', 'list', { status: 'done', page: 3 }]`"
+            },
+            {
+              "id": "detail",
+              "text": "`['todos', 'detail', 5, { preview: true }]`"
+            },
+            {
+              "id": "hyphenated",
+              "text": "`['todos-list', { status: 'open', page: 1 }]`"
+            },
+            {
+              "id": "root",
+              "text": "`['todos']`"
+            }
+          ],
+          "answer": [
+            "open-list",
+            "done-list"
+          ],
+          "explanation": "A filter key matches every cached key that **starts with it**, element by element. `['todos', 'list']` is the start of both list keys, whatever their filters. The detail key diverges at position 1 (`'detail'`); `'todos-list'` is one string, not `'todos'` followed by `'list'` — elements are compared whole; and `['todos']` is *shorter* than the filter — a prefix of the filter, not the other way round. That asymmetry is what lets you invalidate \"every list\" without touching details."
+        },
+        {
+          "id": "detail-root",
+          "prompt": "Lists are keyed `['todos', 'list', filters]`, but a teammate keyed the detail `['todo', id]`. After a bulk *mark all done*, the code calls `invalidateQueries({ queryKey: ['todos'] })`. What breaks?",
+          "options": [
+            {
+              "id": "detail-stale",
+              "text": "An open detail stays stale: `['todo', 5]` doesn't start with `['todos']`"
+            },
+            {
+              "id": "close-enough",
+              "text": "Nothing — `'todo'` and `'todos'` share a prefix, so the detail is matched too"
+            },
+            {
+              "id": "lists-missed",
+              "text": "The lists are missed as well, because the invalidation key doesn't include their filter objects"
+            },
+            {
+              "id": "everything",
+              "text": "Every query in the app is invalidated, because a one-element key matches everything"
+            }
+          ],
+          "answer": "detail-stale",
+          "explanation": "Matching compares whole elements: `'todo'` and `'todos'` are different strings, full stop. The lists *are* matched, because a shorter filter matches any key that starts with it — you never need the filters to reach every variant. And `['todos']` only matches keys whose first element is `'todos'`. Root every key of a feature at one `all` key, and this class of miss disappears."
+        },
+        {
+          "id": "string-id",
+          "prompt": "The list primes the detail cache with `setQueryData(todoKeys.detail(todo.id), todo)`, where `todo.id` is `5`. The detail route builds its key by hand as `['todos', 'detail', params.id]`, with `params.id` read from the URL. What does the user see when they open todo 5?",
+          "options": [
+            {
+              "id": "miss",
+              "text": "A loading state and a fresh request: `'5'` and `5` are different keys"
+            },
+            {
+              "id": "instant",
+              "text": "The primed todo instantly — keys are compared loosely, like `==`"
+            },
+            {
+              "id": "instant-then-refetch",
+              "text": "The primed todo instantly, then a background refetch because primed data is stale"
+            },
+            {
+              "id": "error",
+              "text": "An error, because TanStack Query rejects string ids in keys"
+            }
+          ],
+          "answer": "miss",
+          "explanation": "The hash is the key's JSON, and `5` and `\"5\"` serialise differently, so these are two entries. The primed data sits unused, the detail page fetches, and a later `invalidateQueries({ queryKey: todoKeys.detail(5) })` misses the string-keyed entry too. Option three is what you'd get if the keys *matched* (the default `staleTime: 0` makes primed data stale at once). Strings are perfectly legal in keys — they just have to be the same strings. Normalise with `Number(params.id)` and go through the factory."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-query-keys",
+      "prompts": [
+        {
+          "id": "factory",
+          "prompt": "Complete the factory: each list is keyed by its filters, and each detail sits under the feature's root.",
+          "code": [
+            "export const todoKeys = {",
+            "  all: [\"todos\"] as const,",
+            "  lists: () => [...todoKeys.all, \"list\"] as const,",
+            "  list: (filters: TodoFilters) => [...todoKeys.lists(), ___] as const,",
+            "  details: () => [...___, \"detail\"] as const,",
+            "  detail: (id: number) => [...todoKeys.details(), ___] as const,",
+            "};"
+          ],
+          "blanks": [
+            {
+              "id": "k1",
+              "accept": [
+                "filters"
+              ]
+            },
+            {
+              "id": "k2",
+              "accept": [
+                "todoKeys.all"
+              ]
+            },
+            {
+              "id": "k3",
+              "accept": [
+                "id"
+              ]
+            }
+          ],
+          "explanation": "Every key starts from `todoKeys.all`, so `['todos']` reaches the whole feature; `lists()` and `details()` are the branches you'll invalidate; and the last element carries the `queryFn`'s inputs — the filter object for a list, the id for a detail."
+        },
+        {
+          "id": "inputs-in-key",
+          "prompt": "Make the `queryFn` take its filters *from the key* (built by the factory as `['todos', 'list', filters]`), so it can't read an input the key doesn't hold.",
+          "code": [
+            "useQuery({",
+            "  queryKey: todoKeys.list(filters),",
+            "  queryFn: ({ ___, signal }) => fetchTodos(queryKey[___], { signal }),",
+            "});"
+          ],
+          "blanks": [
+            {
+              "id": "i1",
+              "accept": [
+                "queryKey"
+              ]
+            },
+            {
+              "id": "i2",
+              "accept": [
+                "2"
+              ]
+            }
+          ],
+          "explanation": "The `queryFn` receives a context object — `queryKey`, `signal`, `client`, `meta` — and the key it gets is the one the entry is filed under. Reading the filters from position 2 instead of from the surrounding scope means there is no outside variable left to forget: whatever the function fetches, the key already identifies. With an `as const` factory, `queryKey[2]` is even typed as the filters."
+        },
+        {
+          "id": "exact-match",
+          "prompt": "Invalidate only the bare `['todos']` entry — not every key that starts with it.",
+          "code": "queryClient.invalidateQueries({ queryKey: [\"todos\"], ___: true });",
+          "blanks": [
+            {
+              "id": "e1",
+              "accept": [
+                "exact"
+              ]
+            }
+          ],
+          "explanation": "Filters match by prefix unless you pass `exact: true`, which turns the key into an exact match. Without it, `['todos']` would reach every list and detail under the root."
+        },
+        {
+          "id": "co-locate",
+          "prompt": "Define the key and its function together, so no component can pair a key with the wrong function.",
+          "code": [
+            "const todoDetail = (id: number) =>",
+            "  ___({ queryKey: todoKeys.detail(id), queryFn: () => fetchTodo(id) });",
+            "",
+            "const { data } = useQuery(todoDetail(id));"
+          ],
+          "blanks": [
+            {
+              "id": "q1",
+              "accept": [
+                "queryOptions"
+              ]
+            }
+          ],
+          "explanation": "`queryOptions` returns its argument unchanged at runtime; its value is in TypeScript, where the key is tagged with the data type. `queryClient.getQueryData(todoDetail(5).queryKey)` is then typed as the todo, which a hand-written key can't give you."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-query-keys",
+      "snippets": [
+        {
+          "id": "same-key-two-fns",
+          "code": [
+            "const requests: string[] = [];",
+            "const fetchTodos = (status: string) => { requests.push(status); return api.todos(status); };",
+            "",
+            "function OpenTodos() {",
+            "  const { data } = useQuery({ queryKey: [\"todos\"], queryFn: () => fetchTodos(\"open\") });",
+            "  return <p>Open: {data?.map((t) => t.title).join(\", \")}</p>;",
+            "}",
+            "function DoneTodos() {",
+            "  const { data } = useQuery({ queryKey: [\"todos\"], queryFn: () => fetchTodos(\"done\") });",
+            "  return <p>Done: {data?.map((t) => t.title).join(\", \")}</p>;",
+            "}",
+            "",
+            "// <OpenTodos /> then <DoneTodos /> mount together on a fresh QueryClient.",
+            "// The server has one open todo (\"Buy milk\") and one done todo (\"File taxes\")."
+          ],
+          "question": "Once the data arrives, what do the two paragraphs say, and what's in `requests`?",
+          "answer": "\"Open: Buy milk\" and \"Done: Buy milk\"; requests is [\"open\"]",
+          "acceptable": [
+            "both show Buy milk, one request (open)",
+            "Open: Buy milk / Done: Buy milk, [\"open\"]"
+          ],
+          "explanation": "One key, one entry. `OpenTodos` mounts first and starts the fetch; `DoneTodos` mounts while it's in flight and joins it instead of fetching again, so `fetchTodos(\"done\")` doesn't run. When the response lands, both components render the same entry. This was run headlessly against v5.104: one request, both paragraphs \"Buy milk\"."
+        },
+        {
+          "id": "hash-equality",
+          "code": [
+            "import { hashKey } from \"@tanstack/react-query\";",
+            "",
+            "const a = hashKey([\"todos\", { status: \"open\", page: 1, sort: undefined }]);",
+            "const b = hashKey([\"todos\", { page: 1, status: \"open\" }]);",
+            "const c = hashKey([\"tags\", new Set([\"urgent\"])]);",
+            "const d = hashKey([\"tags\", new Set([\"someday\"])]);",
+            "",
+            "console.log(a === b, c === d);"
+          ],
+          "question": "What's logged?",
+          "answer": "true true",
+          "acceptable": [
+            "true, true"
+          ],
+          "explanation": "`hashKey` is the function the cache uses: `JSON.stringify` with plain objects' keys sorted. So `a` and `b` match — order doesn't count and the `undefined` property is dropped. The surprise is `c === d`: a `Set` (like a `Map`) isn't a plain object and JSON has no form for it, so both serialise as `{}` and every Set-valued key collides. Pass `[...tags].sort()` instead."
+        },
+        {
+          "id": "clock-in-key",
+          "code": [
+            "function Feed() {",
+            "  const since = new Date().toISOString();",
+            "  const { data } = useQuery({",
+            "    queryKey: [\"feed\", { since }],",
+            "    queryFn: () => fetchFeed(since), // the server answers in about 20 ms",
+            "  });",
+            "  return <FeedList items={data} />;",
+            "}",
+            "",
+            "// Feed mounts once; nothing else happens on the page."
+          ],
+          "question": "How many requests does `Feed` make?",
+          "answer": "It never stops — about one request per response (44 in the first second when measured)",
+          "acceptable": [
+            "an endless loop of requests",
+            "dozens per second, forever",
+            "infinitely many"
+          ],
+          "explanation": "Each response re-renders `Feed` a few milliseconds later, the new render builds a new `since`, so a new key — a new entry with no data — and that triggers another fetch. Run headlessly with a 20 ms fake server, it made 44 requests and 44 cache entries in one second and kept going. A key holds the request's *inputs*; a clock read during render is not an input, it's a new identity per render."
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-query-keys",
+      "challengeSlug": "query-keys-list-detail"
+    }
+  ]
+}

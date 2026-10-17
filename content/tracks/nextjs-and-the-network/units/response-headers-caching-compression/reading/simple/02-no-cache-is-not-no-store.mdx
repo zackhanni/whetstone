@@ -1,0 +1,37 @@
+---
+id: no-cache-is-not-no-store
+title: no-cache does not mean "don't cache"
+---
+
+The two directives sound alike and do opposite things:
+
+- **`no-store`**: don't keep this anywhere. No cache, private or shared, may store it.
+- **`no-cache`**: you **may** store it, but you must check with the server before every reuse.
+
+`no-cache` is the "always up to date, but cheap" setting. The browser keeps the response, and
+each time it needs it sends a **conditional request**: "I have the version with `ETag: "v7"`, is
+that still current?" If it is, the server answers `304 Not Modified` with no body, and the
+browser uses its stored copy. You pay a round trip but not the download.
+
+```http
+GET /api/settings HTTP/1.1
+If-None-Match: "v7"
+
+HTTP/1.1 304 Not Modified
+ETag: "v7"
+Cache-Control: no-cache
+```
+
+`no-store` is for things that must never sit on a disk: a page showing a bank statement, the
+response that hands out an access token. Every request downloads it again.
+
+When people write "don't cache" they usually stack directives:
+
+```http
+Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate
+```
+
+That is exactly the header Next.js sends for a **dynamically rendered page**. Only `no-store`
+matters in it: MDN notes that when directives conflict, the most restrictive one wins, and here
+the others are made redundant by `no-store`. Reading that header correctly is a skill in itself:
+"this page is rendered per request and never stored", not "five different rules".

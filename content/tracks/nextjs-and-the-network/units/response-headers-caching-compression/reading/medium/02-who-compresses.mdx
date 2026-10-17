@@ -1,0 +1,55 @@
+---
+id: who-compresses
+title: gzip, brotli, and who actually compresses your response
+---
+
+Compression is negotiated per request. The client lists what it can decode, the server picks
+one and says which:
+
+```http
+GET /api/catalog HTTP/1.1
+Accept-Encoding: gzip, deflate, br
+
+HTTP/1.1 200 OK
+Content-Encoding: br
+Vary: Accept-Encoding
+```
+
+`br` (brotli) usually beats `gzip` on text: Vercel's docs quote about 14% smaller JavaScript,
+21% smaller HTML and 17% smaller CSS. Already-compressed formats (JPEG, PNG, WebP, zip) gain
+nothing and can grow, which is why servers and CDNs compress only text-like types.
+
+**Who does it depends on where you run.**
+
+- **`next start` (self-hosted):** Next compresses with **gzip** by default. The `compress` option
+  turns that off, and the docs say when: if nginx (or another proxy) in front already compresses,
+  for example because you want brotli there, set `compress: false` so nginx receives a plain
+  body to compress.
+- **Vercel:** the CDN compresses with brotli or gzip according to `Accept-Encoding`.
+- **Your Route Handler:** almost never. Return the plain body and let the layer above encode it.
+
+**Checking it with curl is a trap.** This is a local server that supports both encodings:
+
+```text
+$ curl -sI http://127.0.0.1:4517/data | grep -i content-encoding
+$ curl -sI --compressed http://127.0.0.1:4517/data | grep -i content-encoding
+Content-Encoding: gzip
+$ curl -sv --compressed -o /dev/null http://127.0.0.1:4517/data 2>&1 | grep -i '> accept-encoding'
+> Accept-Encoding: deflate, gzip
+```
+
+Plain `curl` sends **no** `Accept-Encoding`, so the server correctly sends the body uncompressed,
+and the first command printing nothing looks like "compression is off". `--compressed` asks for the encodings
+your curl build can decode, which here excluded brotli, so you see gzip while browsers get `br`.
+To check what browsers get, ask the way they do:
+
+```bash
+curl -s -o /dev/null -D - -H 'Accept-Encoding: br, gzip' https://your-site.example/
+```
+
+<!--more-->
+
+Compression and streaming pull against each other: a compressor buffers bytes until it has
+enough to compress well, which can delay the first visible chunk of a streamed page. The Next.js
+Streaming guide suggests requesting with `Accept-Encoding: identity` when you want to watch raw
+chunks arrive. The Streaming & Suspense unit picks this up.

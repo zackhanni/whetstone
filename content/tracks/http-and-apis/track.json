@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 3,
+  "slug": "http-and-apis",
+  "title": "HTTP & APIs in Practice",
+  "description": "What actually crosses the wire and how to debug it: a request as text, which methods are safe to retry and how an Idempotency-Key makes a POST retry-safe, curl as the tool that shows you the exchange, the API styles you'll be asked to choose between (REST, gRPC, tRPC), how credentials travel and how a JWT is verified, the browser rule CORS relaxes, and what changes when the answer can't come back in the same response — 202 + polling, push channels, and webhooks you verify and dedupe.",
+  "units": [
+    "request-response-anatomy",
+    "curl-for-debugging",
+    "rest-rpc-grpc",
+    "auth-over-http",
+    "cors-and-preflight",
+    "sync-vs-async-apis"
+  ]
+}

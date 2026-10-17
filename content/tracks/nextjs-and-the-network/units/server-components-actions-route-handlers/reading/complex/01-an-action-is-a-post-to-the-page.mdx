@@ -1,0 +1,68 @@
+---
+id: an-action-is-a-post-to-the-page
+title: A Server Action is a POST to the page that renders it
+---
+
+When the browser calls a Server Action, Next's client sends `POST` to the **current page's URL**
+with a `Next-Action` header naming the action. There is no `/api/actions/updatePost` route. Three
+production consequences follow from that one fact.
+
+**1. It is reachable without your UI.** Anyone can replay that POST with different arguments.
+Next makes action IDs hard to guess (encrypted, regenerated between builds) and drops unused
+actions from the build, and the docs still say: treat every action as a public endpoint.
+
+```tsx
+export default async function AdminPage() {
+  const session = await auth();
+  if (!session?.user.isAdmin) redirect("/login"); // decides what to RENDER
+
+  async function deleteAll() {
+    "use server";
+    // ❌ no check here: the page's redirect can't stop a direct call
+    await db.record.deleteMany();
+  }
+  return <form action={deleteAll}><button>Delete all</button></form>;
+}
+```
+
+The page-level `redirect` gates the HTML. The action is a separate entry point, so it needs its
+own `auth()` check, and an ownership check whenever it touches one record (`post.authorId ===
+session.user.id`), or any signed-in user can edit anyone's data by changing an `id`.
+
+**2. `proxy.ts` runs for it — and can eat it.** Proxy (Next 16's name for `middleware.ts`) sees
+the action as a `POST` to the page's path. A redirect written for page *visits* answers the action
+too:
+
+```ts
+// proxy.ts — "signed-in users don't need the sign-up page"
+if (pathname === "/signup" && request.cookies.has("session")) {
+  return NextResponse.redirect(new URL("/", request.url)); // also hits POST /signup
+}
+```
+
+If the browser-side sign-up sets the session cookie and the page then calls `createProfile()`,
+that POST to `/signup` now carries the cookie, gets a `307`, and the action never runs. The page
+looks fine; the profile row is simply never written. The fix is to redirect only page visits:
+
+```ts
+const isPageVisit = request.method === "GET" || request.method === "HEAD";
+if (isPageVisit && pathname === "/signup" && request.cookies.has("session")) { … }
+```
+
+The reverse also holds: the docs warn that a matcher which **excludes** a path also skips every
+action on that path, so a refactor can silently remove proxy coverage. Another reason the auth
+check belongs inside the action.
+
+**3. The origin is checked.** Next compares the request's `Origin` with `Host` (or
+`X-Forwarded-Host`) and aborts a mismatch. Behind a reverse proxy with a different public host,
+list it in `experimental.serverActions.allowedOrigins`. (CSRF itself is the Web Security track's
+subject.)
+
+<!--more-->
+
+Variables an inline action closes over (like a `publishVersion` captured at render time) are
+sent to the browser and back, encrypted with a key Next generates per build. When you self-host
+several instances that each ran their own `next build`, give them the same
+`NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`, or one instance can't decrypt what another encrypted
+("Failed to find Server Action"). The docs still advise against relying on that encryption to
+keep a secret.

@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 3,
+  "slug": "rest-rpc-grpc",
+  "title": "REST vs RPC vs gRPC (and where tRPC and GraphQL fit)",
+  "skills": ["http", "rest", "rpc"],
+  "difficulty": "core",
+  "estimatedMinutes": 25,
+  "objectives": [
+    "Tell a resource-shaped API from a procedure-shaped one by its endpoints, and say what each gets from HTTP",
+    "Explain what gRPC adds — a `.proto` contract with generated clients, HTTP/2, four call types, deadlines — and why browsers need gRPC-Web and a translating proxy",
+    "Explain how tRPC v11 shares a contract without code generation, and what that requires of every client",
+    "Choose REST, gRPC, tRPC or GraphQL from who calls the API, and justify the choice"
+  ],
+  "sources": [
+    { "title": "RFC 9110: HTTP Semantics (methods, caching)", "url": "https://www.rfc-editor.org/rfc/rfc9110" },
+    { "title": "Fielding: REST (dissertation, chapter 5)", "url": "https://ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm" },
+    { "title": "gRPC: Core concepts", "url": "https://grpc.io/docs/what-is-grpc/core-concepts/" },
+    { "title": "gRPC: Cancellation guide", "url": "https://grpc.io/docs/guides/cancellation/" },
+    { "title": "gRPC over HTTP/2 (protocol spec)", "url": "https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md" },
+    { "title": "grpc-web README (supported call types, proxy)", "url": "https://github.com/grpc/grpc-web" },
+    { "title": "gRPC blog: gRPC Load Balancing", "url": "https://grpc.io/blog/grpc-load-balancing/" },
+    { "title": "gRPC: Authentication guide", "url": "https://grpc.io/docs/guides/auth/" },
+    { "title": "Protocol Buffers: proto3 language guide", "url": "https://protobuf.dev/programming-guides/proto3/" },
+    { "title": "tRPC v11: Quickstart", "url": "https://trpc.io/docs/quickstart" },
+    { "title": "tRPC v11: HTTP RPC specification", "url": "https://trpc.io/docs/rpc" },
+    { "title": "GraphQL: Serving over HTTP", "url": "https://graphql.org/learn/serving-over-http/" },
+    { "title": "GraphQL: Performance (N+1, demand control)", "url": "https://graphql.org/learn/performance/" }
+  ],
+  "blocks": [
+    { "type": "reading", "id": "read-api-styles", "dir": "reading" },
+    {
+      "type": "quiz",
+      "id": "quiz-api-styles",
+      "questions": [
+        {
+          "id": "spot-the-shape",
+          "prompt": "An API has `POST /api/getInvoice`, `POST /api/sendInvoice` and `POST /api/voidInvoice`. What shape is it, and what does that cost?",
+          "options": [
+            { "id": "rpc", "text": "Procedure-shaped: every call is a `POST`, so HTTP caches never serve the reads and generic clients can't tell reads from writes" },
+            { "id": "rest-json", "text": "REST — it's JSON over HTTP" },
+            { "id": "rest-nouns", "text": "Resource-shaped, because `invoice` is a noun in every URL" },
+            { "id": "grpc", "text": "gRPC, because gRPC calls are always `POST`" }
+          ],
+          "answer": "rpc",
+          "explanation": "The URL names a function and the method is always `POST` — that's RPC over HTTP. It's a legitimate design, but `POST /api/getInvoice` is never answered from an HTTP cache (a cache may store a `POST` response, but never reuses it for another `POST`) and isn't retried as idempotent the way `GET /invoices/42` is. \"JSON over HTTP\" says nothing about shape, and gRPC is a specific protocol (HTTP/2, protobuf, `application/grpc`), not any API that uses `POST`."
+        },
+        {
+          "id": "cdn-reads",
+          "prompt": "A product catalogue is read millions of times a day through a CDN. Which endpoint can the CDN cache with standard HTTP rules and no extra machinery?",
+          "options": [
+            { "id": "get", "text": "`GET /products/42`" },
+            { "id": "rpc-post", "text": "`POST /rpc/getProduct` with `{\"id\":42}`" },
+            { "id": "graphql", "text": "`POST /graphql` with a `product(id: 42)` query" },
+            { "id": "grpc", "text": "A unary gRPC `GetProduct` call" }
+          ],
+          "answer": "get",
+          "explanation": "RFC 9110 makes `GET` responses cacheable by default; a cached `POST` response can at most answer a later `GET` of the same URL — never another `POST` (section 9.3.3). The RPC, GraphQL and gRPC variants all travel as `POST`s to URLs that don't identify the product, so caching them needs persisted queries, custom keys or an app-level cache. Public, read-heavy data is where resource-shaped HTTP earns its keep."
+        },
+        {
+          "id": "grpc-error-status",
+          "prompt": "A gRPC call fails with status `NOT_FOUND`. What HTTP status code does the response carry?",
+          "options": [
+            { "id": "200", "text": "`200` — the gRPC status travels in the `grpc-status` trailer" },
+            { "id": "404", "text": "`404`, mapped from `NOT_FOUND`" },
+            { "id": "500", "text": "`500`, because any gRPC error is a server error at the HTTP layer" },
+            { "id": "none", "text": "None — gRPC doesn't use HTTP" }
+          ],
+          "answer": "200",
+          "explanation": "gRPC rides on HTTP/2 but reports call outcomes in trailers: `grpc-status: 0` is OK, `5` is `NOT_FOUND`, and the HTTP status stays `200`. The gRPC protocol spec notes this is why a server should answer `415` to non-gRPC clients — so a plain HTTP/2 client doesn't read a gRPC error as success. Monitoring that counts HTTP `5xx`s sees none of these failures."
+        },
+        {
+          "id": "browser-grpc",
+          "prompt": "Your React app wants to call an internal gRPC service directly from the browser. What does that take?",
+          "options": [
+            { "id": "grpc-web", "text": "A gRPC-Web client plus something that translates it to gRPC (usually a proxy such as Envoy) — and only unary and server-streaming calls" },
+            { "id": "nothing", "text": "Nothing special: browsers speak HTTP/2, and gRPC is HTTP/2" },
+            { "id": "cors", "text": "Just CORS headers on the gRPC server" },
+            { "id": "bidi", "text": "A bidirectional stream over `fetch`, which replaces the proxy" }
+          ],
+          "answer": "grpc-web",
+          "explanation": "Browsers do use HTTP/2, but `fetch` exposes neither HTTP/2 framing nor trailers, so a page can't speak native gRPC. gRPC-Web is a browser-friendly variant that has to be translated — usually by a proxy such as Envoy (grpc-web's default), or by a server framework with gRPC-Web built in; per the grpc-web README it supports unary and server-streaming calls (the latter only in `grpcwebtext` mode), and client/bidirectional streaming are not supported. CORS may be needed on top, but it doesn't change the protocol."
+        },
+        {
+          "id": "deleted-field",
+          "prompt": "You delete `string note = 3;` from a protobuf message that deployed services still exchange. What should you do with the number 3?",
+          "options": [
+            { "id": "reserve", "text": "Mark it `reserved` so no future field reuses it" },
+            { "id": "renumber", "text": "Renumber the later fields down to close the gap" },
+            { "id": "nothing", "text": "Nothing — protobuf matches fields by name" },
+            { "id": "reuse", "text": "Reuse it for the next field you add, to keep numbers dense" }
+          ],
+          "answer": "reserve",
+          "explanation": "The field number identifies the field in the binary wire format and can't change once the message is in use. An old binary that still sends field 3 as a string would be misread if 3 came back as, say, an `int64 amount`. Renumbering breaks every deployed peer; names don't appear on the wire at all. The proto3 guide says you must reserve a deleted field's number."
+        },
+        {
+          "id": "trpc-requirement",
+          "prompt": "What does tRPC require that a REST + OpenAPI design doesn't?",
+          "options": [
+            { "id": "shared-ts", "text": "Client and server in TypeScript, with the client able to import the server router's type (one repo or a shared package)" },
+            { "id": "codegen", "text": "A schema file and a code-generation step" },
+            { "id": "http2", "text": "HTTP/2 between client and server" },
+            { "id": "graphql", "text": "A GraphQL server underneath" }
+          ],
+          "answer": "shared-ts",
+          "explanation": "tRPC's contract *is* `typeof appRouter`, imported type-only by the client, so the TypeScript compiler is what checks calls — no schema, no generator, but also no use to a Swift app or a partner's Python script. On the wire it's ordinary HTTP: `GET` for queries, `POST` for mutations, JSON bodies. (tRPC v11 also requires TypeScript 5.7.2 or later.)"
+        },
+        {
+          "id": "choose-for-three-callers",
+          "prompt": "A payments company has (a) a public API for merchants in many languages, (b) a dozen internal Go, Java and Python services that stream events to each other, and (c) its own Next.js dashboard backed by a TypeScript server in the same repo. Which mapping fits best?",
+          "options": [
+            { "id": "mixed", "text": "(a) REST described with OpenAPI, (b) gRPC, (c) tRPC" },
+            { "id": "trpc-all", "text": "tRPC everywhere — one style is simpler" },
+            { "id": "grpc-all", "text": "gRPC everywhere, merchants included" },
+            { "id": "graphql-b", "text": "(a) gRPC, (b) GraphQL, (c) REST" }
+          ],
+          "answer": "mixed",
+          "explanation": "Merchants have only HTTP libraries and your docs, so a resource-shaped API with a language-neutral description fits. Internal polyglot services with streaming are gRPC's home: one `.proto`, generated clients, HTTP/2 streams and deadlines. The dashboard shares a repo and a language with its server, which is exactly tRPC's condition. tRPC can't serve Go or merchants; gRPC would push merchants (and browsers) through gRPC-Web proxies."
+        },
+        {
+          "id": "graphql-partial",
+          "prompt": "A GraphQL response arrives with HTTP `200` and a body containing both `data` and an `errors` array. What happened?",
+          "options": [
+            { "id": "partial", "text": "Partial success: some fields resolved and some failed — the client must check `errors` even on a `2xx`" },
+            { "id": "total", "text": "The whole operation failed; `data` is a leftover from a cache" },
+            { "id": "bug", "text": "A server bug — any error must produce a `5xx`" },
+            { "id": "retry", "text": "The server is asking the client to retry" }
+          ],
+          "answer": "partial",
+          "explanation": "GraphQL resolves fields independently, so one query can partly succeed. graphql.org's guidance is a `2xx` whenever `data` is present and non-null, \"since HTTP does not yet have a status code representing partial success\". Errors that stop execution entirely (such as validation) come without `data`. Clients that only check `res.ok` silently drop the failed fields."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-api-styles",
+      "prompts": [
+        {
+          "id": "proto-contract",
+          "prompt": "Make `WatchOrders` a server-streaming call, and retire the deleted `note` field's number for good.",
+          "code": [
+            "service Orders {",
+            "  rpc GetOrder (GetOrderRequest) returns (Order);",
+            "  rpc WatchOrders (WatchOrdersRequest) returns (___ OrderEvent);",
+            "}",
+            "",
+            "message Order {",
+            "  int64 id = 1;",
+            "  ___ 2;            // was: string note = 2;",
+            "  string status = 3;",
+            "}"
+          ],
+          "blanks": [
+            { "id": "a1", "accept": ["stream"] },
+            { "id": "a2", "accept": ["reserved"] }
+          ],
+          "explanation": "`returns (stream X)` makes the server send a sequence of messages on one call. `reserved 2;` stops anyone reusing a number that deployed binaries still associate with the old field."
+        },
+        {
+          "id": "trpc-client",
+          "prompt": "Give the client the server's contract without importing any server code.",
+          "code": [
+            "import { createTRPCClient, httpBatchLink } from \"@trpc/client\";",
+            "import ___ { AppRouter } from \"../server/appRouter\";",
+            "",
+            "const trpc = createTRPCClient<___>({",
+            "  links: [httpBatchLink({ url: \"/trpc\" })],",
+            "});"
+          ],
+          "blanks": [
+            { "id": "b1", "accept": ["type"] },
+            { "id": "b2", "accept": ["AppRouter"] }
+          ],
+          "explanation": "`import type` is erased at build time, so no server code reaches the client bundle — only the compiler sees the router. Passing `AppRouter` as the type argument is what makes every `trpc.x.query()` call type-checked."
+        },
+        {
+          "id": "trpc-procedures",
+          "prompt": "One procedure reads, one writes. Pick the procedure types (they decide `GET` vs `POST` on the wire).",
+          "code": [
+            "export const appRouter = t.router({",
+            "  userById: t.procedure.input(z.string()).___(({ input }) => db.users.find(input)),",
+            "  userCreate: t.procedure",
+            "    .input(z.object({ name: z.string() }))",
+            "    .___(({ input }) => db.users.create(input)),",
+            "});"
+          ],
+          "blanks": [
+            { "id": "c1", "accept": ["query"] },
+            { "id": "c2", "accept": ["mutation"] }
+          ],
+          "explanation": "tRPC sends queries as `GET`s (input JSON-encoded in the query string) and mutations as `POST`s with a JSON body — so reads keep HTTP's caching and safe-method semantics."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+---
+id: content-type-and-accept
+title: Content-Type says what this is; Accept says what I want
+---
+
+Two headers, two directions, and they get mixed up constantly.
+
+- **`Content-Type`** describes the body of *the message it's on* (RFC 9110, section 8.3). On a
+  request it describes what you're sending; on a response, what you're getting.
+- **`Accept`** is a request header listing the media types the client would like *back*
+  (section 12.5.1). It describes no body at all.
+
+```http
+POST /reports HTTP/1.1
+Content-Type: application/json      <- the body below is JSON
+Accept: text/csv                    <- please answer in CSV
+
+{"month":"2026-09"}
+```
+
+The status codes line up with them: a server that can't read your body's type answers
+`415 Unsupported Media Type`; one that can't produce anything you'd accept may answer
+`406 Not Acceptable` (many just ignore `Accept` and send their default).
+
+## The bug this causes most often
+
+A server's body parser decides whether to parse by looking at `Content-Type`. Express 5's
+`express.json()` only parses requests whose `Content-Type` matches its `type` option (default
+`application/json`), and leaves `req.body` as `undefined` otherwise. Now look at what `fetch` sends when you hand it a string:
+
+```ts
+await fetch("/api/orders", {
+  method: "POST",
+  body: JSON.stringify({ sku: "TEA-1" }),   // a string...
+});
+// ...so the request goes out with Content-Type: text/plain;charset=UTF-8
+```
+
+That default comes from the Fetch standard: a string body is `text/plain;charset=UTF-8`,
+`URLSearchParams` is `application/x-www-form-urlencoded;charset=UTF-8`, and `FormData` is
+`multipart/form-data` with a generated boundary. Nothing in `fetch` looks inside the string to
+notice it's JSON. The fix is one line:
+
+```ts
+await fetch("/api/orders", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ sku: "TEA-1" }),
+});
+```
+
+## Content-Length counts bytes
+
+When a body is present, `Content-Length` is its size in **bytes** after encoding, not in
+characters. `"café"` is 4 JavaScript characters and 5 UTF-8 bytes. Frameworks compute this for
+you; hand-written servers and proxies that use `body.length` cut multi-byte responses short.
+
+<!--more-->
+
+**Parameters ride along.** `application/json; charset=utf-8` and `application/json` are the same
+media type with and without a parameter; the type and subtype are case-insensitive. A strict
+`header === "application/json"` comparison on the server rejects the first one — match the type,
+not the whole string.
+
+**`Accept` can weight choices.** `Accept: application/json, text/csv;q=0.5` prefers JSON and
+accepts CSV. `*/*` (curl's default) means "anything".

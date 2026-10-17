@@ -1,0 +1,72 @@
+---
+id: 202-and-a-status-url
+title: Don't make them wait — 202 Accepted and a status URL
+---
+
+"Export all orders as CSV" takes four minutes. Answering it inside one request means a
+connection held open for four minutes through every proxy, load balancer and serverless timeout
+between client and server — and if any of them gives up, the client gets an error while the work
+may well finish anyway.
+
+HTTP's answer is to split *accepted* from *done*. RFC 9110 defines **`202 Accepted`**: the request
+"has been accepted for processing, but the processing has not been completed", and the response
+"ought to describe the request's current status and point to (or embed) a status monitor". A
+local API, for real:
+
+```console
+$ curl -i --json '{"month":"2026-09"}' http://localhost:4123/reports
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Location: /reports/jobs/7
+Retry-After: 2
+…
+{"jobId":"7","status":"queued"}
+
+$ curl -s http://localhost:4123/reports/jobs/7
+{"jobId":"7","status":"running"}
+
+$ curl -s http://localhost:4123/reports/jobs/7
+{"jobId":"7","status":"succeeded","resultUrl":"/reports/7"}
+```
+
+The contract has three parts, and the client depends on all of them:
+
+1. **Accept fast**, with `202` and the status URL (here in `Location` and the body's `jobId`). Do
+   the work later, off the request path — a queue and a worker.
+2. **A status resource** the client can `GET` as often as it likes: `queued` → `running` →
+   `succeeded` (with where to find the result) or `failed` (with why).
+3. **A hint for how often to ask.** This API sends `Retry-After: 2`; RFC 9110 defines that header's
+   meaning on `503` and redirects, so on a `202` it's a convention your docs must state. Some APIs
+   put a suggested interval in the body instead.
+
+A polling client, then:
+
+```ts
+async function waitForReport(statusUrl: string): Promise<string> {
+  for (;;) {
+    const res = await fetch(statusUrl);
+    if (res.ok) {
+      const job = await res.json();
+      if (job.status === "succeeded") return job.resultUrl;
+      if (job.status === "failed") throw new Error(job.error);
+    } else if (res.status !== 429 && res.status !== 503) {
+      throw new Error(`status check failed: ${res.status}`);   // a 404 won't fix itself
+    }
+    const hint = res.headers.get("Retry-After") ?? "";
+    const seconds = /^\d+$/.test(hint) ? Number(hint) : 2;     // an HTTP date → the default
+    await new Promise((r) => setTimeout(r, seconds * 1000));
+  }
+}
+```
+
+<!--more-->
+
+**`202` is "noncommittal" on purpose.** RFC 9110 notes the work "might or might not eventually be
+acted upon" and that HTTP has no way to send a status code later. Everything after the `202` —
+the status resource, the failure reasons, how long results are kept — is your API's design, so
+write it down.
+
+**Give the poll loop an end.** A real client also stops after a deadline, backs off further when
+`429`s and `503`s keep coming, and can be cancelled (an `AbortSignal`) when the user navigates
+away. And parse `Retry-After` strictly: it may be an HTTP date, and `Number()` of a date is
+`NaN`, which `setTimeout` treats as `0` — a loop that hammers the status URL.

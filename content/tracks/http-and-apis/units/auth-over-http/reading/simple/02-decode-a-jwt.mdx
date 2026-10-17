@@ -1,0 +1,57 @@
+---
+id: decode-a-jwt
+title: Decode a JWT by hand — it's signed, not secret
+---
+
+This is the access token the local API returned at login in the curl unit:
+
+```text
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1XzEiLCJzY29wZSI6Im9yZGVyczpyZWFkIiwiaWF0IjoxNzkyMjE5Mjk0LCJleHAiOjE3OTIyMjAxOTR9.5wc-kqjtumFJgsybymv4FKVWuHGJLT2NbtOXsvW_wMI
+```
+
+Three parts separated by dots: **header . payload . signature**. The first two are JSON, encoded
+with **base64url** (base64 with `-` and `_` instead of `+` and `/`, and no `=` padding). Decoding
+needs no key:
+
+```console
+$ node -e 'const [h, p] = process.argv[1].split(".");
+  console.log(JSON.parse(Buffer.from(h, "base64url")));
+  console.log(JSON.parse(Buffer.from(p, "base64url")));' "$TOKEN"
+{ alg: 'HS256', typ: 'JWT' }
+{ sub: 'u_1', scope: 'orders:read', iat: 1792219294, exp: 1792220194 }
+```
+
+- **Header** — `alg: "HS256"`: the signature is an HMAC-SHA-256 with a secret only the server
+  knows.
+- **Payload** — the *claims*. `sub` (subject) is the user id; `scope` says what this token may be used for;
+  `iat` (issued at) and `exp` (expires) are **NumericDate** values: seconds since 1970, not
+  milliseconds (RFC 7519). `1792220194` is `2026-10-17T06:56:34Z` — fifteen minutes after `iat`.
+- **Signature** — 32 bytes of HMAC over the ASCII text `header.payload`. Change one character of
+  the payload and the signature no longer matches; that's the whole protection.
+
+So a JWT like this is **signed, not encrypted**. Anyone who holds it — the browser, a proxy log, a
+support engineer pasting it into a decoder — can read every claim. It can't be *changed* without
+the key, but it was never secret. Don't put anything in a payload you wouldn't show the user.
+
+<!--more-->
+
+**Encrypted JWTs exist.** RFC 7519 allows a JWT to be a JWE (JSON Web Encryption) instead of a
+JWS (JSON Web Signature). A JWE has **five** dot-separated parts and an unreadable payload. The
+three-part tokens login endpoints hand out are JWS.
+
+**Decoding in the browser.** `atob` expects classic base64, so it throws `InvalidCharacterError`
+on the `-` or `_` a base64url segment can contain, and it returns one character per *byte*, which
+garbles UTF-8. A version that works for any payload:
+
+```ts
+function decodeSegment(segment: string): unknown {
+  const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");   // atob accepts missing padding
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+```
+
+Newer runtimes can skip the alphabet swap: `Uint8Array.fromBase64(segment, { alphabet: "base64url" })`
+(Chrome 140, Firefox 133, Safari 18.2 and Node 25 per MDN's compatibility data — not Node 24).
+
+Decoding is for *reading*. It is never a substitute for verifying — the next example.

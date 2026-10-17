@@ -1,0 +1,480 @@
+{
+  "schemaVersion": 3,
+  "slug": "query-states",
+  "title": "Query states: pending, fetching, stale and gone",
+  "skills": [
+    "tanstack-query",
+    "data-fetching",
+    "caching"
+  ],
+  "difficulty": "core",
+  "estimatedMinutes": 35,
+  "objectives": [
+    "Tell `status` (is there data?) from `fetchStatus` (is the `queryFn` running?), and predict `isPending`, `isFetching` and `isLoading` at first load, during a background refetch, and for a disabled or offline query",
+    "Order a query's render checks so a background refetch or a failed refetch never blanks data already on screen, and an empty state never shows before data has loaded",
+    "Keep the previous page on screen during a key change with `placeholderData: keepPreviousData`, and use `isPlaceholderData` to guard actions",
+    "Choose `staleTime` or `gcTime` for a symptom, and name what refetches stale data by default (mount, window focus, reconnect) and how failed queries retry (3 times, with backoff)"
+  ],
+  "sources": [
+    {
+      "title": "TanStack Query v5 docs: Queries",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/queries"
+    },
+    {
+      "title": "TanStack Query v5 docs: Important Defaults",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/important-defaults"
+    },
+    {
+      "title": "TanStack Query v5 docs: Paginated / Lagged Queries",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/paginated-queries"
+    },
+    {
+      "title": "TanStack Query v5 docs: Disabling/Pausing Queries",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/disabling-queries"
+    },
+    {
+      "title": "TanStack Query v5 docs: Query Retries",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/query-retries"
+    },
+    {
+      "title": "TanStack Query v5 docs: Network Mode",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/network-mode"
+    },
+    {
+      "title": "TanStack Query v5 docs: Window Focus Refetching",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/window-focus-refetching"
+    },
+    {
+      "title": "TanStack Query docs: Migrating to TanStack Query v5",
+      "url": "https://tanstack.com/query/v5/docs/framework/react/guides/migrating-to-v5"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-query-states",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-query-states",
+      "questions": [
+        {
+          "id": "background-flags",
+          "prompt": "A list loaded a minute ago (default `staleTime: 0`). The user switches back to the tab and a background refetch starts. Which flags are `true` during that refetch?",
+          "options": [
+            {
+              "id": "fetching-only",
+              "text": "`isFetching` only"
+            },
+            {
+              "id": "pending-fetching",
+              "text": "`isPending` and `isFetching`"
+            },
+            {
+              "id": "loading-fetching",
+              "text": "`isLoading` and `isFetching`"
+            },
+            {
+              "id": "none",
+              "text": "None of them — the data is served from the cache"
+            }
+          ],
+          "answer": "fetching-only",
+          "explanation": "`status` is about data, and the data is there, so it stays `success`: `isPending` is false, and so is `isLoading` (`isPending && isFetching`). `fetchStatus` is about the `queryFn`, which is running, so `isFetching` is true. The cached data *is* served — that's exactly why it's not pending — but a request is still in flight."
+        },
+        {
+          "id": "disabled-spinner",
+          "prompt": "`useQuery({ queryKey: ['orders', { customerId }], queryFn: () => fetchOrders(customerId!), enabled: customerId !== null })`, rendered with `if (isPending) return <Spinner />`. What shows before a customer is picked?",
+          "options": [
+            {
+              "id": "spinner-forever",
+              "text": "The spinner, indefinitely: a disabled query with no data is `pending` + `idle`"
+            },
+            {
+              "id": "nothing",
+              "text": "Whatever comes after the check — a disabled query isn't pending"
+            },
+            {
+              "id": "runs-anyway",
+              "text": "The spinner briefly, while the query runs once with `customerId` null"
+            },
+            {
+              "id": "error",
+              "text": "An error state, because `customerId!` is null"
+            }
+          ],
+          "answer": "spinner-forever",
+          "explanation": "`pending` means \"no data yet\", and a disabled query has none, so `isPending` stays true while nothing is fetching. The query doesn't run while `enabled` is false, so the non-null assertion never executes. Use `isLoading` (true only while a first load is in flight) for the spinner, and render a \"pick a customer\" state for the disabled case."
+        },
+        {
+          "id": "refetch-fails",
+          "prompt": "A component renders `if (isPending) return <Spinner />; if (isError) return <ErrorPanel />; return <Table rows={data} />`. After a successful load, a background refetch keeps failing. With default options, what does the user see?",
+          "options": [
+            {
+              "id": "panel-replaces",
+              "text": "The table during the retries, then the error panel — though `data` still has the rows"
+            },
+            {
+              "id": "table-stays",
+              "text": "The table: `status` stays `success` for as long as the query has data to show"
+            },
+            {
+              "id": "spinner",
+              "text": "The spinner, because a refetch puts the query back into `pending`"
+            },
+            {
+              "id": "silent",
+              "text": "The table, unchanged: failed background refetches are silent by design"
+            }
+          ],
+          "answer": "panel-replaces",
+          "explanation": "In v5 a failed refetch sets `status: 'error'` *and keeps* `data` (with `isRefetchError` true). During the 3 default retries the query is still `success` + fetching, so the table shows; once they're exhausted, `isError` wins the ladder and the panel replaces a list that was perfectly good. Check \"no data\" for the panel, and show a banner when there's an error *and* data. A refetch never returns a query to `pending` — pending means no data."
+        },
+        {
+          "id": "empty-flash",
+          "prompt": "`const rows = data ?? []; if (rows.length === 0) return <p>No orders yet.</p>; if (isPending) return <Spinner />;` What's the bug?",
+          "options": [
+            {
+              "id": "flash",
+              "text": "\"No orders yet.\" shows during every first load: `data` is undefined while pending"
+            },
+            {
+              "id": "never-empty",
+              "text": "The empty state can never show, because a successful query never returns an empty array"
+            },
+            {
+              "id": "fine",
+              "text": "Nothing: `rows` is empty only when the server returned no orders"
+            },
+            {
+              "id": "refetch",
+              "text": "The empty state shows during every background refetch"
+            }
+          ],
+          "answer": "flash",
+          "explanation": "`data ?? []` turns \"not loaded yet\" into \"loaded, and empty\", and the empty check runs before the pending one, so a user with 300 orders is told they have none until the first response lands. Empty is a *success* state: check pending (and error) first. Background refetches don't trigger it, because `data` keeps its rows while refetching."
+        },
+        {
+          "id": "too-many-requests",
+          "prompt": "Every time a user switches back to the dashboard tab, its 12 queries refetch. The data changes about once an hour. What's the best fix?",
+          "options": [
+            {
+              "id": "stale-time",
+              "text": "Raise `staleTime` for those queries, so a focus refetch skips data that's still fresh"
+            },
+            {
+              "id": "gc-time",
+              "text": "Raise `gcTime`, so the data stays in the cache for longer between visits"
+            },
+            {
+              "id": "focus-off",
+              "text": "Set `refetchOnWindowFocus: false` as a default on the `QueryClient`"
+            },
+            {
+              "id": "retry-off",
+              "text": "Set `retry: false`, so each refetch is a single request instead of four"
+            }
+          ],
+          "answer": "stale-time",
+          "explanation": "Window focus refetches only *stale* queries, and with the default `staleTime: 0` everything is stale immediately. Telling the cache how long this data stays fresh fixes the cause for every trigger at once — the Important Defaults guide calls `staleTime` \"the recommended way to avoid excessive refetches\". `gcTime` only governs entries nobody is using, so it changes nothing here. Turning focus refetching off globally does stop these requests, but for every query in the app, including those that should refresh when the user comes back. Retries only happen after failures."
+        },
+        {
+          "id": "come-back",
+          "prompt": "Default options. A user leaves the Orders page — its only query user unmounts — and comes back 2 minutes later. What happens?",
+          "options": [
+            {
+              "id": "instant-plus-refetch",
+              "text": "The cached orders show instantly, and a background refetch starts"
+            },
+            {
+              "id": "spinner",
+              "text": "A spinner: the cache entry was dropped when the page unmounted"
+            },
+            {
+              "id": "instant-no-refetch",
+              "text": "The cached orders show, with no refetch: they're fresh for 5 minutes"
+            },
+            {
+              "id": "instant-then-spinner",
+              "text": "The cached orders flash, then a spinner while fresh data loads"
+            }
+          ],
+          "answer": "instant-plus-refetch",
+          "explanation": "Two separate timers. `gcTime` (5 minutes) keeps an *unused* entry around, so after 2 minutes it's still there and renders immediately. `staleTime` (0) made it stale on arrival, so the remount triggers a background refetch — `success` + fetching, no spinner. The 5 minutes is the garbage-collection time, not a freshness window; that confusion is why v5 renamed `cacheTime` to `gcTime`."
+        },
+        {
+          "id": "placeholder-next",
+          "prompt": "A paged query uses `placeholderData: keepPreviousData`. The user clicks **Next** on page 1. Before page 2 arrives, what does the query report?",
+          "options": [
+            {
+              "id": "success-page1",
+              "text": "`status: 'success'`, `data` = page 1, `isPlaceholderData: true`"
+            },
+            {
+              "id": "pending",
+              "text": "`status: 'pending'`, `data` = undefined, `isPlaceholderData: false`"
+            },
+            {
+              "id": "success-undefined",
+              "text": "`status: 'success'`, `data` = undefined, `isPlaceholderData: true`"
+            },
+            {
+              "id": "page1-cached",
+              "text": "`status: 'success'`, `data` = page 1, `isPlaceholderData: false` — page 1 is copied into page 2's entry"
+            }
+          ],
+          "answer": "success-page1",
+          "explanation": "Page 2 is a new key with no data, which would normally mean `pending`. The placeholder function returns the previous key's data, so the query reports success with page 1's rows and flags them with `isPlaceholderData` — that flag is how you dim the list and disable **Next**. Placeholder data is never written into page 2's cache entry; when the real page lands, it replaces the placeholder."
+        },
+        {
+          "id": "refetch-triggers",
+          "prompt": "A query is mounted and its data is stale (default options, in the browser). Which of these make it refetch on their own? Pick all that apply.",
+          "options": [
+            {
+              "id": "tab-visible",
+              "text": "The user switches back to the tab"
+            },
+            {
+              "id": "reconnect",
+              "text": "The network reconnects"
+            },
+            {
+              "id": "another-mount",
+              "text": "Another component that uses the same key mounts"
+            },
+            {
+              "id": "rerender",
+              "text": "The component re-renders because its parent did"
+            },
+            {
+              "id": "fn-change",
+              "text": "The `queryFn` closure changes"
+            }
+          ],
+          "answer": [
+            "tab-visible",
+            "reconnect",
+            "another-mount"
+          ],
+          "explanation": "The automatic triggers are `refetchOnWindowFocus` (since v5, the `visibilitychange` event — the tab becoming visible), `refetchOnReconnect` and `refetchOnMount` (a new observer of a stale query), all on by default, and all ignored while data is fresh. A re-render, or a new function for the same key, triggers nothing — the reason a key that misses a variable never refetches. (The focus and reconnect triggers were checked headlessly by dispatching `visibilitychange` and `offline`/`online`; a plain `focus` event did nothing.)"
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-query-states",
+      "prompts": [
+        {
+          "id": "render-ladder",
+          "prompt": "Gate the full-screen spinner on \"no data yet\", show a small hint during any fetch, and a banner when a refetch failed but data remains.",
+          "code": [
+            "if (___) return <Spinner />;",
+            "if (data === undefined) return <ErrorPanel error={error} />;",
+            "",
+            "return (",
+            "  <>",
+            "    {___ && <small>Refreshing…</small>}",
+            "    {___ && <Banner>Couldn't refresh — showing the last loaded list</Banner>}",
+            "    <Table rows={data} />",
+            "  </>",
+            ");"
+          ],
+          "blanks": [
+            {
+              "id": "r1",
+              "accept": [
+                "isPending",
+                "status === 'pending'"
+              ]
+            },
+            {
+              "id": "r2",
+              "accept": [
+                "isFetching",
+                "fetchStatus === 'fetching'"
+              ]
+            },
+            {
+              "id": "r3",
+              "accept": [
+                "isError",
+                "isRefetchError",
+                "status === 'error'"
+              ]
+            }
+          ],
+          "explanation": "`isPending` (no data) is the only state that deserves a full-screen spinner. Past it, a missing `data` means this key's first load failed (a failed page change included). `isFetching` covers first loads and background refetches alike, so it's for a hint beside the data. Below the gates, `isError` can only mean a refetch failed while data remains — `isRefetchError` names that exactly."
+        },
+        {
+          "id": "keep-previous",
+          "prompt": "Keep page N on screen while page N+1 loads, and don't let the user click ahead on page N's `hasMore`.",
+          "code": [
+            "const { data, isPlaceholderData } = useQuery({",
+            "  queryKey: [\"projects\", { page }],",
+            "  queryFn: () => fetchProjects(page),",
+            "  placeholderData: ___,",
+            "});",
+            "",
+            "<button disabled={___ || !data?.hasMore}>Next</button>"
+          ],
+          "blanks": [
+            {
+              "id": "p1",
+              "accept": [
+                "keepPreviousData",
+                "(previousData) => previousData",
+                "previousData => previousData",
+                "(prev) => prev",
+                "prev => prev"
+              ]
+            },
+            {
+              "id": "p2",
+              "accept": [
+                "isPlaceholderData"
+              ]
+            }
+          ],
+          "explanation": "`keepPreviousData` is the identity function `(previousData) => previousData`, exported for exactly this. While it's in play the query reports `success` with the previous page and `isPlaceholderData: true`; that page's `hasMore` describes page N, not N+1, so **Next** waits for the real data."
+        },
+        {
+          "id": "two-timers",
+          "prompt": "Settings change rarely: serve them from the cache for 5 minutes without refetching, and keep the unused entry for 30 minutes after the last user unmounts.",
+          "code": [
+            "useQuery({",
+            "  queryKey: [\"settings\"],",
+            "  queryFn: fetchSettings,",
+            "  ___: 5 * 60_000,",
+            "  ___: 30 * 60_000,",
+            "});"
+          ],
+          "blanks": [
+            {
+              "id": "t1",
+              "accept": [
+                "staleTime"
+              ]
+            },
+            {
+              "id": "t2",
+              "accept": [
+                "gcTime"
+              ]
+            }
+          ],
+          "explanation": "`staleTime` is how long data counts as fresh — no trigger refetches it until then. `gcTime` starts only when nothing uses the query and decides when the entry is deleted. (v4 called it `cacheTime`; v5 renamed it because the old name read like a freshness window.)"
+        },
+        {
+          "id": "lazy-spinner",
+          "prompt": "This query is disabled until the user picks a customer. Show the spinner only while a first load is actually running.",
+          "code": [
+            "const { data, ___ } = useQuery({ ...ordersQuery(customerId), enabled: customerId !== null });",
+            "if (___) return <Spinner />;"
+          ],
+          "blanks": [
+            {
+              "id": "l1",
+              "accept": [
+                "isLoading"
+              ]
+            },
+            {
+              "id": "l2",
+              "accept": [
+                "isLoading"
+              ]
+            }
+          ],
+          "explanation": "In v5, `isLoading` is `isPending && isFetching`: no data *and* a request in flight. A disabled query with no data is pending but idle, so `isPending` alone would spin forever. (Destructuring `isPending` and `isFetching` and testing both works too, but `isLoading` is that exact flag. v4 called it `isInitialLoading`, and used `isLoading` for what v5 calls `isPending`.)"
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-query-states",
+      "snippets": [
+        {
+          "id": "failed-refetch-keeps-data",
+          "code": [
+            "// QueryClient with retry: false.",
+            "// The first fetch for [\"todos\"] resolved with [\"a\"].",
+            "// Then queryClient.invalidateQueries({ queryKey: [\"todos\"] }) runs,",
+            "// and that refetch rejects with new Error(\"boom\").",
+            "",
+            "const { status, data, error, isRefetchError } = useQuery({ queryKey: [\"todos\"], queryFn });",
+            "console.log(status, JSON.stringify(data), error?.message, isRefetchError);"
+          ],
+          "question": "What does the component log once the refetch has failed?",
+          "answer": "error [\"a\"] boom true",
+          "acceptable": [
+            "error, [\"a\"], boom, true",
+            "status error, data still [\"a\"], error boom, isRefetchError true"
+          ],
+          "explanation": "`status` reports the last fetch outcome, so it's `error`, but a failed refetch doesn't discard data: `data` is still `[\"a\"]`. `isRefetchError` (as opposed to `isLoadingError`) tells you which kind of error it is. That combination is why `if (isError) return <ErrorPanel />` before rendering data throws good data away. (Run headlessly against v5.104.)"
+        },
+        {
+          "id": "disabled-flags",
+          "code": [
+            "const { isPending, isFetching, isLoading } = useQuery({",
+            "  queryKey: [\"report\", { month }],",
+            "  queryFn: () => fetchReport(month),",
+            "  enabled: false,",
+            "});",
+            "console.log(isPending, isFetching, isLoading);",
+            "",
+            "// Nothing is cached for this key yet."
+          ],
+          "question": "What's logged?",
+          "answer": "true false false",
+          "acceptable": [
+            "true, false, false"
+          ],
+          "explanation": "A disabled query with no data sits at `status: 'pending'`, `fetchStatus: 'idle'`. `isPending` is true (no data), `isFetching` is false (nothing running), and `isLoading` — `isPending && isFetching` — is false. A spinner gated on `isPending` would spin until someone enables the query."
+        },
+        {
+          "id": "offline-mount",
+          "code": [
+            "// The browser is offline (default networkMode: \"online\"). Nothing is cached for [\"inbox\"].",
+            "const { status, fetchStatus, isLoading, isPaused } = useQuery({",
+            "  queryKey: [\"inbox\"],",
+            "  queryFn: fetchInbox,",
+            "});",
+            "console.log(status, fetchStatus, isLoading, isPaused);"
+          ],
+          "question": "What's logged on the first render, and how many times has `fetchInbox` run?",
+          "answer": "pending paused false true — fetchInbox hasn't run",
+          "acceptable": [
+            "pending, paused, false, true; zero calls"
+          ],
+          "explanation": "In the default `online` network mode, a query that can't reach the network doesn't call its `queryFn` at all: it's `pending` (no data) and `paused` (not fetching). Because `isLoading` is `isPending && isFetching`, it's false too — a spinner keyed on `isLoading` disappears and an empty state keyed on \"not loading, no rows\" would tell the user their inbox is empty. Check `isPaused`. When the connection returns, the fetch runs by itself. (Observed headlessly with `onlineManager.setOnline(false)`.)"
+        },
+        {
+          "id": "retries-before-error",
+          "code": [
+            "let calls = 0;",
+            "const { status, failureCount } = useQuery({",
+            "  queryKey: [\"stats\"],",
+            "  queryFn: async () => { calls++; throw new Error(\"500\"); },",
+            "  // default retry and retryDelay, in the browser",
+            "});",
+            "",
+            "// Wait until status is \"error\"."
+          ],
+          "question": "How many times did the `queryFn` run, what was `status` in between, and roughly how long did it take?",
+          "answer": "4 calls; status stayed \"pending\" (failureCount 1, 2, 3) until the 4th failure; about 7 seconds",
+          "acceptable": [
+            "4 times, pending until the end, ~7 s",
+            "4"
+          ],
+          "explanation": "The default is `retry: 3` on the client, so 1 attempt + 3 retries, waiting 1 s, 2 s and 4 s between them (the delay doubles from 1 s, capped at 30 s). While retrying, the query keeps its current status — `pending` here, since there was never data — and exposes `failureCount`/`failureReason`. Only after the last failure does `status` become `error` with `failureCount: 4`. (The count and statuses were checked headlessly with a short `retryDelay`; the delays are the documented defaults.)"
+        }
+      ]
+    },
+    {
+      "type": "challenge",
+      "id": "challenge-query-states",
+      "challengeSlug": "query-states-todo-list"
+    }
+  ]
+}

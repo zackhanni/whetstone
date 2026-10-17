@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 3,
+  "slug": "streaming-and-suspense",
+  "title": "Streaming & Suspense: the response as a stream",
+  "skills": [
+    "nextjs",
+    "streaming",
+    "suspense",
+    "http"
+  ],
+  "difficulty": "advanced",
+  "estimatedMinutes": 40,
+  "objectives": [
+    "Explain how a streamed App Router response is delivered: the shell and Suspense fallbacks first, each boundary's content later in the same response",
+    "Place `loading.tsx` or `<Suspense>` for a page, and predict which `await` blocks the whole route and which blocks one section",
+    "Predict the status code when `notFound()` or `redirect()` runs after streaming has started, and move the check before anything streams",
+    "Explain Partial Prerendering under Cache Components: the prerendered shell, dynamic holes, and the blocking-route error for uncached data outside `<Suspense>`",
+    "Spot the layers that buffer a stream (nginx, compression, curl, the platform) and verify chunk timing with a stream reader"
+  ],
+  "sources": [
+    {
+      "title": "Next.js docs: Streaming",
+      "url": "https://nextjs.org/docs/app/guides/streaming"
+    },
+    {
+      "title": "Next.js docs: loading.js",
+      "url": "https://nextjs.org/docs/app/api-reference/file-conventions/loading"
+    },
+    {
+      "title": "Next.js docs: Fetching Data (streaming)",
+      "url": "https://nextjs.org/docs/app/getting-started/fetching-data"
+    },
+    {
+      "title": "Next.js docs: Caching (how rendering works, PPR)",
+      "url": "https://nextjs.org/docs/app/getting-started/caching"
+    },
+    {
+      "title": "Next.js docs: connection",
+      "url": "https://nextjs.org/docs/app/api-reference/functions/connection"
+    },
+    {
+      "title": "Next.js docs: Self-Hosting (streaming and Suspense)",
+      "url": "https://nextjs.org/docs/app/guides/self-hosting"
+    },
+    {
+      "title": "React docs: Suspense",
+      "url": "https://react.dev/reference/react/Suspense"
+    },
+    {
+      "title": "React docs: use",
+      "url": "https://react.dev/reference/react/use"
+    },
+    {
+      "title": "MDN: Transfer-Encoding",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Transfer-Encoding"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-streaming",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-streaming",
+      "questions": [
+        {
+          "id": "slow-section",
+          "prompt": "A product page awaits `getProduct()` (80 ms) and then `getRecommendations()` (2.5 s) at the top of `page.tsx`, before returning both sections. How do you get the product on screen while recommendations load?",
+          "options": [
+            {
+              "id": "push-down",
+              "text": "Move the recommendations call into its own async component and wrap it in `<Suspense>`"
+            },
+            {
+              "id": "loading",
+              "text": "Add `loading.tsx` to the folder"
+            },
+            {
+              "id": "promise-all",
+              "text": "Run both calls with `Promise.all`"
+            },
+            {
+              "id": "use-client",
+              "text": "Make the page a Client Component and fetch recommendations in `useEffect`"
+            }
+          ],
+          "answer": "push-down",
+          "explanation": "An `await` blocks everything after it in its component, so the JSX holding any boundary doesn't exist until 2.5 s have passed. Moving the call into a child under `<Suspense>` lets the product render while that one section waits. `loading.tsx` shows a skeleton **instead of** the product, `Promise.all` still waits for the slowest call, and `useEffect` gives up server rendering of that data for a client waterfall."
+        },
+        {
+          "id": "layout-blocks",
+          "prompt": "`app/dashboard/layout.tsx` does `const user = await getUser((await cookies()).get(\"session\")?.value)`. The folder also has `loading.tsx`. Without Cache Components, what happens when someone navigates to `/dashboard`?",
+          "options": [
+            {
+              "id": "blocks",
+              "text": "Navigation waits for the layout: `loading.tsx` wraps the page, not the layout in the same segment"
+            },
+            {
+              "id": "skeleton",
+              "text": "The `loading.tsx` skeleton shows at once while the layout loads"
+            },
+            {
+              "id": "parallel",
+              "text": "The page renders first and the layout streams in around it"
+            },
+            {
+              "id": "error",
+              "text": "It fails to build, because layouts can't read cookies"
+            }
+          ],
+          "answer": "blocks",
+          "explanation": "`loading.tsx` becomes a `<Suspense>` **inside** the layout, around the page. Nothing sits above the layout's own `await`, so nothing can be shown until it finishes. The docs' fix: move the data into the page, or wrap the request-time read in its own `<Suspense>` inside the layout. Under Cache Components the same layout is a build error, which forces that fix."
+        },
+        {
+          "id": "sibling-boundaries",
+          "prompt": "Three panels resolve at 200 ms, 1 s and 3 s. They're wrapped in **one** `<Suspense>` boundary. When does the user see the 200 ms panel?",
+          "options": [
+            {
+              "id": "three",
+              "text": "At about 3 s: a boundary shows its content only when everything inside it is ready"
+            },
+            {
+              "id": "200",
+              "text": "At 200 ms: each component streams as soon as it resolves"
+            },
+            {
+              "id": "1s",
+              "text": "At 1 s, once a majority of the boundary is ready"
+            },
+            {
+              "id": "never",
+              "text": "Never: one boundary can hold only one async component"
+            }
+          ],
+          "answer": "three",
+          "explanation": "A Suspense boundary swaps its fallback for its children together. Give each panel its own sibling boundary and each appears as soon as its own data arrives, in whatever order. Nesting is for a deliberate sequence (details, then reviews); siblings are for independent panels."
+        },
+        {
+          "id": "soft-404",
+          "prompt": "`app/posts/[slug]/` has `loading.tsx`, and `page.tsx` does `const post = await getPost(slug); if (!post) notFound();`. What status does a request for a missing slug get?",
+          "options": [
+            {
+              "id": "200",
+              "text": "200, with the not-found UI and a `noindex` robots meta tag streamed into the page"
+            },
+            {
+              "id": "404",
+              "text": "404, because `notFound()` always sets the status"
+            },
+            {
+              "id": "500",
+              "text": "500, because `notFound()` threw after the response started"
+            },
+            {
+              "id": "307",
+              "text": "307 to the not-found page"
+            }
+          ],
+          "answer": "200",
+          "explanation": "`loading.tsx` makes the page a boundary, so once `getPost` suspends the fallback streams, and the `200` status goes with that first chunk. A later `notFound()` can only change the HTML: Next adds `noindex` so search engines skip it, but uptime checks and some crawlers see a soft 404. Put a fast existence check above any boundary, or answer 404 from `proxy.ts`."
+        },
+        {
+          "id": "shell-contents",
+          "prompt": "With `cacheComponents: true`, a page has a static `<header>`, a `<BlogPosts>` component using `use cache` + `cacheLife(\"hours\")`, and `<Suspense fallback={<p>Loading…</p>}><UserPrefs /></Suspense>` where `UserPrefs` reads `cookies()`. What's in the prerendered shell?",
+          "options": [
+            {
+              "id": "three",
+              "text": "The header, the cached blog posts, and the \"Loading…\" fallback"
+            },
+            {
+              "id": "header-only",
+              "text": "Only the header: anything async is left out of the shell"
+            },
+            {
+              "id": "everything",
+              "text": "Everything, including the user's preferences from their cookie"
+            },
+            {
+              "id": "nothing",
+              "text": "Nothing: one `cookies()` call makes the whole route dynamic"
+            }
+          ],
+          "answer": "three",
+          "explanation": "Under PPR, deterministic output and `use cache` results are rendered at build into the shell; request-time work becomes a hole, represented in the shell by its nearest fallback. `UserPrefs` streams in per request. \"One `cookies()` makes everything dynamic\" was the all-or-nothing behaviour of stable Next before 16."
+        },
+        {
+          "id": "suspense-not-dynamic",
+          "prompt": "Under Cache Components, a Server Component renders `Math.random()` and is wrapped in `<Suspense>`. What happens at `next build`?",
+          "options": [
+            {
+              "id": "error",
+              "text": "The build reports an error for the route: call `await connection()` first (a new value per request) or move it into `use cache` (one shared value)"
+            },
+            {
+              "id": "fresh",
+              "text": "It builds, and each visitor gets a new number because `<Suspense>` makes its children dynamic"
+            },
+            {
+              "id": "frozen",
+              "text": "It builds, and one number is frozen into the prerendered shell for everyone"
+            },
+            {
+              "id": "fallback",
+              "text": "It builds, and visitors only ever see the fallback"
+            }
+          ],
+          "answer": "error",
+          "explanation": "`<Suspense>` gives a fallback while async work completes; it doesn't opt anything into request-time rendering, and `Math.random()` is synchronous. Next 16 instruments randomness, the current time and crypto during the prerender and stops with an error that asks you to read request data first (`connection()`) or cache the result. That check exists precisely so a value meant to be per request can't be silently frozen into the shell."
+        },
+        {
+          "id": "nginx-buffering",
+          "prompt": "Streaming works on `next start` locally. Behind your nginx in production, each page arrives in one piece after the slowest boundary. First suspect?",
+          "options": [
+            {
+              "id": "nginx",
+              "text": "nginx's response buffering: send `X-Accel-Buffering: no`"
+            },
+            {
+              "id": "suspense",
+              "text": "`<Suspense>` is disabled in production builds"
+            },
+            {
+              "id": "react",
+              "text": "React streams only in development"
+            },
+            {
+              "id": "http2",
+              "text": "Streaming needs HTTP/3"
+            }
+          ],
+          "answer": "nginx",
+          "explanation": "Any layer that collects chunks before forwarding them undoes streaming, and nginx buffers by default. The Self-Hosting guide sets `X-Accel-Buffering: no` through `next.config` `headers()`. Then check compression (a compressor buffers too) and any load balancer in between, by measuring chunk timing at each hop."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-streaming",
+      "prompts": [
+        {
+          "id": "loading-file",
+          "prompt": "Name the file that wraps this folder's page in a Suspense boundary.",
+          "code": "app/dashboard/___.tsx",
+          "blanks": [
+            {
+              "id": "a1",
+              "accept": [
+                "loading"
+              ]
+            }
+          ],
+          "explanation": "`loading.tsx` becomes the fallback of a `<Suspense>` around `page.tsx` (and nested layouts below it), not around the `layout.tsx` beside it. Its fallback is prefetched, so navigations show it instantly."
+        },
+        {
+          "id": "suspense-boundary",
+          "prompt": "Stream the orders panel on its own, with a placeholder until it's ready.",
+          "code": [
+            "<___ fallback={<p>Loading orders…</p>}>",
+            "  <RecentOrders />",
+            "</Suspense>"
+          ],
+          "blanks": [
+            {
+              "id": "b1",
+              "accept": [
+                "Suspense"
+              ]
+            }
+          ],
+          "explanation": "Each `<Suspense>` boundary is an independent streaming point: its fallback ships in the first chunk and its content follows when `RecentOrders` resolves, without waiting on any sibling."
+        },
+        {
+          "id": "use-promise",
+          "prompt": "Read a promise started in a Server Component, inside a Client Component under `<Suspense>`.",
+          "code": [
+            "\"use client\";",
+            "import { use } from \"react\";",
+            "",
+            "export function StatsChart({ dataPromise }: { dataPromise: Promise<Stats> }) {",
+            "  const stats = ___(dataPromise);",
+            "  return <Chart data={stats} />;",
+            "}"
+          ],
+          "blanks": [
+            {
+              "id": "c1",
+              "accept": [
+                "use"
+              ]
+            }
+          ],
+          "explanation": "The Server Component starts `getStats()` without awaiting and passes the promise down (Promises are serialisable props). `use(promise)` suspends the Client Component until it resolves, so the nearest `<Suspense>` fallback shows meanwhile."
+        },
+        {
+          "id": "defer-to-request",
+          "prompt": "Under Cache Components, make this component produce a new ID per request instead of one frozen at build.",
+          "code": [
+            "import { connection } from \"next/server\";",
+            "",
+            "async function RequestId() {",
+            "  await ___();",
+            "  return <p>Request {crypto.randomUUID()}</p>;",
+            "}"
+          ],
+          "blanks": [
+            {
+              "id": "d1",
+              "accept": [
+                "connection"
+              ]
+            }
+          ],
+          "explanation": "`connection()` tells Next to wait for a real request before continuing, so the prerender stops there and the component becomes a hole (wrap it in `<Suspense>`). It replaced `unstable_noStore` in Next 15."
+        },
+        {
+          "id": "nginx-header",
+          "prompt": "Tell nginx in front of `next start` not to buffer streamed responses.",
+          "code": [
+            "async headers() {",
+            "  return [{ source: \"/:path*{/}?\", headers: [{ key: \"___\", value: \"no\" }] }];",
+            "}"
+          ],
+          "blanks": [
+            {
+              "id": "e1",
+              "accept": [
+                "X-Accel-Buffering"
+              ]
+            }
+          ],
+          "explanation": "nginx reads `X-Accel-Buffering: no` on the upstream response and passes chunks through as they arrive. This is the Self-Hosting guide's own snippet; load balancers and compressors in the path need checking separately."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-streaming",
+      "snippets": [
+        {
+          "id": "frozen-status",
+          "code": [
+            "// node:http, streaming by hand",
+            "res.setHeader(\"Content-Type\", \"text/html\");",
+            "res.write(\"<p>shell</p>\");",
+            "await sleep(100);",
+            "res.statusCode = 404;",
+            "try { res.setHeader(\"X-Late\", \"1\"); } catch (e) { console.log(e.code); }",
+            "res.end(\"<p>not found</p>\");"
+          ],
+          "question": "What status does the client receive, and what does the server log?",
+          "answer": "200; the server logs ERR_HTTP_HEADERS_SENT",
+          "acceptable": [
+            "200 and ERR_HTTP_HEADERS_SENT",
+            "status 200, X-Late never arrives"
+          ],
+          "explanation": "The first `res.write` sends the status line and headers along with the first chunk. Setting `statusCode` afterwards changes nothing on the wire, and `setHeader` throws `ERR_HTTP_HEADERS_SENT`. This is the constraint behind Next's streamed `notFound()`: once the shell is out, the best it can do is put a `noindex` tag in the HTML."
+        },
+        {
+          "id": "gzip-buffering",
+          "code": [
+            "// node:http + zlib, no flush between writes",
+            "res.setHeader(\"Content-Encoding\", \"gzip\");",
+            "const gz = zlib.createGzip();",
+            "gz.pipe(res);",
+            "gz.write(\"<p>shell</p>\");",
+            "await sleep(800);",
+            "gz.write(\"<p>late part</p>\");",
+            "await sleep(800);",
+            "gz.end(\"<p>end</p>\");",
+            "",
+            "// a client timestamps each chunk it receives"
+          ],
+          "question": "When does the client receive \"<p>shell</p>\"?",
+          "answer": "After about 1.6 s, together with the rest",
+          "acceptable": [
+            "at the end",
+            "~1.6 s, all at once",
+            "after 1600ms with everything else"
+          ],
+          "explanation": "The gzip stream holds small writes until it has enough input to compress or is flushed, so the whole body leaves at `end()`. Calling `gz.flush()` after each write delivers the shell at ~0 ms and each part ~800 ms apart (both runs measured). Compression on by default is one reason a stream that works in one setup arrives in one piece in another; the Streaming guide checks with `Accept-Encoding: identity`."
+        },
+        {
+          "id": "single-boundary-shell",
+          "code": [
+            "export default function Page() {",
+            "  return (",
+            "    <Suspense fallback={<FullPageSkeleton />}>",
+            "      <Header />            {/* static */}",
+            "      <Feed />              {/* awaits an uncached API, 2 s */}",
+            "    </Suspense>",
+            "  );",
+            "}"
+          ],
+          "question": "With Cache Components, what's in the first chunk, and when does the header appear?",
+          "answer": "Only the skeleton; the header appears at about 2 s along with the feed",
+          "acceptable": [
+            "the skeleton; header at 2 s",
+            "FullPageSkeleton, then header and feed together"
+          ],
+          "explanation": "The prerender walks up from `Feed` to the nearest boundary, and that boundary also contains `Header`, so the whole thing becomes one hole: the shell holds only `FullPageSkeleton`. Move `<Header />` outside the boundary (or give `Feed` its own) and the header ships in the first chunk. A boundary placed too high is valid, just coarse."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "cache-sync-handlers",
+  "title": "Keep the cache in sync with server pushes",
+  "skills": ["tanstack-query", "caching", "query-keys"],
+  "difficulty": "core",
+  "estimatedMinutes": 20,
+  "runner": "in-browser",
+  "entry": "cache-sync.ts",
+  "dependencies": { "@tanstack/react-query": "5.104.1" },
+  "acceptanceCriteria": [
+    "A pushed rename shows in the list on screen at once, without a request",
+    "A pushed rename shows in the open detail at once, without a request",
+    "A created todo appears in the list on screen, and the current rows stay on screen while it refreshes",
+    "A list that was hidden when the todo was created isn't fetched until it's shown again; then its cached rows show at once and the new todo arrives"
+  ]
+}

@@ -191,8 +191,8 @@ export const TAXONOMY: TagNode[] = [
   // backend → areas
   { slug: "nestjs", label: "NestJS", parents: ["backend"] },
   { slug: "validation", label: "Validation", parents: ["backend"] },
-  { slug: "auth", label: "Auth", parents: ["backend"] },
-  { slug: "http", label: "HTTP", parents: ["backend"] },
+  { slug: "auth", label: "Auth", parents: ["backend", "security"] },
+  { slug: "http", label: "HTTP", parents: ["backend", "web"] },
 
   // http
   { slug: "routing", label: "Routing", parents: ["http", "nestjs"] },
@@ -259,6 +259,39 @@ export const TAXONOMY: TagNode[] = [
   // ── async-javascript ──
   { slug: "event-loop", label: "Event Loop", parents: ["async"] },
   { slug: "promises", label: "Promises & async/await", parents: ["async"] },
+
+  // ── data-fetching-tanstack ──
+  { slug: "web", label: "Web & Network", parents: [] },
+  { slug: "caching", label: "Caching", parents: ["web", "backend"] },
+  { slug: "query-keys", label: "Query Keys", parents: ["tanstack-query"] },
+  { slug: "mutations", label: "Mutations", parents: ["data-fetching"] },
+  { slug: "optimistic-updates", label: "Optimistic Updates", parents: ["mutations"] },
+  // A client-side router: not under `routing`, which sits under http/nestjs (server routes).
+  { slug: "tanstack-router", label: "TanStack Router", parents: ["react"] },
+
+  // ── http-and-apis ──
+  { slug: "security", label: "Security", parents: [] },
+  { slug: "tooling", label: "Tooling", parents: [] },
+  { slug: "idempotency", label: "Idempotency & Retries", parents: ["http"] },
+  { slug: "curl", label: "curl", parents: ["http", "tooling"] },
+  { slug: "rest", label: "REST", parents: ["http"] },
+  { slug: "rpc", label: "RPC, gRPC & tRPC", parents: ["http"] },
+  { slug: "jwt", label: "JWT", parents: ["auth"] },
+  { slug: "cors", label: "CORS", parents: ["http", "security"] },
+  { slug: "async-apis", label: "Async APIs & Push", parents: ["http"] },
+  { slug: "webhooks", label: "Webhooks", parents: ["async-apis"] },
+
+  // ── nextjs-and-the-network ──
+  { slug: "nextjs", label: "Next.js", parents: ["react", "web"] },
+  { slug: "server-components", label: "Server Components", parents: ["nextjs"] },
+  { slug: "server-actions", label: "Server Actions", parents: ["nextjs"] },
+  { slug: "route-handlers", label: "Route Handlers", parents: ["nextjs", "http"] },
+  { slug: "cache-control", label: "Cache-Control & HTTP Caching", parents: ["caching", "http"] },
+  { slug: "compression", label: "Compression", parents: ["http"] },
+  { slug: "cache-components", label: "Cache Components", parents: ["nextjs", "caching"] },
+  { slug: "revalidation", label: "Revalidation", parents: ["caching"] },
+  { slug: "streaming", label: "Streaming", parents: ["nextjs", "http"] },
+  { slug: "suspense", label: "Suspense", parents: ["rendering"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

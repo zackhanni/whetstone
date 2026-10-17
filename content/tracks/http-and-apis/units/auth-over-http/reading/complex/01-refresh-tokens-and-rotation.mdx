@@ -1,0 +1,77 @@
+---
+id: refresh-tokens-and-rotation
+title: Refresh tokens, rotation, and the refresh race you cause yourself
+---
+
+A JWT access token can't be revoked before its `exp` without adding a lookup back in, so you keep
+it short — the local API's lasts 900 seconds. A **refresh token** is the long-lived credential
+that gets new access tokens: opaque, stored server-side, sent only to the auth endpoints (the
+API sets it as an `HttpOnly` cookie with `Path=/auth`, so the browser sends it to `/auth` and the
+paths below it — `/auth/refresh`, but also `/auth/login` and `/auth/signup` — and nowhere else).
+
+```console
+$ curl -i -b jar.txt -c jar.txt -X POST http://localhost:4123/auth/refresh
+HTTP/1.1 200 OK
+Set-Cookie: refresh_token=-Zrw4CiF-HiFN9vvibZa_55z2_WAhusl; HttpOnly; Secure; SameSite=Strict; Path=/auth; Max-Age=1209600
+…
+{"accessToken":"eyJhbGciOiJIUzI1NiIs…","tokenType":"Bearer","expiresIn":900}
+```
+
+## Rotation: every refresh token is single-use
+
+Notice the response sets a **new** refresh token. That's rotation, and RFC 9700 (the OAuth 2.0
+Security Best Current Practice, January 2025) describes why: the server issues a new refresh
+token with every refresh and invalidates the old one, *but remembers they belong together*. If a
+stolen token and the real one are both used, one of them is necessarily an already-used token —
+and the server then revokes the *active* refresh token as well (in practice, the whole family):
+
+```console
+$ curl -i -b jar-old.txt -X POST http://localhost:4123/auth/refresh     # replay the used one
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="api", error="invalid_token"
+…
+{"error":"refresh token reused; session revoked"}
+
+$ curl -s -o /dev/null -w '%{http_code}\n' -b jar.txt -X POST http://localhost:4123/auth/refresh
+401
+```
+
+The second command uses the *newest*, legitimate token — and fails too. The server can't tell
+which party was the thief, so it ends the session for both. The RFC's own words: this "stops the
+attack at the cost of forcing the legitimate client to obtain a fresh authorization grant".
+
+## The race your own client can cause
+
+A page loads, fires five API calls, and the access token has just expired. Five `401`s come back
+at once; five handlers each call `refresh()`. The first rotates the token; the other four send the
+now-used one — and reuse detection logs the user out. No attacker required.
+
+The fix is to make refreshing **single-flight**: everyone waiting for a token shares one request.
+
+```ts
+let refreshing: Promise<string> | null = null;
+
+function getFreshToken(): Promise<string> {
+  // Concurrent callers get the same promise; the next refresh starts after this one settles.
+  refreshing ??= refresh().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+```
+
+Three concurrent calls to `getFreshToken()` produce one `refresh()` and three copies of the same
+token. Retry each failed request once with that token; if it still gets `401`, send the user to
+log in instead of refreshing again.
+
+<!--more-->
+
+**Sessions vs JWTs, revisited.** A server-side session is revoked by deleting a row — instant. A
+JWT access token stays valid until `exp` unless every request checks a denylist, which brings the
+lookup back. Short access tokens + rotated refresh tokens is the compromise: revocation takes
+effect at the next refresh, at most one access-token lifetime later.
+
+**Across tabs.** Single-flight in one tab doesn't stop two tabs refreshing at once. Apps that hit
+this coordinate through a `BroadcastChannel` or a lock, or let the server accept the immediately
+previous refresh token for a few seconds — a grace period is a deliberate weakening of reuse
+detection, so keep it short.

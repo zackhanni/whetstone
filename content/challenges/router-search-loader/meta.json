@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 3,
+  "slug": "router-search-loader",
+  "title": "Validate the search params and wire them into the loader",
+  "skills": ["tanstack-router", "tanstack-query", "data-fetching"],
+  "difficulty": "advanced",
+  "estimatedMinutes": 25,
+  "runner": "in-browser",
+  "entry": "postsRoute.tsx",
+  "dependencies": { "@tanstack/react-query": "5.104.1", "@tanstack/react-router": "1.170.41" },
+  "acceptanceCriteria": [
+    "`/posts?page=2&tag=react` renders page 2 of the react posts",
+    "A `page` that isn't a positive integer (`abc`, `0`, `-3`, `1.5`) falls back to page 1 instead of erroring",
+    "**Next** re-runs the loader and waits for it: page 1 stays on screen with no loading flash until page 2 is ready",
+    "**Next** keeps the `tag` in the URL and the list"
+  ]
+}

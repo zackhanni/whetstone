@@ -1,0 +1,51 @@
+---
+id: cookie-attributes
+title: Reading a Set-Cookie line — the attributes as mechanics
+---
+
+```http
+Set-Cookie: refresh_token=pi1B33Pk…; HttpOnly; Secure; SameSite=Strict; Path=/auth; Max-Age=1209600
+```
+
+Everything after the first `;` is an instruction to the browser about **when to send the cookie
+back** and **who may read it**. From MDN's `Set-Cookie` reference:
+
+| Attribute | What the browser does |
+| --- | --- |
+| `HttpOnly` | Hides the cookie from JavaScript (`document.cookie`). It is **still sent** with requests, including `fetch` |
+| `Secure` | Sends it only over `https:` (localhost is the exception); an `http:` page can't set it |
+| `SameSite=Strict` | Sends it only on requests that come from the same site |
+| `SameSite=Lax` | Same-site, plus cross-site top-level navigations using a safe method (following a link, not a cross-site `POST`) |
+| `SameSite=None` | Sends it on cross-site requests too — and requires `Secure` |
+| `Path=/auth` | Sends it only to `/auth` and paths below it (`/auth/refresh`, but not `/authors`) |
+| no `Domain` | Host-only: sent to exactly this host, not its subdomains |
+| `Max-Age=1209600` | Keeps it 14 days; with neither `Max-Age` nor `Expires` it's a session cookie, gone when the browser session ends. `Max-Age` wins if both are set |
+
+Read the example line again: a refresh token that scripts can't read, travels only over HTTPS,
+only from this site, and only to the `/auth` endpoints, for two weeks.
+
+## Defaults differ, so set what you mean
+
+If `SameSite` is missing, some browsers apply `Lax` and others don't — MDN's compatibility table
+is the place to check — and Lax-by-default comes with a two-minute exception for `POST`s right
+after the cookie was set. Always write the attribute explicitly.
+
+The `__Host-` name prefix asks the browser to enforce three attributes for you: a cookie named
+`__Host-sid` is rejected unless it has `Secure`, `Path=/` and **no** `Domain`.
+
+## Cross-origin requests don't send cookies by default
+
+A page on `https://app.example.com` calling `https://api.example.com` with `fetch` sends no
+cookies unless the call says `credentials: "include"` — and the response is then only readable
+if the API's CORS headers allow credentials explicitly. That's the CORS unit's subject.
+
+<!--more-->
+
+**Cookies aren't isolated by port.** RFC 6265 (section 8.5): a cookie set by a service on one port
+is readable and writable by a service on another port of the same host. On a laptop running
+several apps on `localhost`, every app's cookies go to every `localhost` port — a credentialed
+`fetch` from one local app to another carries them all.
+
+**What the attributes don't settle** is whether a browser token belongs in a cookie at all, how
+`SameSite` relates to CSRF, and what XSS can still do with an `HttpOnly` cookie. Those are attacks
+and defences — the Web Security track.

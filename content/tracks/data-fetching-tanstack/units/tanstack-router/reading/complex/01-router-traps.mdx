@@ -1,0 +1,68 @@
+---
+id: router-traps
+title: Where the router and the query cache trip each other up
+---
+
+Checked against TanStack Router 1.170 with TanStack Query 5.104 unless a doc is quoted.
+
+## A loader that reads search without `loaderDeps`
+
+```tsx
+loader: ({ context, location }) => {
+  const { page } = location.search as PostsSearch; // ❌ the router doesn't know about this
+  return context.queryClient.query({ ...postsQuery({ page }), staleTime: "static" });
+},
+```
+
+It works on the first load. But the router keys a loader by pathname plus `loaderDeps`, so
+going from `?page=1` to `?page=2` is, as far as it knows, the same loader: it didn't run the
+loader again in a headless run. The component then asks `useSuspenseQuery` for page 2, finds
+nothing cached, and **suspends** — and the route's `pendingComponent` appeared at once instead of
+the old page staying on screen. Same data in the end, plus a loading flash and the waterfall the
+loader was meant to prevent. Declare `loaderDeps` and read `deps`.
+
+## `loaderDeps: ({ search }) => search`
+
+The opposite mistake. Every search param becomes a loader dependency, so toggling a view mode
+or sort direction that the loader never reads re-runs it. The docs: "only include dependencies
+you actually use in the loader."
+
+## A search param every link must now pass
+
+A plain `validateSearch` function whose output has a required key — `page: number` — makes
+`search` **required** on every `Link` and `navigate` to that route: `<Link to="/posts">` fails
+to type-check (it did here, even with the function's parameter typed `{ page?: number }`: a
+plain function's parameter type only becomes the link's input type when it's tagged
+`& SearchSchemaInput`, per the route options reference). The Search Params guide's answer is a
+schema with defaults: Zod v4 or Valibot schemas passed directly (they implement Standard Schema,
+so the router can tell input from output), or Zod v3 through `@tanstack/zod-adapter`'s
+`zodValidator`. Then the link's input type has `page` optional while the route still reads a
+number.
+
+## Two caches, one owner
+
+The router caches loader results too: navigation `staleTime` 0, preloads fresh for 30 s, `gcTime`
+5 minutes. With TanStack Query in charge of the data, that's a second layer of freshness rules.
+The docs' recommendation is `defaultPreloadStaleTime: 0`, so a preload never short-circuits
+Query's own decision. And after a mutation you invalidate **queries**, not routes: the component
+is subscribed through `useSuspenseQuery`, so it re-renders when the refetch lands.
+(`router.invalidate()` re-runs loaders — useful when loader data lives in the router cache.)
+
+## `from`, and components shared between routes
+
+`useSearch({ from: "/posts" })` is typed for that route and throws at runtime if rendered under
+a different one ("Could not find an active match"). A component used on several routes passes
+`strict: false` instead and gets every route's search params merged into one object, each key
+optional. Inside the route's own file, `Route.useSearch()` needs no hint.
+
+<!--more-->
+
+**Errors and retries.** A loader that throws renders the route's `errorComponent`. When the data
+comes through `useSuspenseQuery`, the External Data Loading guide resets the query error
+boundary in that component (`useQueryErrorResetBoundary`) and calls `router.invalidate()` from
+its retry button, so the loader and the query both try again.
+
+**Why file-based in real apps.** The generated `routeTree.gen.ts` writes the `createFileRoute`
+paths and the parent links for you, and the bundler plugin can code-split each route. Code-based
+trees, as in this unit's challenge, are the same objects built by hand — fine for tests and
+small apps.
