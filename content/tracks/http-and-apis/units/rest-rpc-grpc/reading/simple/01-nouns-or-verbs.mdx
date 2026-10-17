@@ -33,7 +33,8 @@ infrastructure around you can do without reading your docs.
 ## What the resource shape gets from HTTP
 
 - **Caching.** A `GET` response is cacheable by browsers, CDNs and proxies (RFC 9110, section
-  9.3.1). `POST /rpc/getOrder` is a `POST`, so nothing caches it.
+  9.3.1). `POST /rpc/getOrder` is a `POST`, and a cache never answers a `POST` with a stored
+  response (section 9.3.3), so every read goes to the server.
 - **Retries.** Clients and proxies know `GET`, `PUT` and `DELETE` are idempotent and can resend
   them after a dropped connection. Every RPC call looks like a non-idempotent `POST`.
 - **Generic tooling.** Status codes, `Location`, `ETag`, logs grouped by method and path, curl

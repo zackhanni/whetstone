@@ -45,10 +45,15 @@ A polling client, then:
 async function waitForReport(statusUrl: string): Promise<string> {
   for (;;) {
     const res = await fetch(statusUrl);
-    const job = await res.json();
-    if (job.status === "succeeded") return job.resultUrl;
-    if (job.status === "failed") throw new Error(job.error);
-    const seconds = Number(res.headers.get("Retry-After") ?? 2);
+    if (res.ok) {
+      const job = await res.json();
+      if (job.status === "succeeded") return job.resultUrl;
+      if (job.status === "failed") throw new Error(job.error);
+    } else if (res.status !== 429 && res.status !== 503) {
+      throw new Error(`status check failed: ${res.status}`);   // a 404 won't fix itself
+    }
+    const hint = res.headers.get("Retry-After") ?? "";
+    const seconds = /^\d+$/.test(hint) ? Number(hint) : 2;     // an HTTP date → the default
     await new Promise((r) => setTimeout(r, seconds * 1000));
   }
 }
@@ -61,5 +66,7 @@ acted upon" and that HTTP has no way to send a status code later. Everything aft
 the status resource, the failure reasons, how long results are kept — is your API's design, so
 write it down.
 
-**Give the poll loop an end.** A real client also stops after a deadline, backs off when it gets
-`429`/`503`, and can be cancelled (an `AbortSignal`) when the user navigates away.
+**Give the poll loop an end.** A real client also stops after a deadline, backs off further when
+`429`s and `503`s keep coming, and can be cancelled (an `AbortSignal`) when the user navigates
+away. And parse `Retry-After` strictly: it may be an HTTP date, and `Number()` of a date is
+`NaN`, which `setTimeout` treats as `0` — a loop that hammers the status URL.

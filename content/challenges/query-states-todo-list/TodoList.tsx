@@ -19,7 +19,20 @@ export function TodoList() {
   });
 
   if (isFetching) return <p data-testid="loading">Loading todos…</p>;
-  if (isError) return <p role="alert">Couldn't load todos: {error.message}</p>;
+  if (isError)
+    return (
+      <div>
+        <p role="alert">Couldn't load todos: {error.message}</p>
+        <button type="button" onClick={() => refetch()}>
+          Try again
+        </button>
+        {page > 1 && (
+          <button type="button" onClick={() => setPage((p) => p - 1)}>
+            Previous
+          </button>
+        )}
+      </div>
+    );
   if (data === undefined) return null;
 
   return (

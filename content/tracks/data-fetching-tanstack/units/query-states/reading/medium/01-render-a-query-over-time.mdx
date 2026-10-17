@@ -38,9 +38,10 @@ Line by line:
 
 - **`if (isPending)` first.** Pending means *no data*, so it's the only state that earns the
   full-screen spinner. A background refetch is `success` + fetching and never reaches it.
-- **`if (data === undefined)` second.** Past `isPending`, missing data means the **first** load
-  failed: show the error panel. The tempting `if (isError)` here is a bug: when a *refetch*
-  fails, `status` becomes `"error"` but `data` keeps the last good result. Checking
+- **`if (data === undefined)` second.** Past `isPending`, missing data means this key's
+  **first** load failed — the first page, or a page change (see below the table): show the
+  error panel, with a retry and a way back. The tempting `if (isError)` here is a bug: when a
+  *refetch* fails, `status` becomes `"error"` but `data` keeps the last good result. Checking
   `isError` first throws a perfectly good list away because one refresh failed.
 - **Error *and* data → a banner.** Below the gates, `isError` can only mean "a refetch failed".
   (`isRefetchError` says exactly that, if you prefer the explicit flag.)
@@ -62,7 +63,9 @@ Run against the real library (v5.104), the page change reads like this, render b
 | clicked Next | success | fetching | true | page 1 |
 | page 2 arrived | success | idle | false | page 2 |
 
-Without `keepPreviousData` the middle row is `pending` / `fetching` with `data: undefined`.
+Without `keepPreviousData` the middle row is `pending` / `fetching` with `data: undefined`. And
+if page 2's fetch fails, the last row is `error` / `idle` / `false` / `undefined`: the placeholder
+lasts only while the new key is pending, so page 1 is gone and the error panel shows.
 
 <!--more-->
 

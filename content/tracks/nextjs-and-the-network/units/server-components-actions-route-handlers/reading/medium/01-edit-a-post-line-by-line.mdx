@@ -85,7 +85,10 @@ Why each piece is the way it is:
 - **`String(formData.get(...))` and the length check.** Form values arrive as strings typed by
   the client. Validate before they reach the database.
 - **`revalidatePath` before `redirect`.** `redirect()` throws, so nothing after it runs. In a
-  Server Action it answers with a `303 See Other`, the status meant for "POST done, now GET this".
+  Server Action the action's `POST` answers `303 See Other`, the status meant for "POST done, now
+  GET this". Before hydration (a native form post) it carries `Location` and the browser follows
+  it; after hydration it carries an `x-action-redirect` header instead, and the client router
+  navigates (Next 16.2).
 
 <!--more-->
 

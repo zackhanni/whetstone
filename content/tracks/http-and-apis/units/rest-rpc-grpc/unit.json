@@ -15,6 +15,7 @@
     { "title": "RFC 9110: HTTP Semantics (methods, caching)", "url": "https://www.rfc-editor.org/rfc/rfc9110" },
     { "title": "Fielding: REST (dissertation, chapter 5)", "url": "https://ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm" },
     { "title": "gRPC: Core concepts", "url": "https://grpc.io/docs/what-is-grpc/core-concepts/" },
+    { "title": "gRPC: Cancellation guide", "url": "https://grpc.io/docs/guides/cancellation/" },
     { "title": "gRPC over HTTP/2 (protocol spec)", "url": "https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md" },
     { "title": "grpc-web README (supported call types, proxy)", "url": "https://github.com/grpc/grpc-web" },
     { "title": "gRPC blog: gRPC Load Balancing", "url": "https://grpc.io/blog/grpc-load-balancing/" },
@@ -35,13 +36,13 @@
           "id": "spot-the-shape",
           "prompt": "An API has `POST /api/getInvoice`, `POST /api/sendInvoice` and `POST /api/voidInvoice`. What shape is it, and what does that cost?",
           "options": [
-            { "id": "rpc", "text": "Procedure-shaped: every call is a `POST`, so caches can't store the reads and generic clients can't tell reads from writes" },
+            { "id": "rpc", "text": "Procedure-shaped: every call is a `POST`, so HTTP caches never serve the reads and generic clients can't tell reads from writes" },
             { "id": "rest-json", "text": "REST — it's JSON over HTTP" },
             { "id": "rest-nouns", "text": "Resource-shaped, because `invoice` is a noun in every URL" },
             { "id": "grpc", "text": "gRPC, because gRPC calls are always `POST`" }
           ],
           "answer": "rpc",
-          "explanation": "The URL names a function and the method is always `POST` — that's RPC over HTTP. It's a legitimate design, but `POST /api/getInvoice` isn't cacheable and isn't retried as idempotent the way `GET /invoices/42` is. \"JSON over HTTP\" says nothing about shape, and gRPC is a specific protocol (HTTP/2, protobuf, `application/grpc`), not any API that uses `POST`."
+          "explanation": "The URL names a function and the method is always `POST` — that's RPC over HTTP. It's a legitimate design, but `POST /api/getInvoice` is never answered from an HTTP cache (a cache may store a `POST` response, but never reuses it for another `POST`) and isn't retried as idempotent the way `GET /invoices/42` is. \"JSON over HTTP\" says nothing about shape, and gRPC is a specific protocol (HTTP/2, protobuf, `application/grpc`), not any API that uses `POST`."
         },
         {
           "id": "cdn-reads",

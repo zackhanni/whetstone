@@ -184,6 +184,7 @@
         {
           "id": "wildcard-with-credentials",
           "code": [
+            "// Page on http://localhost:4124, API on http://localhost:4123",
             "// The API answers every request with:",
             "//   200 OK",
             "//   Access-Control-Allow-Origin: *",

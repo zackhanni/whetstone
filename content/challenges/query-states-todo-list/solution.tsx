@@ -15,9 +15,24 @@ export function TodoList() {
   // `status` answers "do we have data?": pending means none yet, so this is the only state
   // that gets the full loading screen. A background refetch is `success` + `isFetching`.
   if (isPending) return <p data-testid="loading">Loading todos…</p>;
-  // No data and not pending: the first load failed. A failed *refetch* keeps its data
-  // (status "error", data still set) and falls through to the list below.
-  if (data === undefined) return <p role="alert">Couldn't load todos: {error?.message}</p>;
+  // No data and not pending: this key's first load failed. That's the first page, or a page
+  // change: the previous page is a placeholder only while the new key is pending, and a failed
+  // page 2 lands here with no list to show. Hence a retry, and a way back. A failed *refetch*
+  // keeps its data (status "error", data still set) and falls through to the list below.
+  if (data === undefined)
+    return (
+      <div>
+        <p role="alert">Couldn't load todos: {error?.message}</p>
+        <button type="button" onClick={() => refetch()}>
+          Try again
+        </button>
+        {page > 1 && (
+          <button type="button" onClick={() => setPage((p) => p - 1)}>
+            Previous
+          </button>
+        )}
+      </div>
+    );
 
   return (
     <div>

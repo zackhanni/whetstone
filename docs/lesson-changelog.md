@@ -15,6 +15,7 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — PR #37/#38 review — query-states error panel gets retry/back; must-revalidate test; null-safe rollback; JWT verifier never throws; poll loop, gRPC, POST-cache, redirect, curl -N fixes.
 - 2026-10-17 — taxonomy — the shared `nextjs` node (under `react` and `web`) plus `server-components`, `server-actions`, `route-handlers`, `cache-control`, `compression`, `cache-components`, `revalidation`, `streaming` and `suspense` for the Next.js & the Network track.
 - 2026-10-17 — nextjs-and-the-network/server-components-actions-route-handlers — where code runs in Next.js 16: the `'use client'` boundary and serialisable props, Server Component vs Server Action vs Route Handler, actions as POSTs to their page (own auth check; a proxy redirect eats them), `unstable_rethrow`. Challenge `proxy-spares-server-actions`.
 - 2026-10-17 — nextjs-and-the-network/response-headers-caching-compression — HTTP caching per RFC 9111 (`max-age` vs `s-maxage`, `private`, `no-cache` vs `no-store`, SWR, ETag/304, `Vary`), who compresses, `next.config` `headers()` vs a Route Handler on `next start` vs Vercel, proving CDN hits with `x-vercel-cache`. Challenge `shared-cache-decision`.
