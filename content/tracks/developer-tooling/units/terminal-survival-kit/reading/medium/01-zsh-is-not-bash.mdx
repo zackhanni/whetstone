@@ -1,0 +1,82 @@
+---
+id: zsh-is-not-bash
+title: zsh is not bash — three differences that bite
+---
+
+Most shell snippets online are written for bash. Your Mac's terminal runs zsh (5.9 on current
+macOS). They agree on almost everything, and the differences show up as silent wrong
+behaviour, not errors.
+
+## 1. zsh does not split an unquoted `$VAR`
+
+```sh
+FILES="a.txt b.txt"
+for f in $FILES; do echo "[$f]"; done
+```
+
+| bash | zsh |
+| --- | --- |
+| `[a.txt]` then `[b.txt]` — two iterations | `[a.txt b.txt]` — **one** iteration |
+
+bash splits the unquoted value on spaces (the `IFS` characters). zsh doesn't — the zsh manual:
+unquoted parameters "are not automatically split on whitespace unless the option SH_WORD_SPLIT is
+set". So in zsh, `rm $FILES` tries to delete one file named `a.txt b.txt`:
+
+```sh
+% ls $FILES
+ls: a.txt b.txt: No such file or directory
+```
+
+The zsh way to hold a list is an **array**, and an array works in bash too:
+
+```sh
+files=(a.txt b.txt)
+for f in "${files[@]}"; do echo "[$f]"; done   # portable: bash and zsh
+for f in $files; do echo "[$f]"; done          # zsh only: an unquoted array gives its elements
+```
+
+When the input really is a space-separated string (say, the output of a command), zsh's
+`${=FILES}` splits it on purpose.
+
+## 2. `path` is `PATH`
+
+zsh keeps an array `path` **tied** to the scalar `PATH`: change one and the other changes. So a
+loop variable named `path` overwrites your command search path:
+
+```sh
+% for path in a.txt b.txt; do echo $path; done
+a.txt
+b.txt
+% ls
+zsh: command not found: ls
+```
+
+After the loop, `PATH` is `b.txt`. A `local path=...` inside a function does the same thing for
+the rest of that function. Use `file`, `p` or `dir` instead. (`cdpath`, `fpath` and `manpath` are
+tied the same way.)
+
+## 3. A glob that matches nothing is an error
+
+```sh
+% ls *.log
+zsh: no matches found: *.log
+```
+
+bash would pass the literal `*.log` to `ls` and let it complain. zsh refuses to run the command
+at all. The common victim is a URL: `?` and `*` are glob characters, so an unquoted
+`open https://example.com/search?q=git` dies with `no matches found`. Quote anything that
+contains `?`, `*` or `[`:
+
+```sh
+open 'https://example.com/search?q=git'
+```
+
+<!--more-->
+
+**What about scripts?** A script's first line picks its interpreter. `#!/bin/bash` on macOS is
+**bash 3.2.57** (`bash --version` says "Copyright (C) 2007"), so bash 4+ features such as
+`declare -A` (associative arrays) and `|&` don't exist there — `declare -A` prints
+`invalid option`, and `|&` is a syntax error. `#!/usr/bin/env bash` picks the
+first `bash` on your `PATH`, which may be a newer Homebrew bash on your machine and 3.2 on a
+colleague's. Write scripts for the shell named in their first line, not for the one you type
+in.

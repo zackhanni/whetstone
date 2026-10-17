@@ -1,0 +1,76 @@
+---
+id: redirection-order-and-pipe-status
+title: Redirections run left to right; a pipe reports its last command
+---
+
+## `> file 2>&1` vs `2>&1 > file`
+
+Redirections are applied **left to right**, and `2>&1` copies where stream 1 points *at that
+moment* — it doesn't create a lasting link. Trace both orders with a command that writes to
+both streams (`a.txt` exists, `nope` doesn't):
+
+```sh
+ls a.txt nope > out.txt 2>&1
+#  1. "> out.txt"  stdout → out.txt
+#  2. "2>&1"       stderr → where stdout points now: out.txt
+#  out.txt gets both lines; the terminal shows nothing
+
+ls a.txt nope 2>&1 > out.txt
+#  1. "2>&1"       stderr → where stdout points now: the terminal
+#  2. "> out.txt"  stdout → out.txt (stderr is not affected)
+#  terminal: ls: nope: No such file or directory
+#  out.txt:  a.txt
+```
+
+The GNU Bash manual uses the same example (`ls > dirlist 2>&1` vs `ls 2>&1 > dirlist`), and zsh
+behaves the same. So the rule is: **file first, then `2>&1`**.
+
+To send both streams down a pipe, put `2>&1` before the `|` — a pipe is set up before the
+redirections on its left side, so stream 1 already is the pipe:
+
+```sh
+pnpm build 2>&1 | tee build.log        # see it live and keep a copy, errors included
+```
+
+zsh and bash 4+ also accept `pnpm build |& tee build.log` as shorthand (not the bash 3.2 at
+`/bin/bash`).
+
+## A pipeline's exit code is the last command's
+
+```sh
+% pnpm test | tee test.log; echo $?
+0
+```
+
+Even if every test failed, this prints `0`: the pipeline reports `tee`'s status, and `tee`
+succeeded at copying text. In a CI step or a `&&` chain, that's a failure reported as success.
+`pipefail` changes the rule to "the last non-zero status in the pipeline":
+
+```sh
+% false | true; echo $?
+0
+% set -o pipefail
+% false | true; echo $?
+1
+```
+
+Both shells keep every stage's status too: `$pipestatus` in zsh, `${PIPESTATUS[@]}` in bash
+(each prints `1 0` after `false | true`).
+
+## `&&` and `||` are not if/else
+
+`a && b || c` reads like "if a then b else c", but it's two steps, left to right: `a && b`
+runs, and `c` runs if **that** failed — which includes `a` succeeding and `b` failing.
+
+```sh
+% true && false || echo "ran c"
+ran c
+```
+
+`pnpm build && pnpm deploy || pnpm rollback` therefore rolls back after a failed *deploy*, and
+also after a failed build that never deployed anything. When the branches matter, write an
+`if`:
+
+```sh
+if pnpm build; then pnpm deploy; else echo "build failed"; fi
+```

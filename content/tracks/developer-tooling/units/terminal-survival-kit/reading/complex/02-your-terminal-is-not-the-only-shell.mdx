@@ -1,0 +1,60 @@
+---
+id: your-terminal-is-not-the-only-shell
+title: Your terminal isn't the only shell — startup files, scripts and prompts
+---
+
+"It works in my terminal" and "`command not found` in the git hook / IDE task / agent / cron
+job" are usually the same machine with a differently started shell.
+
+## Which startup file runs depends on how zsh was started
+
+zsh reads up to four files from your home directory (or `$ZDOTDIR`). Which ones depends on
+whether the shell is a **login** shell and whether it's **interactive** (attached to a
+terminal, showing a prompt). Checked with a marker in each file:
+
+| How zsh was started | `.zshenv` | `.zprofile` | `.zshrc` | `.zlogin` |
+| --- | --- | --- | --- | --- |
+| a new tab in a macOS terminal app (login + interactive) | yes | yes | yes | yes |
+| `zsh -i -c '…'` (interactive, not login) | yes | — | yes | — |
+| `zsh -l -c '…'` (login, not interactive) | yes | yes | — | yes |
+| `zsh -c '…'`, a script, most tools that "run a command" | yes | — | — | — |
+
+Most setup guides tell you to put `export PATH=…` lines in `.zshrc`. A plain `zsh -c` never reads
+it. Started **from your terminal**, it still inherits the terminal's exported variables, so
+`PATH` survives — but not your aliases or shell functions, which aren't exported. Started by
+something that never went through your terminal — an app launched from the Dock, a git hook
+fired by a GUI git client, cron, a CI runner, some agent tools — it gets neither, and its
+`PATH` is missing everything your `.zshrc` added. Two honest fixes:
+
+- Put **environment** (PATH, version-manager shims) where the shells that need it will read it,
+  and keep `.zshrc` for interactive things (prompt, aliases, completion). `.zprofile` reaches
+  every login shell, which is every macOS terminal tab; only `.zshenv` reaches a plain
+  `zsh -c`. Neither reaches a program that never starts zsh — a `#!/bin/sh` hook script, or an
+  app's own environment.
+- So in scripts and hooks, don't depend on your dotfiles at all: call tools by absolute path, or
+  set `PATH` at the top of the script.
+
+Bash has its own split (`.bash_profile` for login shells, `.bashrc` for interactive non-login
+ones), with the same consequence.
+
+## A prompt needs a terminal
+
+`git commit` without `-m` opens an editor, `gh auth login` asks questions, `ssh-keygen` asks for
+a passphrase. All of them expect a human on a **TTY** (a terminal device). Run them where there
+isn't one — a CI job, a script with redirected input, an agent's shell — and they can't ask.
+Some stop with an error (`git commit` with no editor set, under `TERM=dumb`, prints
+`error: Terminal is dumb, but EDITOR unset`). Others read standard input instead and take
+whatever is there, often nothing — the SSH unit shows `ssh-keygen` quietly creating a key
+**without** a passphrase that way.
+
+The rule that falls out: interactive steps (logins, passphrases, `rebase -i`) belong in your
+own terminal; automation gets non-interactive inputs on purpose — a flag, a token in an env
+var, a file.
+
+<!--more-->
+
+**Check what a tool's shell actually sees.** When something says `command not found`, have it
+run `echo "$SHELL $0"; echo "$PATH" | tr ':' '\n'` and compare with your terminal. `$0` names
+the running shell; a leading dash (`-zsh`, `-/bin/zsh`) means a login shell. On macOS, `/etc/zprofile`
+also runs for login shells and calls `path_helper`, which builds the base `PATH` from
+`/etc/paths` and `/etc/paths.d` — one more reason a login and a non-login shell can disagree.

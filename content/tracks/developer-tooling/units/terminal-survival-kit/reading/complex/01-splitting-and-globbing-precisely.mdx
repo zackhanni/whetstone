@@ -1,0 +1,67 @@
+---
+id: splitting-and-globbing-precisely
+title: Splitting and globbing, precisely — and the habit that makes both shells agree
+---
+
+"zsh doesn't word-split" is true for **parameters** only. The exact rules, checked in zsh 5.9
+and the bash 3.2 that ships with macOS, with `FILES="a.txt b.txt"` and `P="*.txt"`:
+
+| Expansion | bash | zsh |
+| --- | --- | --- |
+| `$FILES` (unquoted variable) | split → 2 words | **1 word** |
+| `$P` (variable holding a glob) | globbed → matching files | **literal `*.txt`** |
+| `$(echo a.txt b.txt)` (command substitution) | split → 2 words | **split → 2 words** |
+| `X=$(…)` then `$X` | split | 1 word (it's a variable again) |
+| `"$FILES"`, `"$(…)"` (double-quoted) | 1 word | 1 word |
+| `*.txt` with no match | passes `*.txt` literally | **error: no matches found** |
+
+So in zsh, `for f in $(ls)` iterates word by word (a file name with a space still splits in
+two), but storing that output in a variable first
+quietly turns it back into one word. And a pattern kept in a variable doesn't glob unless you
+ask with `${~P}` (or turn on `GLOB_SUBST`).
+
+## The habit: quote every expansion, use arrays for lists
+
+Writing for both shells is simpler than memorising the table:
+
+```sh
+# A single value: always double-quote it. One word in both shells, spaces and all.
+cp "$SOURCE" "$DEST/backup copy.txt"
+
+# A list: an array, expanded as "${name[@]}" — each element one word, in both shells.
+files=(a.txt "my notes.txt")
+for f in "${files[@]}"; do wc -l "$f"; done
+
+# Forwarding a script's arguments untouched:
+exec node server.js "$@"          # "$@" = every argument, each still one word
+```
+
+The unquoted forms are where the shells disagree; the quoted forms are where they agree. Bash
+is the risky direction: an unquoted `$FILE` holding `my notes.txt` becomes two arguments,
+`my` and `notes.txt`, and a value containing `*` expands to whatever files happen to match.
+
+## When you do want a string split
+
+Sometimes the input really is a space- or line-separated string — a command's output, an env
+var like `EXTRA_ARGS`. Split it deliberately, so the code says so:
+
+```sh
+# zsh
+for f in ${=EXTRA_ARGS}; do …; done         # split on IFS (spaces, tabs, newlines)
+for line in ${(f)"$(git diff --name-only)"}; do …; done   # split on newlines only
+
+# bash
+read -r -a args <<< "$EXTRA_ARGS"           # into an array
+```
+
+Splitting on newlines rather than spaces matters for file names: `git diff --name-only` puts
+one path per line, and a path can contain a space.
+
+<!--more-->
+
+**The two options behind the table.** `SH_WORD_SPLIT` (split unquoted parameters) and
+`GLOB_SUBST` (glob their values) are off in native zsh. The zsh Options page marks both as set
+under sh and ksh emulation, so after `emulate sh` — or when zsh is started as `sh` — the same
+`for f in $F` loop splits and `echo $P` globs, exactly as bash does. Turning them on globally in
+your `.zshrc` "to make snippets work" also changes any zsh function or plugin that doesn't
+reset its own options; fix the snippet instead.

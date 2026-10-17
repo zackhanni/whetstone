@@ -1,0 +1,85 @@
+---
+id: ssh-config-first-value-wins
+title: ~/.ssh/config — first value wins, and two GitHub accounts
+---
+
+GitHub identifies you by **which key** authenticates. Two accounts on one laptop (personal and
+work) therefore means two keys, and a way to make `ssh` offer the right one. The tool is
+`~/.ssh/config` — and its one rule surprises everyone who expects "later lines override".
+
+## The rule
+
+The `ssh_config(5)` manual: "for each configuration directive, the first specified value will be
+used", so "more host-specific declarations should be given near the beginning of the file, and
+general defaults at the end." Every `Host` block whose pattern matches contributes, top to
+bottom; a later block can't change a value an earlier one already set. `IdentityFile` is the
+exception that accumulates: every matching one is added to the list, **in file order**, and
+`ssh` tries them in that order.
+
+`ssh -G <host>` prints the configuration `ssh` would use, without connecting. With `-F` it
+reads only the file you give it:
+
+```sh
+# config-bad: defaults first
+Host *
+  User ada
+  IdentityFile ~/.ssh/id_ed25519
+
+Host github-work
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/id_ed25519_work
+  IdentitiesOnly yes
+```
+
+```sh
+% ssh -G -F config-bad github-work | grep -E '^(user|hostname|identityfile) '
+user ada
+hostname github.com
+identityfile ~/.ssh/id_ed25519
+identityfile ~/.ssh/id_ed25519_work
+```
+
+`User git` lost to the earlier `User ada`, and the **personal** key is offered first. Move
+the `github-work` block above `Host *` and the same command prints `user git` and the work key
+first. (A git URL like `git@github-work:…` names the user itself, so the `User` line doesn't
+bite there — the key order does.)
+
+## Two accounts that actually work
+
+```sh
+# ~/.ssh/config — specific first, defaults last
+Host github-work
+  HostName github.com
+  IdentityFile ~/.ssh/id_ed25519_work
+  IdentitiesOnly yes
+
+Host github.com
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+```
+
+```sh
+git clone git@github-work:acme/api.git            # the alias picks the work key
+git remote set-url origin git@github-work:acme/api.git   # for an existing clone
+ssh -T git@github-work                            # Hi ada-work! …
+```
+
+`github-work` isn't a real host: `HostName` maps it to `github.com`, and the alias is just a
+handle that selects a block. `IdentitiesOnly yes` matters when the agent holds both keys —
+without it, `ssh` may offer agent keys too, and GitHub signs you in with whichever it accepts
+first. GitHub's "Managing multiple accounts" page shows this same pattern (for a managed enterprise
+account), plus a git setting, `url."git@github-work:acme/".insteadOf "git@github.com:acme/"`, so
+URLs copied from the website are rewritten to the alias automatically.
+
+## Reading the symptom
+
+```text
+ERROR: Permission to acme/api.git denied to ada-personal.
+fatal: Could not read from remote repository.
+```
+
+GitHub's docs: this "means the key you are pushing with is attached to an account which does
+not have access to the repository." Authentication **succeeded** — as the wrong account. That's
+a key-order problem, not a permissions one: check with `ssh -T` against the same host alias the
+remote uses, and look at the name in the greeting.

@@ -1,0 +1,413 @@
+{
+  "schemaVersion": 3,
+  "slug": "ssh-and-github-cli",
+  "title": "SSH keys, tokens & the GitHub CLI",
+  "skills": [
+    "tooling",
+    "ssh",
+    "github",
+    "gh-cli"
+  ],
+  "difficulty": "core",
+  "estimatedMinutes": 30,
+  "objectives": [
+    "Tell an HTTPS remote from an SSH remote by its URL, say what each authenticates with, and switch a clone with `git remote set-url`",
+    "Create an Ed25519 key with a passphrase, let the agent and Keychain hold it, and give GitHub only the `.pub` half",
+    "Read `ssh -T` and `ssh -G` output (exit 1 is success) and order `~/.ssh/config` so a second account's `Host` alias offers the right key",
+    "Choose a fine-grained token, `gh auth login` or `GH_TOKEN` for a person vs a script, and explain why logins and passphrases belong in your own terminal",
+    "Run the clone → branch → PR → review loop with `gh repo clone`, `gh pr create`, `gh pr checkout` and `gh pr view`"
+  ],
+  "sources": [
+    {
+      "title": "GitHub Docs: About remote repositories",
+      "url": "https://docs.github.com/en/get-started/git-basics/about-remote-repositories"
+    },
+    {
+      "title": "GitHub Docs: Generating a new SSH key and adding it to the ssh-agent",
+      "url": "https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent"
+    },
+    {
+      "title": "GitHub Docs: Testing your SSH connection",
+      "url": "https://docs.github.com/en/authentication/connecting-to-github-with-ssh/testing-your-ssh-connection"
+    },
+    {
+      "title": "GitHub Docs: Error: Permission to user/repo denied to other-user",
+      "url": "https://docs.github.com/en/authentication/troubleshooting-ssh/error-permission-to-userrepo-denied-to-other-user"
+    },
+    {
+      "title": "GitHub Docs: Managing multiple accounts",
+      "url": "https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-personal-account-on-github/managing-your-personal-account/managing-multiple-accounts"
+    },
+    {
+      "title": "GitHub Docs: Managing your personal access tokens",
+      "url": "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"
+    },
+    {
+      "title": "GitHub Docs: Caching your GitHub credentials in Git",
+      "url": "https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git"
+    },
+    {
+      "title": "GitHub CLI manual: gh auth login",
+      "url": "https://cli.github.com/manual/gh_auth_login"
+    },
+    {
+      "title": "GitHub CLI manual: environment variables",
+      "url": "https://cli.github.com/manual/gh_help_environment"
+    },
+    {
+      "title": "GitHub CLI manual: gh pr create",
+      "url": "https://cli.github.com/manual/gh_pr_create"
+    },
+    {
+      "title": "GitHub CLI manual: gh pr checkout",
+      "url": "https://cli.github.com/manual/gh_pr_checkout"
+    },
+    {
+      "title": "OpenBSD manual: ssh_config(5)",
+      "url": "https://man.openbsd.org/ssh_config"
+    },
+    {
+      "title": "OpenBSD manual: ssh-keygen(1)",
+      "url": "https://man.openbsd.org/ssh-keygen"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "reading",
+      "id": "read-ssh-gh",
+      "dir": "reading"
+    },
+    {
+      "type": "quiz",
+      "id": "quiz-ssh-gh",
+      "questions": [
+        {
+          "id": "url-says-protocol",
+          "prompt": "`git remote -v` shows `origin  git@github.com:acme/api.git`. When you push, what proves who you are?",
+          "options": [
+            {
+              "id": "ssh-key",
+              "text": "An SSH key pair on your machine, matched against a public key on your GitHub account"
+            },
+            {
+              "id": "pat",
+              "text": "A personal access token from the macOS Keychain"
+            },
+            {
+              "id": "password",
+              "text": "Your GitHub password"
+            },
+            {
+              "id": "gh-token",
+              "text": "The token `gh auth login` stored, whichever protocol the remote uses"
+            }
+          ],
+          "answer": "ssh-key",
+          "explanation": "`git@github.com:owner/repo.git` is an SSH URL, so authentication is the key pair. An `https://github.com/…` URL would use a token, usually supplied by a credential helper (the Keychain helper, Git Credential Manager or `gh`). Your account password works for neither — GitHub removed password authentication for git operations. Switch protocols per clone with `git remote set-url`."
+        },
+        {
+          "id": "which-half",
+          "prompt": "GitHub's \"New SSH key\" form wants a key. What do you paste?",
+          "options": [
+            {
+              "id": "pub",
+              "text": "The contents of `~/.ssh/id_ed25519.pub`"
+            },
+            {
+              "id": "private",
+              "text": "The contents of `~/.ssh/id_ed25519`"
+            },
+            {
+              "id": "both",
+              "text": "Both files, so GitHub can verify the pair"
+            },
+            {
+              "id": "fingerprint",
+              "text": "Only the `SHA256:…` fingerprint `ssh-keygen` printed"
+            }
+          ],
+          "answer": "pub",
+          "explanation": "The `.pub` file is the public half: safe to share, and it's what GitHub matches your connection against. The file without `.pub` is the private key; it never leaves your machine, and pasting it anywhere means generating a new pair. The fingerprint is a short hash for *recognising* a key, not the key itself."
+        },
+        {
+          "id": "ssh-t-exit-one",
+          "prompt": "`ssh -T git@github.com` prints `Hi ada! You've successfully authenticated, but GitHub does not provide shell access.` and `echo $?` prints `1`. Is SSH set up correctly?",
+          "options": [
+            {
+              "id": "yes",
+              "text": "Yes — exit 1 is expected here; the username in the greeting is the real result"
+            },
+            {
+              "id": "no-exit",
+              "text": "No — any non-zero exit means the connection failed"
+            },
+            {
+              "id": "no-shell",
+              "text": "No — GitHub refused the shell because the key lacks permissions"
+            },
+            {
+              "id": "half",
+              "text": "Only for reading; pushing needs exit code 0"
+            }
+          ],
+          "answer": "yes",
+          "explanation": "`-T` asks for no terminal, GitHub authenticates you and then declines to run a shell, so the command exits 1 — GitHub's docs say to expect exactly that. What to check is the **name**: it's the account the key belongs to. A real failure looks different: `Permission denied (publickey).` with exit 255, which is `ssh` itself failing."
+        },
+        {
+          "id": "wrong-account-key-order",
+          "prompt": "Your `~/.ssh/config` starts with `Host *` → `IdentityFile ~/.ssh/id_ed25519` (personal), then `Host github-work` → `HostName github.com`, `IdentityFile ~/.ssh/id_ed25519_work`, `IdentitiesOnly yes`. Pushing to `git@github-work:acme/api.git` fails with `ERROR: Permission to acme/api.git denied to ada-personal.` Why?",
+          "options": [
+            {
+              "id": "order",
+              "text": "Both identity files apply, in file order, so the personal key is offered first; GitHub accepts it and you're signed in as the personal account"
+            },
+            {
+              "id": "later-wins",
+              "text": "`Host *` comes first, so it overrides everything below it and the work block is ignored"
+            },
+            {
+              "id": "perm",
+              "text": "The work account lacks write access to `acme/api`"
+            },
+            {
+              "id": "alias",
+              "text": "`github-work` isn't a real host, so ssh connected somewhere else"
+            }
+          ],
+          "answer": "order",
+          "explanation": "In `ssh_config` the first value obtained wins, and every matching `IdentityFile` is added to the list in file order — `ssh -G github-work` shows the personal key listed first. GitHub accepts the first key it recognises and identifies you by it, so authentication *succeeds* as the wrong account. The work block isn't ignored (its `HostName` still applies); it just comes too late. Put specific `Host` blocks first and defaults last, or keep `IdentityFile` out of `Host *`."
+        },
+        {
+          "id": "token-for-a-script",
+          "prompt": "A small script will add labels to issues in `acme/api`, and nothing else. What credential should it use?",
+          "options": [
+            {
+              "id": "fine-grained",
+              "text": "A fine-grained token limited to `acme/api`, with Issues read and write, and an expiry"
+            },
+            {
+              "id": "classic-repo",
+              "text": "A classic token with the `repo` scope, so it never hits a permission error"
+            },
+            {
+              "id": "ssh",
+              "text": "Your SSH key, since it already works for pushes"
+            },
+            {
+              "id": "gh-login",
+              "text": "Run `gh auth login` inside the script each time it starts"
+            }
+          ],
+          "answer": "fine-grained",
+          "explanation": "GitHub recommends fine-grained tokens: one owner, optionally specific repos, and per-area permissions — so a leaked token can label issues in one repo and do nothing else. A classic `repo` token reaches every repository your account can. SSH keys authenticate git, not GitHub's API, which is what labelling uses. `gh auth login` is interactive; a script gets its token from the environment (`GH_TOKEN`)."
+        },
+        {
+          "id": "ci-gh",
+          "prompt": "A CI job needs to run `gh pr comment`. How should it authenticate?",
+          "options": [
+            {
+              "id": "env",
+              "text": "Set `GH_TOKEN` from the CI secret store; `gh` uses it without any login"
+            },
+            {
+              "id": "login-pipe",
+              "text": "Run `gh auth login` in the job and pipe the answers to its prompts"
+            },
+            {
+              "id": "commit-token",
+              "text": "Commit a token in a config file the job reads"
+            },
+            {
+              "id": "copy-keychain",
+              "text": "Copy your laptop's Keychain entry into the job"
+            }
+          ],
+          "answer": "env",
+          "explanation": "`gh` checks `GH_TOKEN` (then `GITHUB_TOKEN`) before any stored login, and its manual favours `GH_TOKEN` for fine-grained tokens — the headless path it was built for. `gh auth login` is an interactive, browser-based flow meant for a person at a terminal. A committed token is readable by everyone with repo access and lives on in git history."
+        },
+        {
+          "id": "checkout-fork-pr",
+          "prompt": "A teammate's PR #42 comes from their fork. You want to run it locally. Quickest correct move?",
+          "options": [
+            {
+              "id": "gh-checkout",
+              "text": "`gh pr checkout 42` — it fetches the PR's branch, even from a fork, and switches to a local branch named after it"
+            },
+            {
+              "id": "git-switch",
+              "text": "`git switch 42`"
+            },
+            {
+              "id": "pull",
+              "text": "`git pull origin 42`"
+            },
+            {
+              "id": "clone-fork",
+              "text": "`gh repo clone` the fork into a second folder and copy the changed files across"
+            }
+          ],
+          "answer": "gh-checkout",
+          "explanation": "A PR number is a GitHub concept; `git` has no branch called `42`, and `origin` doesn't contain a fork's branches. `gh pr checkout` resolves the number through the API, fetches the head branch from wherever it lives, and gives you a local branch (named after the PR's head branch unless you pass `--branch`). Copying files between clones loses the history you're reviewing."
+        }
+      ]
+    },
+    {
+      "type": "fill-blank",
+      "id": "fill-ssh-gh",
+      "prompts": [
+        {
+          "id": "keygen-type",
+          "prompt": "Generate the key type GitHub's instructions use, with your email as the comment.",
+          "code": "ssh-keygen -t ___ -C \"ada@example.com\"",
+          "blanks": [
+            {
+              "id": "a1",
+              "accept": [
+                "ed25519"
+              ]
+            }
+          ],
+          "explanation": "`-t ed25519` picks the key type; `-C` sets the comment at the end of the public key (without it, OpenSSH writes `user@hostname`). Run it in your own terminal so you can type a passphrase."
+        },
+        {
+          "id": "agent-keychain",
+          "prompt": "On macOS, load the key into the agent automatically and keep its passphrase in the Keychain.",
+          "code": [
+            "Host github.com",
+            "  ___ yes",
+            "  UseKeychain yes",
+            "  IdentityFile ~/.ssh/id_ed25519",
+            "",
+            "# once, in your own terminal:",
+            "ssh-add ___ ~/.ssh/id_ed25519"
+          ],
+          "blanks": [
+            {
+              "id": "f1",
+              "accept": [
+                "AddKeysToAgent"
+              ]
+            },
+            {
+              "id": "f2",
+              "accept": [
+                "--apple-use-keychain"
+              ]
+            }
+          ],
+          "explanation": "`AddKeysToAgent yes` adds the key to the running agent the first time it's used; `UseKeychain yes` (Apple's OpenSSH) looks the passphrase up in the Keychain. `ssh-add --apple-use-keychain` asks for the passphrase once and stores it there (before macOS 12 the flag was `-K`). The private key itself never leaves `~/.ssh`."
+        },
+        {
+          "id": "switch-to-ssh",
+          "prompt": "Point an existing HTTPS clone at the SSH URL instead.",
+          "code": "git remote ___ origin git@github.com:acme/api.git",
+          "blanks": [
+            {
+              "id": "b1",
+              "accept": [
+                "set-url"
+              ]
+            }
+          ],
+          "explanation": "The protocol lives only in the remote's URL. `git remote set-url` swaps it; branches, history and upstream settings are untouched. `git remote -v` confirms it."
+        },
+        {
+          "id": "work-alias",
+          "prompt": "Give a second account its own alias that connects to GitHub and offers only the work key.",
+          "code": [
+            "Host github-work",
+            "  ___ github.com",
+            "  IdentityFile ~/.ssh/id_ed25519_work",
+            "  ___ yes"
+          ],
+          "blanks": [
+            {
+              "id": "c1",
+              "accept": [
+                "HostName"
+              ]
+            },
+            {
+              "id": "c2",
+              "accept": [
+                "IdentitiesOnly"
+              ]
+            }
+          ],
+          "explanation": "`HostName` maps the made-up alias to the real host; the alias only selects this block. `IdentitiesOnly yes` stops `ssh` from also offering whatever keys the agent holds. Put this block **above** any `Host *` defaults: the first value obtained wins. Clone with `git@github-work:acme/api.git`."
+        },
+        {
+          "id": "gh-loop",
+          "prompt": "Open a draft PR from your branch using the commit messages, then check out a teammate's PR #42.",
+          "code": [
+            "gh pr ___ --draft --fill",
+            "gh pr ___ 42"
+          ],
+          "blanks": [
+            {
+              "id": "d1",
+              "accept": [
+                "create",
+                "new"
+              ]
+            },
+            {
+              "id": "d2",
+              "accept": [
+                "checkout",
+                "co"
+              ]
+            }
+          ],
+          "explanation": "`gh pr create` (alias `new`) opens the PR, offering to push the branch first if it isn't pushed; `--fill` takes the title and body from your commits, `--draft` marks it not ready for review. `gh pr checkout` (alias `co`) fetches a PR's branch — fork or not — and switches to it."
+        }
+      ]
+    },
+    {
+      "type": "predict-output",
+      "id": "predict-ssh-gh",
+      "snippets": [
+        {
+          "id": "ssh-g-first-wins",
+          "code": [
+            "% cat config-bad",
+            "Host *",
+            "  User ada",
+            "  IdentityFile ~/.ssh/id_ed25519",
+            "",
+            "Host github-work",
+            "  HostName github.com",
+            "  User git",
+            "  IdentityFile ~/.ssh/id_ed25519_work",
+            "",
+            "% ssh -G -F config-bad github-work | grep -E '^(user|identityfile) '"
+          ],
+          "question": "Which `user` does ssh resolve, and which key file is listed first?",
+          "answer": "user ada; ~/.ssh/id_ed25519 first, then ~/.ssh/id_ed25519_work",
+          "acceptable": [
+            "ada, and the personal key first",
+            "user ada / identityfile ~/.ssh/id_ed25519 / identityfile ~/.ssh/id_ed25519_work"
+          ],
+          "explanation": "`ssh_config` keeps the **first** value it obtains for each setting, reading matching blocks top to bottom. `Host *` matches everything and comes first, so `User ada` wins over `User git`. `IdentityFile` accumulates instead of being replaced, in file order — so the personal key is offered before the work key. Swap the blocks and `-G` prints `user git` with the work key first."
+        },
+        {
+          "id": "keygen-without-tty",
+          "code": [
+            "# run from a script: no terminal attached",
+            "% true | ssh-keygen -q -t ed25519 -f ./ci_key -C ci",
+            "Enter passphrase for \"./ci_key\" (empty for no passphrase): Enter same passphrase again:",
+            "% echo $?",
+            "% ssh-keygen -y -P \"\" -f ./ci_key > /dev/null && echo \"opens with an empty passphrase\""
+          ],
+          "question": "What do the last two commands print?",
+          "answer": "0, then: opens with an empty passphrase",
+          "acceptable": [
+            "0 and the key has no passphrase",
+            "exit 0; the empty passphrase works"
+          ],
+          "explanation": "With no terminal to read from, ssh-keygen read the passphrase from standard input, which was empty — an empty answer, twice. It exited 0 and wrote a key with **no** passphrase, and nothing in the output says so. Make keys you'll use yourself in your own terminal; if an automation key really must be unencrypted, write `-N \"\"` so it's visibly deliberate. (Checked with OpenSSH 10.2 on macOS.)"
+        }
+      ]
+    }
+  ]
+}

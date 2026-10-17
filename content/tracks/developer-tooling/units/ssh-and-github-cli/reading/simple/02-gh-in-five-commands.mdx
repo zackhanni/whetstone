@@ -1,0 +1,37 @@
+---
+id: gh-in-five-commands
+title: The GitHub CLI in five commands
+---
+
+`git` moves commits between your machine and a remote. It knows nothing about pull requests,
+reviews or issues — those are GitHub features. `gh` is GitHub's own CLI for them, so the whole
+"clone, branch, open a PR, review someone else's" loop stays in the terminal.
+
+```sh
+gh auth login                 # once per machine, in your own terminal (it asks questions)
+gh repo clone acme/api        # clone using the protocol you chose at login (HTTPS or SSH)
+cd api && git switch -c fix-typo
+# …edit, commit…
+gh pr create --fill           # push the branch if needed, open a PR; title/body from commits
+gh pr checkout 42             # someone else's PR #42 as a local branch, ready to run
+gh pr view 42 --web           # open it in the browser
+```
+
+What each one saves you:
+
+- **`gh auth login`** walks you through signing in (a browser page and a one-time code by
+  default), stores the token in the macOS Keychain, and offers to set git up to use it for HTTPS
+  — so git stops asking for a token at every push.
+- **`gh repo clone acme/api`** is `git clone` without looking up the URL. For a fork it also
+  adds the original repo as a remote called `upstream`.
+- **`gh pr create`** asks for a title and body, or takes them from flags (`--fill` uses your
+  commit messages; `--draft` opens a draft). `--base` picks the branch to merge into; without
+  it, that's the repo's default branch (unless the branch has a `gh-merge-base` git config
+  entry).
+- **`gh pr checkout 42`** finds the PR's branch — even from a fork — fetches it and switches to a
+  local branch named after it. Reviewing by running the code beats reviewing by squinting.
+- **`gh pr view`** with no number shows the PR for the branch you're on; `--web` opens it.
+
+`gh` is a client of GitHub's API, not a replacement for `git`: commits, branches and pushes are
+still git. When `gh pr create` offers to push your branch, it's running `git push` for you.
+(Flags and defaults here are from GitHub CLI 2.96; `gh <command> --help` shows your version's.)

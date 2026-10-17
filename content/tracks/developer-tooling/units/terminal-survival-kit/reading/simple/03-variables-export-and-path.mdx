@@ -1,0 +1,57 @@
+---
+id: variables-export-and-path
+title: Variables, export, and how PATH finds a command
+---
+
+A shell variable lives in **your shell only**. `export` copies it into the **environment**,
+which every program you start from now on receives — as a copy.
+
+```sh
+% GREETING=hi
+% zsh -c 'echo "[$GREETING]"'      # a child process
+[]                                  # not exported: the child never got it
+% export GREETING
+% zsh -c 'echo "[$GREETING]"'
+[hi]
+% LEVEL=debug zsh -c 'echo "[$LEVEL]"'   # VAR=value before a command: for that one command
+[debug]
+% echo "[$LEVEL]"
+[]
+```
+
+No spaces around `=`: `GREETING = hi` runs a command named `GREETING` with two arguments.
+
+Because a child gets a **copy**, it can never change its parent. A script that runs `cd build`
+or `export NODE_ENV=production` changes *its own* copy and then exits; your terminal is
+exactly where it was. To run a file's commands in your current shell, `source` it
+(`source ~/.zshrc` after editing it).
+
+## PATH: where "git" comes from
+
+When you type `git`, the shell searches the directories in `$PATH`, left to right, and runs the
+**first** `git` it finds.
+
+```sh
+% echo $PATH | tr ':' '\n'
+/opt/homebrew/bin
+/usr/local/bin
+/usr/bin
+/bin
+...
+% type -a git
+git is /opt/homebrew/bin/git
+git is /usr/bin/git
+```
+
+`type -a` (or `which -a` in zsh) lists every match in search order — the first line is what
+runs. So "I upgraded node but `node -v` still shows the old one" is almost always a PATH
+order question: another directory earlier in the list holds an older `node`.
+
+To add a directory, prepend it in `~/.zshrc` and open a new terminal (or `source` the file):
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"     # searched first
+```
+
+Keep the `:$PATH` part. `export PATH="$HOME/.local/bin"` replaces the whole list, and the
+next command fails with `zsh: command not found: ls`.

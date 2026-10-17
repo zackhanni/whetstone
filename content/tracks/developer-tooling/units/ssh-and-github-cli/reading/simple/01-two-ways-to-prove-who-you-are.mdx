@@ -1,0 +1,49 @@
+---
+id: two-ways-to-prove-who-you-are
+title: Two ways git proves who you are to GitHub
+---
+
+Cloning a public repo over HTTPS needs no identity. Pushing — or reading a private repo — does
+(and SSH asks for a key even for public repos). Git talks to GitHub in one of two ways, and
+**the remote URL decides which**:
+
+```sh
+% git remote -v
+origin  https://github.com/acme/api.git (fetch)     # HTTPS
+origin  git@github.com:acme/api.git (fetch)         # SSH (one or the other, not both)
+```
+
+| | HTTPS | SSH |
+| --- | --- | --- |
+| URL | `https://github.com/acme/api.git` | `git@github.com:acme/api.git` |
+| You prove identity with | a **token** (typed where git asks for a password) | a **key pair** on your machine |
+| Stored by | a credential helper (macOS Keychain) | `~/.ssh/` + the ssh agent |
+| Typical blocker | a corporate proxy that allows only HTTPS | a network that blocks port 22 |
+
+Your GitHub **password** doesn't work for either: GitHub removed password authentication for
+git operations. Over HTTPS, the "password" git asks for is a **personal access token**.
+
+## The key pair, in one paragraph
+
+`ssh-keygen` makes two files. `id_ed25519` is the **private** key: it never leaves your
+machine and is never pasted anywhere. `id_ed25519.pub` is the **public** key: you paste that
+into GitHub (Settings → SSH and GPG keys). When you connect, your machine proves it holds the
+private key that matches a public key GitHub has on file — and GitHub knows which account
+that public key belongs to. That's how it decides who you are.
+
+```sh
+% cat ~/.ssh/id_ed25519.pub
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA… ada@example.com      # safe to share
+```
+
+## Switching an existing clone
+
+The protocol isn't baked into the repo, only into the remote's URL:
+
+```sh
+git remote set-url origin git@github.com:acme/api.git     # HTTPS → SSH
+git remote -v                                             # check
+```
+
+Nothing else changes — same branches, same history. Pick one protocol and use it everywhere;
+mixing them is how you end up typing a token for one repo and a passphrase for the next.
