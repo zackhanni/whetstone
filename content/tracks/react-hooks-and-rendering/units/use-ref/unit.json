@@ -1,10 +1,21 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "use-ref",
   "title": "useRef: mutable values & DOM refs",
   "skills": ["react", "hooks", "useRef", "refs", "dom"],
   "difficulty": "core",
   "estimatedMinutes": 25,
+  "objectives": [
+    "Explain that useRef returns the same mutable box every render and writing .current never re-renders",
+    "Choose a ref or state for a value by asking whether a change to it should update the screen",
+    "Predict that a DOM ref is null during the first render and is set only after React commits",
+    "Write a DOM ref plus a mount effect that focuses an input"
+  ],
+  "sources": [
+    { "title": "React docs: useRef", "url": "https://react.dev/reference/react/useRef" },
+    { "title": "React docs: Referencing Values with Refs", "url": "https://react.dev/learn/referencing-values-with-refs" },
+    { "title": "React docs: Manipulating the DOM with Refs", "url": "https://react.dev/learn/manipulating-the-dom-with-refs" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
     {
@@ -56,7 +67,13 @@
         {
           "id": "declare-and-focus",
           "prompt": "Auto-focus this input on mount: declare a ref, attach it, then focus it in an effect.",
-          "code": "const inputRef = ___(null);\nuseEffect(() => {\n  inputRef.___.focus();\n}, []);\nreturn <input ___={inputRef} />;",
+          "code": [
+            "const inputRef = ___(null);",
+            "useEffect(() => {",
+            "  inputRef.___.focus();",
+            "}, []);",
+            "return <input ___={inputRef} />;"
+          ],
           "blanks": [
             { "id": "b1", "accept": ["useRef"] },
             { "id": "b2", "accept": ["current"] },
@@ -67,7 +84,12 @@
         {
           "id": "silent-mutate",
           "prompt": "Store an interval id without causing a re-render, then read it back to clear it.",
-          "code": "const id = useRef(null);\nid.___ = setInterval(tick, 1000);\n// later:\nclearInterval(id.___);",
+          "code": [
+            "const id = useRef(null);",
+            "id.___ = setInterval(tick, 1000);",
+            "// later:",
+            "clearInterval(id.___);"
+          ],
           "blanks": [
             { "id": "c1", "accept": ["current"] },
             { "id": "c2", "accept": ["current"] }
@@ -82,7 +104,16 @@
       "snippets": [
         {
           "id": "ref-no-rerender",
-          "code": "function Clicks() {\n  const count = useRef(0);\n  return (\n    <button onClick={() => { count.current += 1; }}>\n      Clicked {count.current} times\n    </button>\n  );\n}",
+          "code": [
+            "function Clicks() {",
+            "  const count = useRef(0);",
+            "  return (",
+            "    <button onClick={() => { count.current += 1; }}>",
+            "      Clicked {count.current} times",
+            "    </button>",
+            "  );",
+            "}"
+          ],
           "question": "You click the button five times. What number does the label show?",
           "answer": "0",
           "acceptable": ["0", "zero", "still 0", "shows 0"],
@@ -90,7 +121,13 @@
         },
         {
           "id": "ref-null-in-render",
-          "code": "function Field() {\n  const inputRef = useRef(null);\n  console.log(inputRef.current); // on the FIRST render\n  return <input ref={inputRef} />;\n}",
+          "code": [
+            "function Field() {",
+            "  const inputRef = useRef(null);",
+            "  console.log(inputRef.current); // on the FIRST render",
+            "  return <input ref={inputRef} />;",
+            "}"
+          ],
           "question": "What does the console.log print during the very first render?",
           "answer": "null",
           "acceptable": ["null", "prints null", "it's null"],

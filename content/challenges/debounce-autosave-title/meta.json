@@ -1,8 +1,7 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "debounce-autosave-title",
   "title": "Debounce the rename field's autosave",
-  "prompt": "EditableTitle saves on every keystroke. Debounce it with a setTimeout handle in a ref: commit once after the user stops typing, immediately on blur, and never after unmount.",
   "skills": [
     "react",
     "hooks",
@@ -17,10 +16,13 @@
   "runner": "in-browser",
   "entry": "EditableTitle.tsx",
   "acceptanceCriteria": [
-    "Typing does not call onCommit while the user is still typing",
-    "Exactly one onCommit fires with the final value once typing stops for SAVE_DELAY_MS",
-    "Blur commits immediately (once) and cancels the pending timer; blur without an edit commits nothing",
-    "The same value is never committed twice — a blur after a completed autosave is a no-op, while a fresh edit still commits",
+    "The input still updates on every keystroke (it stays responsive)",
+    "No `onCommit` while the user is still typing",
+    "Exactly one `onCommit`, with the **final** value, once typing stops for `SAVE_DELAY_MS`",
+    "Blur commits immediately and only once (the pending timer is cancelled first)",
+    "Blur with no edit commits nothing",
+    "A blur **after** the debounce already saved does not save the same value again",
+    "Editing again after a save does commit the new value",
     "Unmounting cancels a pending commit"
   ]
 }

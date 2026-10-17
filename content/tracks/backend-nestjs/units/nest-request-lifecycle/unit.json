@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "nest-request-lifecycle",
   "title": "The request lifecycle: guards, interceptors & filters",
   "skills": [
@@ -14,6 +14,19 @@
   ],
   "difficulty": "advanced",
   "estimatedMinutes": 30,
+  "objectives": [
+    "Predict the order guards, interceptors, pipes and the handler run in, and what each one can see",
+    "Choose a guard for admit/reject decisions and an interceptor for shaping or timing the response",
+    "Write a role guard with Reflector, throw 401 vs return false (403), and register it via APP_GUARD",
+    "Write interceptors that map the response, log failures with finalize, and return next.handle()",
+    "Predict the status a thrown error becomes and which single filter handles it; register via APP_FILTER"
+  ],
+  "sources": [
+    { "title": "NestJS docs: Request lifecycle", "url": "https://docs.nestjs.com/faq/request-lifecycle" },
+    { "title": "NestJS docs: Guards", "url": "https://docs.nestjs.com/guards" },
+    { "title": "NestJS docs: Interceptors", "url": "https://docs.nestjs.com/interceptors" },
+    { "title": "NestJS docs: Exception filters", "url": "https://docs.nestjs.com/exception-filters" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-lifecycle", "dir": "reading" },
     {
@@ -125,7 +138,15 @@
         {
           "id": "guard-shape",
           "prompt": "The two members of a guard: the interface it implements, and the transport-agnostic way to reach the HTTP request.",
-          "code": "@Injectable()\nexport class ApiKeyGuard implements ___ {\n  canActivate(context: ExecutionContext): boolean {\n    const req = context.___().getRequest();\n    return req.headers[\"x-api-key\"] === process.env.API_KEY;\n  }\n}",
+          "code": [
+            "@Injectable()",
+            "export class ApiKeyGuard implements ___ {",
+            "  canActivate(context: ExecutionContext): boolean {",
+            "    const req = context.___().getRequest();",
+            "    return req.headers[\"x-api-key\"] === process.env.API_KEY;",
+            "  }",
+            "}"
+          ],
           "blanks": [
             { "id": "a1", "accept": ["CanActivate"] },
             { "id": "a2", "accept": ["switchToHttp"] }
@@ -135,14 +156,23 @@
         {
           "id": "roles-metadata",
           "prompt": "Read route metadata set by a custom `@Roles()` decorator, letting the handler override the controller.",
-          "code": "const required = this.reflector.___<string[]>(ROLES_KEY, [\n  context.getHandler(),\n  context.getClass(),\n]);",
+          "code": [
+            "const required = this.reflector.___<string[]>(ROLES_KEY, [",
+            "  context.getHandler(),",
+            "  context.getClass(),",
+            "]);"
+          ],
           "blanks": [{ "id": "b1", "accept": ["getAllAndOverride"] }],
           "explanation": "`getAllAndOverride` returns the first match in the array, so handler metadata wins over class metadata (`getAllAndMerge` unions them instead). The decorator itself is just `SetMetadata(ROLES_KEY, roles)` — configuration as data on the route, not an `if` inside the guard."
         },
         {
           "id": "envelope-interceptor",
           "prompt": "Wrap every successful response in `{ data }` — the operator that replaces the value, applied to the handler's stream.",
-          "code": "intercept(context: ExecutionContext, next: CallHandler) {\n  return next.___().pipe(___((data) => ({ data })));\n}",
+          "code": [
+            "intercept(context: ExecutionContext, next: CallHandler) {",
+            "  return next.___().pipe(___((data) => ({ data })));",
+            "}"
+          ],
           "blanks": [
             { "id": "c1", "accept": ["handle"] },
             { "id": "c2", "accept": ["map"] }
@@ -152,21 +182,33 @@
         {
           "id": "always-log",
           "prompt": "Record the duration whether the handler succeeded or threw.",
-          "code": "return next.handle().pipe(\n  ___(() => this.logger.log(`${Date.now() - started}ms`)),\n);",
+          "code": [
+            "return next.handle().pipe(",
+            "  ___(() => this.logger.log(`${Date.now() - started}ms`)),",
+            ");"
+          ],
           "blanks": [{ "id": "d1", "accept": ["finalize"] }],
           "explanation": "`finalize` runs on completion, error, and unsubscribe — the right operator for metrics and cleanup. `tap(fn)` covers only the success notification, so it silently drops exactly the requests you most wanted to measure."
         },
         {
           "id": "app-filter",
           "prompt": "Register a global exception filter that needs a injected logger.",
-          "code": "@Module({\n  providers: [{ provide: ___, useClass: DomainErrorFilter }],\n})\nexport class AppModule {}",
+          "code": [
+            "@Module({",
+            "  providers: [{ provide: ___, useClass: DomainErrorFilter }],",
+            "})",
+            "export class AppModule {}"
+          ],
           "blanks": [{ "id": "e1", "accept": ["APP_FILTER"] }],
           "explanation": "`useGlobalFilters(new DomainErrorFilter())` needs a hand-constructed instance, so it can't inject anything. The `APP_FILTER` token (like `APP_GUARD`, `APP_INTERCEPTOR`, `APP_PIPE`) registers it as a provider, so the injector builds it."
         },
         {
           "id": "catch-narrow",
           "prompt": "Handle only your domain error type in this filter, leaving everything else to Nest's default.",
-          "code": "@___(DomainError)\nexport class DomainErrorFilter implements ExceptionFilter {}",
+          "code": [
+            "@___(DomainError)",
+            "export class DomainErrorFilter implements ExceptionFilter {}"
+          ],
           "blanks": [{ "id": "f1", "accept": ["Catch"] }],
           "explanation": "`@Catch(DomainError)` narrows the filter; a bare `@Catch()` catches everything and then owns the entire error contract, including the shapes Nest was formatting for you. Only one filter runs per exception — the narrowest, innermost match."
         }
@@ -178,7 +220,13 @@
       "snippets": [
         {
           "id": "order-logs",
-          "code": "// Registered globally: LoggingInterceptor, AuthGuard, ValidationPipe.\n// AuthGuard.canActivate:            console.log(\"guard\")\n// LoggingInterceptor.intercept:     console.log(\"pre\"); return next.handle().pipe(tap(() => console.log(\"post\")))\n// A custom pipe's transform():      console.log(\"pipe\")\n// The handler body:                 console.log(\"handler\")",
+          "code": [
+            "// Registered globally: LoggingInterceptor, AuthGuard, ValidationPipe.",
+            "// AuthGuard.canActivate:            console.log(\"guard\")",
+            "// LoggingInterceptor.intercept:     console.log(\"pre\"); return next.handle().pipe(tap(() => console.log(\"post\")))",
+            "// A custom pipe's transform():      console.log(\"pipe\")",
+            "// The handler body:                 console.log(\"handler\")"
+          ],
           "question": "In what order do the five logs appear for one successful request?",
           "answer": "guard, pre, pipe, handler, post",
           "acceptable": ["guard pre pipe handler post", "guard, pre, pipe, handler, then post"],
@@ -186,7 +234,14 @@
         },
         {
           "id": "forgot-return",
-          "code": "@Injectable()\nexport class BrokenInterceptor implements NestInterceptor {\n  intercept(context: ExecutionContext, next: CallHandler) {\n    next.handle().pipe(tap(() => console.log(\"done\")));   // no return\n  }\n}",
+          "code": [
+            "@Injectable()",
+            "export class BrokenInterceptor implements NestInterceptor {",
+            "  intercept(context: ExecutionContext, next: CallHandler) {",
+            "    next.handle().pipe(tap(() => console.log(\"done\")));   // no return",
+            "  }",
+            "}"
+          ],
           "question": "What does the client observe?",
           "answer": "The request hangs — no response is ever sent",
           "acceptable": ["it hangs", "the request never responds / times out", "no response"],
@@ -194,7 +249,15 @@
         },
         {
           "id": "cache-shortcircuit",
-          "code": "// Global CacheInterceptor:\nintercept(context: ExecutionContext, next: CallHandler) {\n  const hit = this.store.get(keyOf(context));\n  if (hit) return of(hit);          // never calls next.handle()\n  return next.handle().pipe(tap((body) => this.store.set(keyOf(context), body)));\n}\n// Inside it: a handler-level interceptor that logs \"inner-pre\", a ValidationPipe, the handler.",
+          "code": [
+            "// Global CacheInterceptor:",
+            "intercept(context: ExecutionContext, next: CallHandler) {",
+            "  const hit = this.store.get(keyOf(context));",
+            "  if (hit) return of(hit);          // never calls next.handle()",
+            "  return next.handle().pipe(tap((body) => this.store.set(keyOf(context), body)));",
+            "}",
+            "// Inside it: a handler-level interceptor that logs \"inner-pre\", a ValidationPipe, the handler."
+          ],
           "question": "On a cache hit, which of \"inner-pre\", the pipe's validation, and the handler run?",
           "answer": "None of them",
           "acceptable": ["none", "neither — the outer interceptor short-circuits"],
@@ -202,7 +265,15 @@
         },
         {
           "id": "domain-error-status",
-          "code": "class OrderClosedError extends Error {}\n\n@Post(\":id/items\")\naddItem(@Param(\"id\") id: string) {\n  throw new OrderClosedError(\"order already closed\");\n}\n// No custom exception filter is registered.",
+          "code": [
+            "class OrderClosedError extends Error {}",
+            "",
+            "@Post(\":id/items\")",
+            "addItem(@Param(\"id\") id: string) {",
+            "  throw new OrderClosedError(\"order already closed\");",
+            "}",
+            "// No custom exception filter is registered."
+          ],
           "question": "What status code and body does the client receive?",
           "answer": "500 with a generic \"Internal server error\" — the message is not exposed",
           "acceptable": ["500", "500 Internal server error", "500, generic message"],

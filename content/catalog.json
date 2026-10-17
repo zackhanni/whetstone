@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 3,
+  "tracks": [
+    "react-hooks-and-rendering",
+    "state-and-data-flow",
+    "backend-nestjs"
+  ]
+}

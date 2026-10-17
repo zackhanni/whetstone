@@ -1,5 +1,3 @@
-# Make the validation pipe behave like Nest's
-
 `validation-pipe.ts` is a hand-rolled stand-in for
 `new ValidationPipe({ whitelist: true, transform: true })`. `order-dto.ts` holds the "DTO":
 the same metadata `@IsInt()` / `@Min(1)` / `@IsOptional()` would carry, as a plain object
@@ -27,12 +25,3 @@ one is a real production bug:
    field is never checked. Missing input is a **400**, not a 500 later on.
 
 The fix is mostly one decision: iterate the **schema**, not the body.
-
-## Acceptance criteria
-
-- [ ] A valid body is accepted, and `value` holds the parsed fields
-- [ ] Keys not declared in the schema are absent from `value`
-- [ ] `"3"` → `3` for an `int` field, `"true"` → `true` for a `boolean` field
-- [ ] A body with three bad fields reports three errors
-- [ ] A missing non-optional field fails with `status: 400` and names the field
-- [ ] An absent optional field stays absent (no `undefined`/`null` key)

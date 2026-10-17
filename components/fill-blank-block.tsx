@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import clsx from "clsx";
+import { blankMatches } from "@/learning/grading";
 import { Markdown } from "./markdown";
+import { InlineMarkdown } from "./inline-markdown";
+import { FlagLink } from "./flag-link";
 import { WhetstoneButton } from "./whetstone-button";
 
 type Blank = { id: string; accept: string[] };
@@ -11,7 +14,6 @@ type Prompt = { id: string; prompt: string; code: string; blanks: Blank[]; expla
 type Mode = "browse" | "drill";
 type OnResult = (key: string, r: { correct: boolean; answered: boolean }) => void;
 
-const norm = (s: string) => s.trim().toLowerCase();
 
 function PromptView({
   p,
@@ -30,7 +32,7 @@ function PromptView({
   const [vals, setVals] = useState<string[]>(() => p.blanks.map(() => ""));
   const [checked, setChecked] = useState(false);
   const revealed = mode === "browse" ? checked : forceReveal;
-  const results = p.blanks.map((b, i) => b.accept.some((a) => norm(a) === norm(vals[i] ?? "")));
+  const results = p.blanks.map((b, i) => blankMatches(vals[i] ?? "", b.accept));
   const correct = results.every(Boolean);
 
   useEffect(() => {
@@ -40,7 +42,12 @@ function PromptView({
 
   return (
     <div className="space-y-3">
-      <p className="font-medium text-slate-100">{p.prompt}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-medium text-slate-100">
+          <InlineMarkdown>{p.prompt}</InlineMarkdown>
+        </p>
+        <FlagLink block={blockId} item={p.id} />
+      </div>
       <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-slate-900 p-3 text-sm text-slate-200 ring-1 ring-slate-800">
         {parts.map((part, i) => (
           <span key={i}>

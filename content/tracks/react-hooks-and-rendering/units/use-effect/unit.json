@@ -1,10 +1,22 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "use-effect",
   "title": "useEffect — and when not to use it",
   "skills": ["react", "hooks", "useEffect", "data-fetching"],
   "difficulty": "core",
   "estimatedMinutes": 35,
+  "objectives": [
+    "Explain that effects exist to sync with systems outside React, like a socket, timer, or the network",
+    "Write a subscription effect whose cleanup and deps reconnect cleanly when a prop like roomId changes",
+    "Predict when an effect runs relative to render, and the stale value an empty-deps interval reads",
+    "Fix a fetch effect's race and leak by aborting the previous request with AbortController in cleanup"
+  ],
+  "sources": [
+    { "title": "React docs: useEffect", "url": "https://react.dev/reference/react/useEffect" },
+    { "title": "React docs: Synchronizing with Effects", "url": "https://react.dev/learn/synchronizing-with-effects" },
+    { "title": "React docs: You Might Not Need an Effect", "url": "https://react.dev/learn/you-might-not-need-an-effect" },
+    { "title": "MDN: AbortController", "url": "https://developer.mozilla.org/en-US/docs/Web/API/AbortController" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-intro", "dir": "reading" },
     {
@@ -44,7 +56,13 @@
         {
           "id": "subscription-cleanup",
           "prompt": "Complete the subscription effect: subscribe on mount, re-subscribe when roomId changes, and clean up to avoid leaks.",
-          "code": "useEffect(() => {\n  const conn = createConnection(roomId);\n  conn.connect();\n  return () => conn.___();\n}, [___]);",
+          "code": [
+            "useEffect(() => {",
+            "  const conn = createConnection(roomId);",
+            "  conn.connect();",
+            "  return () => conn.___();",
+            "}, [___]);"
+          ],
           "blanks": [
             { "id": "b1", "accept": ["disconnect", "close"] },
             { "id": "b2", "accept": ["roomId"] }
@@ -59,7 +77,16 @@
       "snippets": [
         {
           "id": "stale-interval",
-          "code": "function Counter() {\n  const [count, setCount] = useState(0);\n  useEffect(() => {\n    const id = setInterval(() => setCount(count + 1), 1000);\n    return () => clearInterval(id);\n  }, []);\n  return <h1>{count}</h1>;\n}",
+          "code": [
+            "function Counter() {",
+            "  const [count, setCount] = useState(0);",
+            "  useEffect(() => {",
+            "    const id = setInterval(() => setCount(count + 1), 1000);",
+            "    return () => clearInterval(id);",
+            "  }, []);",
+            "  return <h1>{count}</h1>;",
+            "}"
+          ],
           "question": "What value does the counter show after ~5 seconds, and why?",
           "answer": "It shows 1 and never climbs.",
           "acceptable": ["1", "stays at 1", "shows 1 forever", "stuck at 1"],
@@ -67,7 +94,16 @@
         },
         {
           "id": "effect-after-render",
-          "code": "function App() {\n  const [n, setN] = useState(0);\n  console.log('render', n);\n  useEffect(() => {\n    console.log('effect', n);\n  });\n  return <button onClick={() => setN(n + 1)}>{n}</button>;\n}",
+          "code": [
+            "function App() {",
+            "  const [n, setN] = useState(0);",
+            "  console.log('render', n);",
+            "  useEffect(() => {",
+            "    console.log('effect', n);",
+            "  });",
+            "  return <button onClick={() => setN(n + 1)}>{n}</button>;",
+            "}"
+          ],
           "question": "What is logged on the first render, then after one click?",
           "answer": "render 0, effect 0, then render 1, effect 1",
           "acceptable": ["render 0 effect 0 render 1 effect 1", "render then effect, each time"],

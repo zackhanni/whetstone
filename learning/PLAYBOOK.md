@@ -16,7 +16,8 @@ Content is organized as **tracks → units → blocks**.
 - **Track** — a coherent skill area (e.g. `react-hooks-and-rendering`). An ordered list of units
   (`track.json` → `units`). That list is the only thing that makes a unit visible, so a unit
   folder missing from it fails `pnpm validate`. A track carries no tags of its own: it shows the
-  union of its units' `skills`.
+  union of its units' `skills`. Tracks appear on the home page in the order of
+  `content/catalog.json`, which works the same way: a track folder missing from it fails the gate.
 - **Unit** — one focused concept you could learn in a sitting (e.g. `use-effect`). An ordered list
   of blocks. Its slug equals its folder name and is unique across **all** tracks, so a unit can be
   addressed by its slug alone (and moved to another track without a collision).
@@ -26,6 +27,21 @@ Everything lives in `content/`. Coding challenges live once in
 `content/challenges/<slug>/` and are referenced by slug, so they're reusable and the
 existing archive (`~/Documents/GitHub/software-engineer-job-test-folder`) imports cleanly
 as tagged challenges.
+
+## Objectives and sources — every unit has both
+
+- **`objectives`** — 2 to 5 lines completing "After this unit you can…", shown at the top of the
+  unit. Start each with a concrete verb (Explain, Predict, Fix, Choose, Write, Spot) and name the
+  specific skill. **Write them first.** Every assessment item must test one of them, and every
+  objective must be tested by at least one item — an objective nothing tests is a promise the unit
+  doesn't keep. Reading the neighbouring units' objectives is the overlap check.
+- **`sources`** — the official documentation the unit was checked against (react.dev, MDN,
+  docs.nestjs.com, a library's own docs), shown as "Further reading". No blogs, tutorials or Stack
+  Overflow. Open each one and check the unit's claims against it, especially anything
+  version-dependent, and **name the version in the prose** ("since React 18", "in Zustand v5").
+  Unstated version drift is where shipped lessons have most often been wrong. Confirm a link by
+  what the page says, not by its HTTP status: docs.nestjs.com is a single-page app that answers
+  200 for any path, real or not.
 
 ## The five block types — and when to reach for each
 
@@ -54,6 +70,20 @@ Two simple rules cover "sometimes one isn't enough":
 
 **Every example, question, and option carries a stable `id`.** That's the one thing we add
 now to keep the future cheap.
+
+### Writing unit.json
+
+- **Multi-line `code`** (fill-blank and predict-output) is an **array of lines**, so it reads
+  naturally in the JSON and diffs line by line in review; a one-liner stays a plain string. The
+  schema rejects a string containing `\n`.
+- **Inline Markdown works in short fields**: quiz prompts and options, fill-blank prompts,
+  predict-output questions, objectives, and challenge titles and acceptance criteria render
+  `code`, **bold**, _italic_ and links. Explanations, readings and challenge READMEs render full
+  Markdown.
+- **Fill-blank answers are compared ignoring case, all whitespace and quote style**
+  (`learning/grading.ts`): `() =>` and `()=>` are one answer, `'resize'` and `"resize"` are one
+  answer. List only genuinely different answers (`useMemo` vs `React.useMemo`); the schema
+  rejects variants that normalize alike.
 
 ### Reading files are Markdown, with a two-key header
 
@@ -127,7 +157,14 @@ test runner). The folder holds:
 - `solution.tsx` — the reference fix; **must export the same component name** as the entry
   (the runner swaps its contents into the editor for "Show solution"). The filename is
   hard-coded in `lib/content.ts` — it stays `solution.tsx` even when the entry is a `.ts` file.
-- `README.md` — problem statement + acceptance checklist.
+- `README.md` — the problem statement, then an optional `## Hints` section (the last one; the app
+  shows it collapsed after the task list, so hints aren't spoilers). **Nothing else**: the app
+  renders the title, "Edit `<entry>` so the tests pass" and the acceptance checklist from
+  `meta.json`, so a README `#` title, `- [ ]` checklist, "Your task" or "Running" section is a
+  validator error. (Before this rule, 3 of 10 READMEs had drifted from their meta.json — one told
+  the learner to edit a file that didn't exist.)
+- `meta.json` `title` and `acceptanceCriteria` are learner-facing (inline Markdown allowed). Write
+  each criterion as an observable outcome, and make sure a test asserts it.
 
 The **starter must fail** the tests and the **solution must pass** them. Any other files in
 the folder load into the sandbox as read-only support files.
@@ -192,15 +229,19 @@ Sandpack iframe:
 - **The schema** (`learning/schema.ts`, zod; every object is `.strict()`, so an unknown or
   misspelled key is an error) checks Rule 1, unique ids at every level (blocks, questions,
   options, prompts, blanks, snippets), that a quiz `answer` names real option ids, that the
-  `___` count matches the blanks, and the checkable half of Rule 3: readings open the unit and
-  challenges close it.
-- **The validator** (`scripts/validate.ts`, `pnpm validate`) checks Rule 2 and the reading-file
-  rules above. It checks that slugs match folders, that every unit folder is listed in its track,
-  and that unit slugs are unique across tracks. Every `skills` tag must be in the taxonomy, and
+  `___` count matches the blanks, 2–5 objectives and at least one https source per unit,
+  multi-line code written as an array of lines, no two fill-blank answers that normalize alike,
+  and the checkable half of Rule 3: readings open the unit and challenges close it.
+- **The validator** (`learning/validate-content.ts`, run by `pnpm validate` and pinned case by
+  case in `learning/validate-content.test.ts`) checks Rule 2 and the reading-file rules above.
+  It checks that slugs match folders, that every track folder is in `content/catalog.json` and
+  every unit folder in its track, and that unit slugs are unique across tracks. Every `skills` tag must be in the taxonomy, and
   the taxonomy must be acyclic (unused tags are warned about). It also checks the challenge
   contract for **every** challenge folder, referenced by a unit or not:
   - the entry resolves inside the folder
-  - `App.tsx`, `solution.tsx`, `README.md` and a `*.test.tsx`/`*.test.ts` grader exist
+  - `README.md` exists and holds only the problem and hints (no title, checklist, "Your task"
+    or "Running" section)
+  - `App.tsx`, `solution.tsx` and a `*.test.tsx`/`*.test.ts` grader exist
   - the solution differs from the starter
   - every bare import in every sandbox file (in `from` / `import "x"` / `import("x")` /
     `require("x")` form) resolves to a sandbox package or a declared dependency
@@ -210,7 +251,8 @@ Sandpack iframe:
   and the solution passes.
 
 Still judgment, not checked: the rest of Rule 3 (each assessment harder than the last), that
-each planted bug has its own test, and that every acceptance criterion is actually asserted.
+each planted bug has its own test, that every acceptance criterion is actually asserted, that
+every objective is assessed, and that the content agrees with its sources.
 Don't describe a rule as auto-enforced until something checks it. When you learn a rule the hard
 way, prefer _teaching the validator_ over adding a paragraph here.
 
@@ -242,8 +284,11 @@ lesson needs, that's a signal to improve the skill or the schema — not to hand
 
 ## The self-improvement loop (autonomous + audit log)
 
-Feedback (a 👎, a rating, a typed note) lands in `content/feedback/`. `/improve-lesson`
-reads it and edits content **directly** — this repo's git history is the safety net.
+Feedback is a **GitHub issue labelled `lesson-feedback`**. Every reading example, question,
+prompt, snippet and challenge has a "Flag" link that opens a prefilled issue carrying the exact
+content ids (`lib/feedback.ts`). `/improve-lesson` reads the open ones with `gh` and edits content
+**directly** — this repo's git history is the safety net — and the PR that ships the fix closes
+the issue (`Fixes #N`).
 
 - Make changes **small and frequent**: one logical edit per commit, with a clear message,
   so any change is trivially `git revert`-able.
@@ -261,7 +306,8 @@ Capture which it is, because the fix lives in a different place (the app / order
 
 **Fix things at the highest layer that applies** — the same ladder `/improve-lesson` follows:
 
-1. a **check** in `scripts/validate.ts` or a unit test (the machine enforces it forever),
+1. a **check** in `learning/validate-content.ts` (with its case in
+   `learning/validate-content.test.ts`) or a unit test (the machine enforces it forever),
 2. the **schema** (`learning/schema.ts`) so the mistake can't be represented,
 3. **this playbook** for judgment a machine can't check,
 4. the **skills** (`.claude/skills/*/SKILL.md`) for procedure and ordering,
@@ -272,6 +318,8 @@ at layer 1–4, not just a lesson.
 
 ## Quality checklist (before a lesson is done)
 
+- [ ] Objectives written first; every assessment item tests one, and every objective is tested
+- [ ] Every claim checked against the listed sources; version-dependent claims name the version
 - [ ] Each reading tier has ≥1 example; each example is the same idea at higher resolution
 - [ ] Distractors are real misconceptions; every question/item has a teaching `explanation`
 - [ ] Difficulty escalates; the challenge is genuinely harder than the quiz

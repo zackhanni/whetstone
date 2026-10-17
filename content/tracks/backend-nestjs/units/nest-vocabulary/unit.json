@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "nest-vocabulary",
   "title": "Nest vocabulary: the words before the wiring",
   "skills": [
@@ -15,6 +15,19 @@
   ],
   "difficulty": "intro",
   "estimatedMinutes": 25,
+  "objectives": [
+    "Explain what a controller, service, provider and module each do, and put a business rule in the service",
+    "Explain that decorators run once at startup, and write a route with @Controller, @Get, @Param, @Body",
+    "Choose the HTTP verb for an operation and explain why path and query values arrive as strings",
+    "Read constructor(private readonly x: T) as an injected field and explain why provider fields are shared",
+    "Tell a guard (yes/no gate) from an interceptor (wraps the call) and reach the request via switchToHttp()"
+  ],
+  "sources": [
+    { "title": "NestJS docs: Controllers", "url": "https://docs.nestjs.com/controllers" },
+    { "title": "NestJS docs: Providers", "url": "https://docs.nestjs.com/providers" },
+    { "title": "NestJS docs: Modules", "url": "https://docs.nestjs.com/modules" },
+    { "title": "NestJS docs: Execution context", "url": "https://docs.nestjs.com/fundamentals/execution-context" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-vocabulary", "dir": "reading" },
     {
@@ -150,14 +163,27 @@
         {
           "id": "injectable-service",
           "prompt": "Mark this class as something the injector may create and hand out.",
-          "code": "@___()\nexport class UsersService {\n  findAll() { return []; }\n}",
+          "code": [
+            "@___()",
+            "export class UsersService {",
+            "  findAll() { return []; }",
+            "}"
+          ],
           "blanks": [{ "id": "a1", "accept": ["Injectable"] }],
           "explanation": "`@Injectable()` marks a class as available to the injector. It still has to be listed in a module's `providers` array — the decorator describes, the module registers. Note the parentheses: the decorator is a function call."
         },
         {
           "id": "controller-and-route",
           "prompt": "Answer `GET /users/42`: the class prefix, the verb decorator with a route parameter, and the decorator that reads it.",
-          "code": "@___(\"users\")\nexport class UsersController {\n  @___(\":id\")\n  findOne(@___(\"id\") id: string) {\n    return { id };\n  }\n}",
+          "code": [
+            "@___(\"users\")",
+            "export class UsersController {",
+            "  @___(\":id\")",
+            "  findOne(@___(\"id\") id: string) {",
+            "    return { id };",
+            "  }",
+            "}"
+          ],
           "blanks": [
             { "id": "b1", "accept": ["Controller"] },
             { "id": "b2", "accept": ["Get"] },
@@ -168,7 +194,12 @@
         {
           "id": "post-body",
           "prompt": "Create an order from the request's JSON body.",
-          "code": "@___()\ncreate(@___() dto: CreateOrderDto) {\n  return this.orders.create(dto);\n}",
+          "code": [
+            "@___()",
+            "create(@___() dto: CreateOrderDto) {",
+            "  return this.orders.create(dto);",
+            "}"
+          ],
           "blanks": [
             { "id": "c1", "accept": ["Post"] },
             { "id": "c2", "accept": ["Body"] }
@@ -178,7 +209,15 @@
         {
           "id": "constructor-injection",
           "prompt": "Give this controller the service in one line — declared, never constructed.",
-          "code": "export class UsersController {\n  constructor(___ readonly users: UsersService) {}\n\n  findAll() {\n    return ___.users.findAll();\n  }\n}",
+          "code": [
+            "export class UsersController {",
+            "  constructor(___ readonly users: UsersService) {}",
+            "",
+            "  findAll() {",
+            "    return ___.users.findAll();",
+            "  }",
+            "}"
+          ],
           "blanks": [
             { "id": "d1", "accept": ["private"] },
             { "id": "d2", "accept": ["this"] }
@@ -188,7 +227,13 @@
         {
           "id": "module-keys",
           "prompt": "Register the controller and the service for this feature.",
-          "code": "@Module({\n  ___: [UsersController],\n  ___: [UsersService],\n})\nexport class UsersModule {}",
+          "code": [
+            "@Module({",
+            "  ___: [UsersController],",
+            "  ___: [UsersService],",
+            "})",
+            "export class UsersModule {}"
+          ],
           "blanks": [
             { "id": "e1", "accept": ["controllers"] },
             { "id": "e2", "accept": ["providers"] }
@@ -198,7 +243,12 @@
         {
           "id": "guard-context",
           "prompt": "Reach the HTTP request from inside a guard.",
-          "code": "canActivate(context: ExecutionContext): boolean {\n  const request = context.___().getRequest();\n  return Boolean(request.headers.authorization);\n}",
+          "code": [
+            "canActivate(context: ExecutionContext): boolean {",
+            "  const request = context.___().getRequest();",
+            "  return Boolean(request.headers.authorization);",
+            "}"
+          ],
           "blanks": [{ "id": "f1", "accept": ["switchToHttp"] }],
           "explanation": "`ExecutionContext` wraps whatever is being handled — an HTTP request, a WebSocket message, an RPC call — so you unwrap it with `switchToHttp()` (or `switchToWs()` / `switchToRpc()`). Returning `false` from `canActivate` makes Nest answer 403."
         }

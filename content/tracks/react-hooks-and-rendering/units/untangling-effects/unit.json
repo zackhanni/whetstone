@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "untangling-effects",
   "title": "Untangling a component with too many effects",
   "skills": [
@@ -12,6 +12,19 @@
   ],
   "difficulty": "advanced",
   "estimatedMinutes": 30,
+  "objectives": [
+    "Refactor a derived-state effect into a value computed during render, like const count = text.length",
+    "Spot why a no-deps prop-to-state sync clobbers typing, and reset local state with a key instead",
+    "Fix a listener effect that piles up: named handler, matching removeEventListener, and [] deps",
+    "Explain why StrictMode runs effects twice in development and answer it with a cleanup, not a guard",
+    "Spot why deleting a dependency the effect reads is the wrong fix for an effect that re-runs"
+  ],
+  "sources": [
+    { "title": "React docs: You Might Not Need an Effect", "url": "https://react.dev/learn/you-might-not-need-an-effect" },
+    { "title": "React docs: Removing Effect Dependencies", "url": "https://react.dev/learn/removing-effect-dependencies" },
+    { "title": "React docs: Synchronizing with Effects", "url": "https://react.dev/learn/synchronizing-with-effects" },
+    { "title": "MDN: EventTarget.removeEventListener()", "url": "https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/removeEventListener" }
+  ],
   "blocks": [
     {
       "type": "reading",
@@ -175,7 +188,10 @@
         {
           "id": "derive-instead",
           "prompt": "Delete the derived-state effect: compute the character count during render.",
-          "code": "const [text, setText] = useState(\"\");\nconst count = ___.___;",
+          "code": [
+            "const [text, setText] = useState(\"\");",
+            "const count = ___.___;"
+          ],
           "blanks": [
             {
               "id": "g1",
@@ -195,7 +211,13 @@
         {
           "id": "listener-with-cleanup",
           "prompt": "Subscribe to window resize correctly: a named handler, a cleanup, and deps that make it run once.",
-          "code": "useEffect(() => {\n  const onResize = () => setWidth(window.innerWidth);\n  window.addEventListener(\"resize\", onResize);\n  return () => window.___(\"resize\", ___);\n}, ___);",
+          "code": [
+            "useEffect(() => {",
+            "  const onResize = () => setWidth(window.innerWidth);",
+            "  window.addEventListener(\"resize\", onResize);",
+            "  return () => window.___(\"resize\", ___);",
+            "}, ___);"
+          ],
           "blanks": [
             {
               "id": "h1",
@@ -240,7 +262,23 @@
       "snippets": [
         {
           "id": "empty-deps-stale-count",
-          "code": "function Editor() {\n  const [text, setText] = useState(\"\");\n  const [count, setCount] = useState(0);\n\n  useEffect(() => { setCount(text.length); }, []); // note the deps\n\n  return (\n    <>\n      <input value={text} onChange={(e) => setText(e.target.value)} />\n      <span>{count}</span>\n    </>\n  );\n}\n\n// The user types \"hello\".",
+          "code": [
+            "function Editor() {",
+            "  const [text, setText] = useState(\"\");",
+            "  const [count, setCount] = useState(0);",
+            "",
+            "  useEffect(() => { setCount(text.length); }, []); // note the deps",
+            "",
+            "  return (",
+            "    <>",
+            "      <input value={text} onChange={(e) => setText(e.target.value)} />",
+            "      <span>{count}</span>",
+            "    </>",
+            "  );",
+            "}",
+            "",
+            "// The user types \"hello\"."
+          ],
           "question": "What number does the <span> show?",
           "answer": "0",
           "acceptable": [
@@ -253,7 +291,15 @@
         },
         {
           "id": "prop-sync-clobbers",
-          "code": "function Editor({ description }) {\n  const [text, setText] = useState(description);\n  useEffect(() => { setText(description); }); // no dep array\n  return <input value={text} onChange={(e) => setText(e.target.value)} />;\n}\n\n// description is \"Draft\". The user types \"X\" at the end.",
+          "code": [
+            "function Editor({ description }) {",
+            "  const [text, setText] = useState(description);",
+            "  useEffect(() => { setText(description); }); // no dep array",
+            "  return <input value={text} onChange={(e) => setText(e.target.value)} />;",
+            "}",
+            "",
+            "// description is \"Draft\". The user types \"X\" at the end."
+          ],
           "question": "What does the input show right after the keystroke?",
           "answer": "Draft",
           "acceptable": [
@@ -266,7 +312,17 @@
         },
         {
           "id": "listener-accumulates",
-          "code": "function Widget() {\n  const [resizes, setResizes] = useState(0);\n  useEffect(() => {\n    window.addEventListener(\"resize\", () => setResizes((r) => r + 1));\n  }); // no deps, no cleanup\n  return <span>{resizes}</span>;\n}\n\n// The window is resized twice (one event each).",
+          "code": [
+            "function Widget() {",
+            "  const [resizes, setResizes] = useState(0);",
+            "  useEffect(() => {",
+            "    window.addEventListener(\"resize\", () => setResizes((r) => r + 1));",
+            "  }); // no deps, no cleanup",
+            "  return <span>{resizes}</span>;",
+            "}",
+            "",
+            "// The window is resized twice (one event each)."
+          ],
           "question": "What number does the <span> show after those two resizes, and why isn't it 2?",
           "answer": "3",
           "acceptable": [

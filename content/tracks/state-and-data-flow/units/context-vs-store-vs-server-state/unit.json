@@ -1,10 +1,23 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "context-vs-store-vs-server-state",
   "title": "Context vs client store vs server state",
   "skills": ["react", "state-management", "context", "zustand", "server-state", "tanstack-query", "architecture"],
   "difficulty": "core",
   "estimatedMinutes": 25,
+  "objectives": [
+    "Name each value's single owner (URL, query cache, client store or Context) from who creates it",
+    "Replace server data copied into a store with stored ids joined to the query data at render time",
+    "Write a query key that includes every request input, such as the status filter and page number",
+    "Split a context into state and dispatch so dispatch-only consumers skip re-renders when state changes",
+    "Spot a module-level store outliving its screen, and a persisted value read before mount under SSR"
+  ],
+  "sources": [
+    { "title": "TanStack Query docs: Does TanStack Query replace client state?", "url": "https://tanstack.com/query/latest/docs/framework/react/guides/does-this-replace-client-state" },
+    { "title": "TanStack Query docs: Query Keys", "url": "https://tanstack.com/query/latest/docs/framework/react/guides/query-keys" },
+    { "title": "React docs: Scaling Up with Reducer and Context", "url": "https://react.dev/learn/scaling-up-with-reducer-and-context" },
+    { "title": "React docs: hydrateRoot", "url": "https://react.dev/reference/react-dom/client/hydrateRoot" }
+  ],
   "blocks": [
     { "type": "reading", "id": "read-owners", "dir": "reading" },
     {
@@ -92,7 +105,12 @@
         {
           "id": "query-key-inputs",
           "prompt": "Every input the request depends on goes in the query key, so each filter/page combination is its own cache entry.",
-          "code": "useQuery({\n  queryKey: [\"orders\", { ___, ___ }],\n  queryFn: () => getOrders({ status, page }),\n});",
+          "code": [
+            "useQuery({",
+            "  queryKey: [\"orders\", { ___, ___ }],",
+            "  queryFn: () => getOrders({ status, page }),",
+            "});"
+          ],
           "blanks": [
             { "id": "a1", "accept": ["status"] },
             { "id": "a2", "accept": ["page"] }
@@ -102,7 +120,10 @@
         {
           "id": "derive-selection",
           "prompt": "The store holds selected ids; derive the selected rows from the server data at render time.",
-          "code": "const selectedIds = useSelectionStore((s) => s.selectedIds); // Set<string>\nconst selected = data.items.___((o) => selectedIds.___(o.id));",
+          "code": [
+            "const selectedIds = useSelectionStore((s) => s.selectedIds); // Set<string>",
+            "const selected = data.items.___((o) => selectedIds.___(o.id));"
+          ],
           "blanks": [
             { "id": "b1", "accept": ["filter"] },
             { "id": "b2", "accept": ["has"] }
@@ -112,7 +133,11 @@
         {
           "id": "split-context",
           "prompt": "Split one context in two so that components which only dispatch actions stop re-rendering when the state changes.",
-          "code": "<StateContext.Provider value={state}>\n  <___.Provider value={dispatch}>{children}</___.Provider>\n</StateContext.Provider>",
+          "code": [
+            "<StateContext.Provider value={state}>",
+            "  <___.Provider value={dispatch}>{children}</___.Provider>",
+            "</StateContext.Provider>"
+          ],
           "blanks": [
             { "id": "c1", "accept": ["DispatchContext"] },
             { "id": "c2", "accept": ["DispatchContext"] }

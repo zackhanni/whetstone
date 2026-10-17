@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "backend-nestjs",
   "title": "Backend with NestJS",
   "description": "Start with the vocabulary — controller, provider, module, decorator, and the one TypeScript line that wires them — then the three things a Nest codebase asks you to reason about: the module graph and the injector that connects providers, the DTO contract that decides what a handler is even allowed to receive, and the request lifecycle — pipes, guards, interceptors and exception filters — that runs around every handler.",

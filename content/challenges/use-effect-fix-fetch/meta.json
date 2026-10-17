@@ -1,8 +1,7 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "slug": "use-effect-fix-fetch",
   "title": "Fix the search-as-you-type effect",
-  "prompt": "A live user search has a race condition and leaks in-flight requests. Make the tests pass by adding cleanup and a race guard.",
   "skills": ["react", "hooks", "useEffect", "data-fetching", "AbortController"],
   "difficulty": "core",
   "estimatedMinutes": 20,

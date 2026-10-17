@@ -13,7 +13,7 @@
 pnpm dev              # Next dev server — this project runs on :3002 (another app owns :3000)
 pnpm build            # production build (SSG) — gate for any routing/content change
 pnpm check            # lint + typecheck + validate + test + test:challenges — the primary gate
-pnpm validate         # schema + reading files + slugs + taxonomy + challenge contract (scripts/validate.ts)
+pnpm validate         # schema + catalog + reading files + slugs + taxonomy + challenge contract (learning/validate-content.ts)
 pnpm test             # Vitest — pure lib/* and learning/* logic, node environment
 pnpm test:challenges  # every challenge grader, headless: starter must fail, solution must pass
 ```
@@ -30,12 +30,13 @@ challenge grader runs in happy-dom, not Sandpack, so a new or changed challenge 
 
 ## Where things live
 
-- `content/` — all lessons (`tracks/…/units/…/unit.json` + `reading/{simple,medium,complex}/*.mdx`) and `challenges/`.
-- `learning/` — the authoring system: `schema.ts` (zod, the shape of content), `taxonomy.ts` (the tag registry), `sandbox.ts` (what a challenge can import, and the pinned versions), `PLAYBOOK.md` (authoring judgment).
-- `scripts/validate.ts` + `scripts/check-challenges.ts` — the content gates (`vitest.challenges.config.ts` is the headless grader's config).
+- `content/` — all lessons (`tracks/…/units/…/unit.json` + `reading/{simple,medium,complex}/*.mdx`), `challenges/`, and `catalog.json` (track order).
+- `learning/` — the authoring system: `schema.ts` (zod, the shape of content), `validate-content.ts` (the cross-file checks), `taxonomy.ts` (the tag registry), `sandbox.ts` (what a challenge can import, and the pinned versions), `grading.ts` (how fill-blank answers match), `PLAYBOOK.md` (authoring judgment).
+- `scripts/validate.ts` + `scripts/check-challenges.ts` — the content gates' command-line entry points (`vitest.challenges.config.ts` is the headless grader's config).
+- `lib/feedback.ts` + `components/flag-link.tsx` — "Flag" links that open a prefilled `lesson-feedback` GitHub issue; `/improve-lesson` reads those issues.
 - `lib/content.ts` — file-based content loader (React `cache()`, path-traversal guarded).
 - `lib/progress.ts` + `components/progress-provider.tsx` — the local-first progress store (Context). `lib/stores/interests-store.ts` — the interest filter (Zustand).
-- `docs/` — `handoff.md` (START HERE), `ROADMAP.md` (plan + backlog), `lesson-changelog.md`, and design notes: `tags-design.md`, `cards-and-lesson-depth.md`, `zustand-migration.md`, `shadcn-local-patches.md`.
+- `docs/` — `handoff.md` (START HERE), `ROADMAP.md` (plan + backlog), `lesson-changelog.md`, `content-review.md` (known accuracy issues to fix), and design notes: `tags-design.md`, `cards-and-lesson-depth.md`, `zustand-migration.md`, `shadcn-local-patches.md`.
 
 ## Authoring content
 
