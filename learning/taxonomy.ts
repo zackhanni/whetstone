@@ -103,7 +103,7 @@ export const TAXONOMY: TagNode[] = [
   {
     slug: "architecture",
     label: "Architecture",
-    parents: ["frontend", "backend"],
+    parents: ["frontend", "backend", "system-design"],
   },
 
   // react → topics
@@ -296,7 +296,7 @@ export const TAXONOMY: TagNode[] = [
   // ── backend-nestjs ──
   { slug: "api-versioning", label: "API Versioning", parents: ["http"] },
   { slug: "redis", label: "Redis", parents: ["caching", "backend"] },
-  { slug: "rate-limiting", label: "Rate Limiting", parents: ["backend", "security"] },
+  { slug: "rate-limiting", label: "Rate Limiting", parents: ["backend", "security", "system-design"] },
   { slug: "messaging", label: "Messaging & Events", parents: ["backend"] },
   { slug: "microservices", label: "Microservices", parents: ["backend", "architecture"] },
 
@@ -354,6 +354,16 @@ export const TAXONOMY: TagNode[] = [
   { slug: "rebase", label: "Rebase & Merge", parents: ["git"] },
   { slug: "pull-requests", label: "Pull Requests", parents: ["github", "git"] },
   { slug: "code-review", label: "Code Review", parents: ["pull-requests"] },
+
+  // ── systems-design ──
+  { slug: "system-design", label: "System Design", parents: [] },
+  { slug: "capacity-estimation", label: "Back-of-Envelope Estimates", parents: ["system-design"] },
+  { slug: "scaling", label: "Scaling", parents: ["system-design"] },
+  { slug: "replication", label: "Replication", parents: ["scaling", "databases"] },
+  { slug: "partitioning", label: "Sharding & Partitioning", parents: ["scaling", "databases"] },
+  { slug: "consistency-models", label: "Consistency Models", parents: ["system-design", "databases"] },
+  { slug: "back-pressure", label: "Back-pressure & Load Shedding", parents: ["scaling"] },
+  { slug: "fan-out", label: "Fan-out (Feeds)", parents: ["system-design"] },
 ];
 
 /** Fast membership set of every defined tag slug — used by the validator and (later) the app. */

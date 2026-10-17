@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 3,
+  "slug": "systems-design",
+  "title": "Systems Design",
+  "description": "The capstone: put the HTTP, caching, database and messaging units together into designs you can defend. Start with a repeatable order of work — requirements, estimates with their arithmetic shown, API, data model, then scale — then the read and write paths a growing system needs (caches and how they go stale, replicas and their lag, shards and how keys move), and finish with the arguments a design review actually asks for: fan-out on write or read, which rate limiter, and what happens when every client retries at once.",
+  "units": [
+    "design-framework",
+    "caching-and-scaling",
+    "design-tradeoffs"
+  ]
+}
