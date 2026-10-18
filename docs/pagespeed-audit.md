@@ -30,6 +30,13 @@ measurable change. LCP is simulated: the observed LCP equals FCP on every page (
 localhost), and the LCP element is text, so the 2-3 s figures are Lighthouse's model of a slow
 phone, not a measured delay.
 
+### Production after deploy (2026-10-18, main 3330f0b)
+
+PSI lab, mobile, one run each: home 92 / 100 / 100 / 100, track 99 / 100 / 100 / 100, challenge
+unit 94 / 100 / 100 / 100, card unit 93 / 100 / 100 / 100 (perf / a11y / BP / SEO). Before the
+round, production home was 91 / 96 / 100 / 100. Console check on production: 0 errors, 0
+warnings on all four pages.
+
 ### Field data (CrUX)
 
 None at URL or origin level (too little traffic). Unmeasured, not a pass. PSI lab on production
