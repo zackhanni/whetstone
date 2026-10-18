@@ -10,8 +10,8 @@ Our own product, live and public at `https://whetstone-tawny.vercel.app` (the ow
 and indexable, 2026-10-17). One user so far: the owner. There are no accounts, no analytics and
 no backend, so there is no usage number to claim. The results below are what was built and
 measured on the live site, not outcomes for learners. Docs-only PR #44
-(`docs/post-deploy-2026-10-18`) is open; it records the 2026-10-18 production checks this
-write-up cites.
+(`docs/post-deploy-2026-10-18`, merged 2026-10-18) records the production checks this write-up
+cites.
 
 ## Before publishing
 
@@ -32,8 +32,8 @@ The items below are follow-ups, not blockers.
    by a separate reviewer agent. Confirm you want that public (Sincewhen's entry discloses AI help
    the same way). The lesson prose keeps em dashes and some stock words by your choice
    (`docs/seo.md` → "kept on purpose"): a visitor who clicks through will read them.
-5. **Merge PR #44**, so the 2026-10-18 production checks this cites (47 of 47 challenges in real
-   Sandpack against the live site; PSI 100s) are on `main`, not only on a branch.
+5. **PR #44 is merged** (2026-10-18), so the production checks this cites (47 of 47 challenges
+   in real Sandpack against the live site; PSI 100s) are on `main`.
 6. **Re-measure accessibility with saved progress (M7).** The live runs used an empty browser.
    The home page shows progress bars and a "continue" card only once progress exists. Seed a
    throwaway profile with made-up progress and re-run the home and a track page before the
@@ -193,6 +193,7 @@ is published, not a draft (owner, 2026-10-18).
       { value: "83", label: "Lessons across 16 topic tracks" },
       { value: "47", label: "Coding challenges graded in the browser" },
       { value: "96 to 100", label: "Accessibility score on the live home page" },
+      { value: "99", label: "Google mobile speed score on the live home page (best of 3 tests)" },
     ],
     externalLink: "https://whetstone-tawny.vercel.app",
     year: "2026",
@@ -216,6 +217,7 @@ is published, not a draft (owner, 2026-10-18).
       "All 47 challenges pass their starter-fails, solution-passes check in the real in-browser runner against the live site, and headlessly on every deploy (320 tests in all).",
       "Accessibility went from 96 to 100 on the live home page, and accessibility, best practices and SEO all score 100 on each of the 4 page types measured (home, a track, a challenge lesson, a reference-card lesson).",
       "Challenge pages load 48% less script (453 to 235 KB), because the code runner now loads only when it scrolls near view.",
+      "Google PageSpeed Insights scores the live home page 99 for mobile performance (best of 3 tests) and 100 on desktop (1 test), in October 2026.",
       "Every lesson cites the official docs it was checked against: 711 sources across 83 lessons. A docs-backed review of the first three tracks found 47 claims to fix: 46 fixed, 1 rejected with a reason.",
       "143 automated tests, a content validator and the challenge graders run on every Vercel build, and a failing check blocks the production deploy.",
       "Built with an AI coding assistant: lessons drafted and reviewed by separate AI agents, and the content rules checked automatically on every deploy.",
@@ -245,7 +247,10 @@ is published, not a draft (owner, 2026-10-18).
 - **The 96 to 100 tile** pairs PSI on production before the round (home, main `e350053`,
   2026-10-17) with PSI and a local Lighthouse run on production after it (main `3330f0b`,
   2026-10-18). Re-check it with saved progress loaded before publishing (Before publishing).
-- **Not claimed:** performance scores (PSI lab 92-99, one run each; no field data), any
+- **The speed tile** is the best of 3 keyed PageSpeed Insights runs on the live home page (92,
+  99, 93), as the owner asked for best recorded numbers (2026-10-18). A reader may get a lower
+  score; Evidence lists every run. The other pages have one run each, so they stay out.
+- **Not claimed:** performance scores for pages other than home (one run each; no field data), any
   "self-improving" or feedback loop (the Flag links have never produced an issue), a screen
   reader pass (not done), how long the content phase took (commit times span about 16 hours
   on 2026-10-17, but the authoring started in scratch clones before that, so the duration is
@@ -312,8 +317,8 @@ deploy proves each starter fails and each solution passes.
 - **How long the content phase took** — ask the owner: "From starting the content phase to
   merging PRs #15-#33 on 2026-10-17, how many days was it, and about how many of your hours?"
   Hours stay not public until you clear them.
-- **Performance on the live site** — 3 PSI runs per page on a day the PSI quota allows (one
-  run each gave 92-99 on 2026-10-18). Only worth a tile at 95 or more.
+- **Performance on the other live pages** — 3 PSI runs each for the track, challenge and card
+  pages (one run each gave 99, 94 and 93 on 2026-10-18). The home page is done (Evidence).
 - **Accessibility with progress loaded** — Before publishing, item 6.
 - **Visitors** — none measured (no analytics, no CrUX data). Only if you add analytics or
   submit the sitemap in Search Console (an open owner action).
@@ -331,7 +336,7 @@ deploy proves each starter fails and each solution passes.
 | Live in-browser check | 47 of 47 challenges pass in real Sandpack against the live site | `docs/handoff.md` on branch `docs/post-deploy-2026-10-18` (PR #44, open): "all 47 challenges pass in real Sandpack against the live site" (main `3330f0b`). Re-run: `BASE_URL=https://whetstone-tawny.vercel.app pnpm test:challenges:browser` (spaced, one run; Vercel's firewall challenges fast polling) | 2026-10-18 |
 | Unit tests | 143 tests in 9 files | `pnpm test` on `main` `3330f0b`: "Tests 143 passed (143)" | 2026-10-18 |
 | Gate on every deploy | `pnpm check && pnpm build` | `vercel.json` → `buildCommand`; `package.json` → `check` = lint, typecheck, validate, test, test:challenges | 2026-10-18 |
-| Home accessibility, before → after (live) | 96 → 100 (+4 points) | Before: PSI lab, mobile, production home on main `e350053` before the pagespeed round: 91 / 96 / 100 / 100 (`docs/pagespeed-audit.md` → Field data). After: PSI lab 100 (`docs/pagespeed-audit.md` on PR #44's branch → "Production after deploy") and local Lighthouse 12.8.2, mobile, against `https://whetstone-tawny.vercel.app/`: accessibility 100 | 2026-10-18 |
+| Home accessibility, before → after (live) | 96 → 100 (+4 points) | Before: PSI lab, mobile, production home on main `e350053` before the pagespeed round: 91 / 96 / 100 / 100 (`docs/pagespeed-audit.md` → Field data). After: PSI lab 100 (`docs/pagespeed-audit.md` → "Production after deploy", PR #44) and local Lighthouse 12.8.2, mobile, against `https://whetstone-tawny.vercel.app/`: accessibility 100 | 2026-10-18 |
 | Live Lighthouse, 4 page types | accessibility / best practices / SEO 100 / 100 / 100 on each of 4 | `npx -y lighthouse@12 <url> --only-categories=accessibility,best-practices,seo --form-factor=mobile --chrome-flags="--headless=new"`, one run each (deterministic), on `/`, `/learn/react-hooks-and-rendering`, `/learn/react-hooks-and-rendering/use-state-and-functional-updates`, `/learn/reference-cards/http-status-codes`; empty browser (no saved progress) | 2026-10-18 |
 | Script on a challenge page | 453 → 235 KB (48% less) | Before: `docs/pagespeed-audit.md` P6, local production build, median of 3, before the runner was deferred. After: re-measured live, Lighthouse 12 `--only-audits=resource-summary` on the `use-state-and-functional-updates` page: 12 scripts, 240,799 bytes (235 KiB), 0 third-party requests. (453 − 235) / 453 = 48.1% | 2026-10-18 |
 | Content review of the first three tracks | 47 findings: 46 fixed, 1 rejected with a reason | `docs/content-review.md` → "Open findings: None. All 47 findings ... were fixed (or, for one, rejected with the reason in its PR)"; `docs/lesson-changelog.md`: 21 (React Hooks, PR #16), 14 (State & Data Flow, PR #15), 12 (NestJS, PR #17) | 2026-10-18 |
@@ -339,5 +344,6 @@ deploy proves each starter fails and each solution passes.
 | No analytics | no analytics package; CSP `connect-src 'self'` | `package.json` dependencies; the CSP header above | 2026-10-18 |
 | Duration | first commit 2026-06-17; first production deploy 2026-07-04; latest 2026-10-18 | `git log --reverse --date=short` (`c300330`); `gh api "repos/zackhanni/whetstone/deployments?environment=Production"` (18 deployments). Commits per month: Jun 22, Jul 41, Aug 4, Sep 0, Oct 170, so "to present" yes, "continuous" no | 2026-10-18 |
 | Content-phase commit span (not public) | 128 commits, 2026-10-17 02:06 to 18:22 EDT | `git log e4fb5f9..e350053 --no-merges --date=iso-local`. Commit times, not authoring time: authoring ran in scratch clones first | 2026-10-18 |
-| Performance, live (not public) | PSI lab 92 / 99 / 94 / 93 (home, track, challenge, card), one run each | `docs/pagespeed-audit.md` on PR #44's branch. One run each: not publishable as a score | 2026-10-18 |
+| PageSpeed Insights, live home page | mobile performance 99 = best of 3 runs (92, 99, 93); desktop 100 (1 run); accessibility, best practices and SEO 100 on all 4 | The 92: `docs/pagespeed-audit.md` (PR #44). The 99 and 93: `node scripts/pagespeed/psi.mjs --url=https://whetstone-tawny.vercel.app/ --strategy=mobile` (and `desktop`) from the pfthw folder for its key, Lighthouse 13.5.0, 2026-10-18 17:22 UTC; a third call returned the 93 from PSI's cache (same `fetchTime`) and is not counted. No field data (too little traffic) | 2026-10-18 |
+| Performance, other live pages (not public) | PSI lab 99 / 94 / 93 (track, challenge, card), one run each | `docs/pagespeed-audit.md` (PR #44). One run each: not enough for a published score | 2026-10-18 |
 | Feedback issues (not public) | 0 issues ever | `gh issue list --state all` on `zackhanni/whetstone` (repo private) | 2026-10-18 |
