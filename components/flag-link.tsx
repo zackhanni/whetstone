@@ -21,7 +21,7 @@ export function FlagLink({ block, item }: { block: string; item?: string }) {
       target="_blank"
       rel="noreferrer"
       title="Report a problem with this (opens a GitHub issue)"
-      className="inline-flex shrink-0 items-center gap-1 text-xs text-slate-500 hover:text-slate-300"
+      className="inline-flex shrink-0 items-center gap-1 text-xs text-slate-400 hover:text-slate-300"
     >
       <Flag aria-hidden className="size-3" />
       Flag

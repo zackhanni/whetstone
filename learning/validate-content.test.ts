@@ -119,6 +119,11 @@ const TRACK = "content/tracks/t/track.json";
 const CATALOG = "content/catalog.json";
 const META = "content/challenges/c/meta.json";
 const SIMPLE = "content/tracks/t/units/u/reading/simple";
+const STARTER = "content/challenges/c/Thing.tsx";
+const GRADER = "content/challenges/c/Thing.test.tsx";
+/** A regex literal holding `/*`, which a hand-rolled comment stripper reads as a comment opening. */
+const GRADER_AFTER_SLASH_STAR_REGEX =
+  'const trim = (u: string) => u.replace(/\\/*$/, "");\nit("a", () => {});\nit("a", () => {});\nconst pad = require("lodash");\n';
 
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "whetstone-validate-"));
@@ -176,8 +181,11 @@ const ERROR_CASES: [string, () => Promise<unknown>, string][] = [
   ["meta.json slug differs from its folder", () => set(META, ["slug"], "x"), 'meta.slug "x" does not match folder'],
   ["entry file missing", () => set(META, ["entry"], "Nope.tsx"), 'entry file "Nope.tsx" not found'],
   ["entry escapes the folder", () => set(META, ["entry"], "../c/../../x.tsx"), "escapes the challenge directory"],
+  ["entry written with a ./ prefix", () => set(META, ["entry"], "./Thing.tsx"), 'entry "./Thing.tsx" must be written "Thing.tsx"'],
+  ["entry names the README", () => set(META, ["entry"], "README.md"), 'entry "README.md" is not a starter file'],
+  ["entry names the reference solution", () => set(META, ["entry"], "solution.tsx"), 'entry "solution.tsx" is not a starter file'],
   ["missing App.tsx", () => remove("content/challenges/c/App.tsx"), "missing App.tsx"],
-  ["no grader", () => remove("content/challenges/c/Thing.test.tsx"), "no *.test.tsx grader"],
+  ["no grader", () => remove("content/challenges/c/Thing.test.tsx"), "no *.test.tsx or *.test.ts grader"],
   ["solution identical to the starter", () => write("content/challenges/c/solution.tsx", FIXTURE["content/challenges/c/Thing.tsx"]), "identical to the starter"],
   ["grader imports vitest", () => write("content/challenges/c/Thing.test.tsx", 'import { it } from "vitest";\n'), "jest-style globals, not Vitest"],
   ["undeclared package import", () => write("content/challenges/c/Thing.tsx", 'import x from "lodash";\nexport function Thing() {}\n'), 'imports "lodash"'],
@@ -211,6 +219,15 @@ const ERROR_CASES: [string, () => Promise<unknown>, string][] = [
       ),
     'two tests are named "works"',
   ],
+  ["duplicate test name after a regex holding /*", () => write(GRADER, GRADER_AFTER_SLASH_STAR_REGEX), 'two tests are named "a"'],
+  ["undeclared require after a regex holding /*", () => write(GRADER, GRADER_AFTER_SLASH_STAR_REGEX), 'imports "lodash"'],
+  [
+    "undeclared require on the same line as a regex holding //",
+    () => write(STARTER, 'const host = (u: string) => u.replace(/^https?:\\/\\//, ""); const pad = require("lodash");\nexport function Thing() {}\n'),
+    'imports "lodash"',
+  ],
+  ["duplicate test name written with it.only", () => write(GRADER, 'it("a", () => {});\nit.only("a", () => {});\n'), 'two tests are named "a"'],
+  ["duplicate test name written with test.each", () => write(GRADER, 'test("adds", () => {});\ntest.each([[1], [2]])("adds", () => {});\n'), 'two tests are named "adds"'],
   ["invisible character in a reading", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nOne\u2028two.\n"), "invisible character U+2028"],
   ["invisible character in unit.json", () => set(UNIT, ["blocks", 1, "questions", 0, "explanation"], "because\u200b"), "invisible character U+200B"],
   ["word joiner in a reading", () => write(`${SIMPLE}/02-x.mdx`, "---\nid: e\ntitle: E\n---\nOne\u2060two.\n"), "invisible character U+2060"],
@@ -236,6 +253,14 @@ describe("validateContent errors", () => {
     await breakIt();
     const { errors } = await validateContent(root);
     expect(errors.some((e) => e.includes(expected)), errors.join("\n")).toBe(true);
+  });
+
+  it("reports an invisible character in a meta.json that the schema also rejects", async () => {
+    await set(META, ["title"], "C​");
+    await set(META, ["difficulty"], "expert");
+    const { errors } = await validateContent(root);
+    expect(errors, errors.join("\n")).toContainEqual(expect.stringContaining("challenge c/meta.json: contains the invisible character U+200B"));
+    expect(errors, errors.join("\n")).toContainEqual(expect.stringContaining("challenge c: difficulty:"));
   });
 });
 
@@ -295,6 +320,27 @@ describe("validateContent non-errors", () => {
     await write(
       "content/challenges/c/Thing.test.tsx",
       'it("accepts letters", () => { expect(/^[a-z]+$/.test("abc")).toBe(true); });\nit("rejects digits", () => { expect(/^[a-z]+$/.test("abc")).toBe(true); });\n',
+    );
+    expect((await validateContent(root)).errors).toEqual([]);
+  });
+
+  it("doesn't read a method named it or test as a test", async () => {
+    await write(GRADER, 'const suite = { it: (name: string) => name, test: (name: string) => name };\nsuite.it("a");\nsuite.test("a");\nit("a", () => {});\n');
+    expect((await validateContent(root)).errors).toEqual([]);
+  });
+
+  it("ignores code-looking comments after JSX text with an apostrophe", async () => {
+    await write(
+      GRADER,
+      'import { render } from "@testing-library/react";\nit("x", () => { render(<p>Don\'t panic</p>); });\n// an older version did require("lodash") here\n// it("x", …) was the old name\n',
+    );
+    expect((await validateContent(root)).errors).toEqual([]);
+  });
+
+  it("ignores vi.*, jest.mock and jest-dom matchers mentioned in comments", async () => {
+    await write(
+      GRADER,
+      '// no vi.fn() in Sandpack, and no jest.mock("./Thing"): count calls by hand\n/* not .toBeInTheDocument() either */\nit("renders", () => { expect(1).toBe(1); });\n',
     );
     expect((await validateContent(root)).errors).toEqual([]);
   });

@@ -2,41 +2,43 @@
 
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { blankMatches } from "@/learning/grading";
+import { BLANK_TOKEN, blankMatches } from "@/learning/grading";
 import { Markdown } from "./markdown";
 import { InlineMarkdown } from "./inline-markdown";
 import { FlagLink } from "./flag-link";
 import { WhetstoneButton } from "./whetstone-button";
+import type { Block } from "@/learning/schema";
 
-type Blank = { id: string; accept: string[] };
-type Prompt = { id: string; prompt: string; code: string; blanks: Blank[]; explanation: string };
+type FillBlankBlockData = Extract<Block, { type: "fill-blank" }>;
+type Prompt = FillBlankBlockData["prompts"][number];
 
 type Mode = "browse" | "drill";
 type OnResult = (key: string, r: { correct: boolean; answered: boolean }) => void;
 
 
 function PromptView({
-  p,
+  item,
   blockId,
   mode,
   forceReveal,
   onResult,
 }: {
-  p: Prompt;
+  item: Prompt;
   blockId: string;
   mode: Mode;
   forceReveal: boolean;
   onResult: OnResult;
 }) {
-  const parts = p.code.split("___");
-  const [vals, setVals] = useState<string[]>(() => p.blanks.map(() => ""));
-  const [checked, setChecked] = useState(false);
-  const revealed = mode === "browse" ? checked : forceReveal;
-  const results = p.blanks.map((b, i) => blankMatches(vals[i] ?? "", b.accept));
+  const parts = item.code.split(BLANK_TOKEN);
+  const [vals, setVals] = useState<string[]>(() => item.blanks.map(() => ""));
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const revealed = mode === "browse" ? hasSubmitted : forceReveal;
+  const results = item.blanks.map((b, i) => blankMatches(vals[i] ?? "", b.accept));
   const correct = results.every(Boolean);
+  const hasAnswer = vals.some((v) => v.trim() !== "");
 
   useEffect(() => {
-    onResult(`${blockId}:${p.id}`, { correct, answered: vals.some((v) => v.trim() !== "") });
+    onResult(`${blockId}:${item.id}`, { correct, answered: hasAnswer });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vals]);
 
@@ -44,15 +46,15 @@ function PromptView({
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <p className="font-medium text-slate-100">
-          <InlineMarkdown>{p.prompt}</InlineMarkdown>
+          <InlineMarkdown>{item.prompt}</InlineMarkdown>
         </p>
-        <FlagLink block={blockId} item={p.id} />
+        <FlagLink block={blockId} item={item.id} />
       </div>
       <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-slate-900 p-3 text-sm text-slate-200 ring-1 ring-slate-800">
         {parts.map((part, i) => (
           <span key={i}>
             {part}
-            {i < p.blanks.length && (
+            {i < item.blanks.length && (
               <input
                 aria-label={`Blank ${i + 1}`}
                 value={vals[i]}
@@ -66,7 +68,7 @@ function PromptView({
                 }
                 placeholder="___"
                 className={clsx(
-                  "mx-1 w-28 rounded border-b bg-slate-800 px-1 font-mono text-sky-300 outline-none",
+                  "mx-1 w-28 rounded border-b bg-slate-800 px-1 font-mono text-sky-300 outline-none focus-visible:ring-2 focus-visible:ring-sky-500",
                   {
                     "border-emerald-500": revealed && results[i],
                     "border-rose-500": revealed && !results[i],
@@ -79,8 +81,8 @@ function PromptView({
         ))}
       </pre>
 
-      {mode === "browse" && !checked && (
-        <WhetstoneButton size="sm" disabled={vals.every((v) => !v.trim())} onClick={() => setChecked(true)}>
+      {mode === "browse" && !hasSubmitted && (
+        <WhetstoneButton size="sm" disabled={!hasAnswer} onClick={() => setHasSubmitted(true)}>
           Check
         </WhetstoneButton>
       )}
@@ -90,13 +92,14 @@ function PromptView({
           <span className={clsx("font-semibold", correct ? "text-emerald-300" : "text-rose-300")}>
             {correct ? "Correct" : "Not quite"}
           </span>
+          {/* The first accept entry is the one shown as the answer; list the canonical spelling first. */}
           {!correct && (
             <div className="mt-1 text-slate-400">
-              Accepted: {p.blanks.map((b) => b.accept[0]).join(", ")}
+              Accepted: {item.blanks.map((b) => b.accept[0]).join(", ")}
             </div>
           )}
           <div className="mt-1">
-            <Markdown>{p.explanation}</Markdown>
+            <Markdown>{item.explanation}</Markdown>
           </div>
         </div>
       )}
@@ -110,7 +113,7 @@ export function FillBlankBlock({
   forceReveal,
   onResult,
 }: {
-  block: { id: string; prompts: Prompt[] };
+  block: FillBlankBlockData;
   mode: Mode;
   forceReveal: boolean;
   onResult: OnResult;
@@ -120,7 +123,7 @@ export function FillBlankBlock({
       {block.prompts.map((p) => (
         <PromptView
           key={p.id}
-          p={p}
+          item={p}
           blockId={block.id}
           mode={mode}
           forceReveal={forceReveal}

@@ -2,14 +2,15 @@
 
 import ReactMarkdown from "react-markdown";
 
-/**
- * Markdown for one-line content fields — quiz prompts and options, fill-blank prompts,
- * predict-output questions. Authors write `inline code` and **emphasis** in them, which plain
- * text would show as literal backticks and asterisks. Only inline elements render (paragraph
- * wrappers are unwrapped), so the result can sit inside a <p>, <label> or <span>.
- */
 const INLINE_ELEMENTS = ["code", "em", "strong", "del", "a"];
 
+/**
+ * Markdown for one-line content fields — quiz prompts and options, fill-blank prompts,
+ * predict-output questions, unit objectives, challenge titles and acceptance criteria. Authors
+ * write `inline code` and **emphasis** in them, which plain text would show as literal backticks
+ * and asterisks. Only inline elements render (paragraph wrappers are unwrapped), so the result
+ * can sit inside a <p>, <label> or <span>.
+ */
 export function InlineMarkdown({ children }: { children: string }) {
   return (
     <ReactMarkdown

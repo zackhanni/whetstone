@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalizeBlankAnswer } from "./grading";
+import { BLANK_TOKEN, normalizeBlankAnswer } from "./grading";
 
 /**
  * The Whetstone content schema — the single source of truth for what a lesson is.
@@ -101,6 +101,7 @@ export const FillBlankItem = Identified.extend({
         .object({
           id: z.string().min(1),
           // Compared after normalizeBlankAnswer (case, whitespace and quote style ignored).
+          // The first accept entry is the one shown as the answer; list the canonical spelling first.
           accept: z
             .array(
               z.string().refine((a) => normalizeBlankAnswer(a) !== "", {
@@ -129,9 +130,10 @@ export const PredictItem = Identified.extend({
 
 /**
  * Assessment blocks each hold a LIST of items (1..n) — one rule, no exceptions.
- * A single question is just a one-item list. The app shows every item by default, shuffles
- * their order, and shuffles each question's options (keyed by id). Showing a random subset
- * / difficulty mix is a future, non-breaking addition (see PLAYBOOK → "Designed to grow").
+ * A single question is just a one-item list. The app shows every item. A quiz shuffles its
+ * questions and each question's options (keyed by id); fill-blank prompts and predict-output
+ * snippets keep their authored order. Showing a random subset / difficulty mix is a future,
+ * non-breaking addition (see PLAYBOOK → "Designed to grow").
  */
 export const QuizBlock = Identified.extend({
   type: z.literal("quiz"),
@@ -186,9 +188,9 @@ export const Unit = z
 
     const uniqueIds = (items: { id: string }[], path: (string | number)[], label: string) => {
       const seen = new Set<string>();
-      items.forEach((it, j) => {
-        if (seen.has(it.id)) issue([...path, j, "id"], `duplicate ${label} id "${it.id}"`);
-        seen.add(it.id);
+      items.forEach((item, j) => {
+        if (seen.has(item.id)) issue([...path, j, "id"], `duplicate ${label} id "${item.id}"`);
+        seen.add(item.id);
       });
     };
 
@@ -250,11 +252,11 @@ export const Unit = z
               else seen.set(key, a);
             }
           });
-          const tokens = p.code.split("___").length - 1;
+          const tokens = p.code.split(BLANK_TOKEN).length - 1;
           if (tokens !== p.blanks.length) {
             issue(
               ["blocks", i, "prompts", j, "blanks"],
-              `${tokens} '___' token(s) but ${p.blanks.length} blank definition(s)`,
+              `${tokens} '${BLANK_TOKEN}' token(s) but ${p.blanks.length} blank definition(s)`,
             );
           }
         });

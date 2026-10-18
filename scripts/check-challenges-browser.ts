@@ -21,16 +21,28 @@ import { chromium, errors, type Page } from "playwright-core";
 
 const ROOT = process.cwd();
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3002";
+/** How long to wait for the runner to render, and then for its test summary. */
+const RUNNER_TIMEOUT_MS = 120_000;
+/** How often to re-read the test panel while waiting for its summary. */
+const POLL_MS = 1000;
+/** The pause between the "Run tests" button rendering and pressing it (see waitForRunner). */
+const SETTLE_AFTER_RENDER_MS = 4000;
+
+/** Names of the subdirectories of `dir`: a stray file such as Finder's .DS_Store is not a track or unit. */
+async function subdirs(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+}
 
 /** challengeSlug -> the unit page that hosts it, read from every unit.json. */
 async function challengePages(): Promise<Map<string, string>> {
   const pages = new Map<string, string>();
   const tracksDir = path.join(ROOT, "content", "tracks");
-  for (const track of await fs.readdir(tracksDir)) {
+  for (const track of await subdirs(tracksDir)) {
     const unitsDir = path.join(tracksDir, track, "units");
     let units: string[];
     try {
-      units = await fs.readdir(unitsDir);
+      units = await subdirs(unitsDir);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
       throw e;
@@ -48,7 +60,7 @@ async function challengePages(): Promise<Map<string, string>> {
 type Summary = { failed: number; passed: number; total: number } | null;
 
 /** Waits for the Sandpack test panel's "Tests: … total" line and parses it. */
-async function readSummary(page: Page, timeoutMs = 120_000): Promise<Summary> {
+async function readSummary(page: Page, timeoutMs = RUNNER_TIMEOUT_MS): Promise<Summary> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const text = await page.evaluate(
@@ -59,7 +71,7 @@ async function readSummary(page: Page, timeoutMs = 120_000): Promise<Summary> {
       const count = (word: string) => Number(line.match(new RegExp(`(\\d+) ${word}`))?.[1] ?? 0);
       return { failed: count("failed"), passed: count("passed"), total: count("total") };
     }
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(POLL_MS);
   }
   return null;
 }
@@ -73,16 +85,15 @@ const clickButton = (page: Page, label: string) =>
   }, label);
 
 /**
- * Waits for the "Run tests" button; false if it doesn't render within `timeoutMs`. The runner is
- * client-only (`ssr: false`), so its buttons appear some time after `load`.
- *
- * Don't scroll the runner into view or wait for Sandpack to start before pressing it. Sandpack
- * starts only when the runner nears the viewport, and in headless Chrome a press made after the
- * preview has loaded leaves the tests panel empty. The press itself scrolls the runner into view,
- * so Sandpack starts with the tests panel already mounted, and that run reports. The short pause
- * after the button appears is what the script always used; a press right after render was dropped.
+ * Scrolls to the challenge and waits for the "Run tests" button; false if it doesn't render
+ * within `timeoutMs`. The runner mounts only when the challenge nears the viewport (its chunk is
+ * imported then), so nothing renders until this scroll; Sandpack itself starts once the runner
+ * is in view. Pressing "Run tests" after the preview has loaded works because the runner keeps
+ * both panels mounted. The short pause after the button appears is what the script always used;
+ * a press right after render was dropped.
  */
-async function waitForRunner(page: Page, timeoutMs = 120_000): Promise<boolean> {
+async function waitForRunner(page: Page, timeoutMs = RUNNER_TIMEOUT_MS): Promise<boolean> {
+  await page.evaluate(() => document.querySelector("[data-challenge-runner]")?.scrollIntoView({ block: "center" }));
   try {
     await page.waitForFunction(
       () => Array.from(document.querySelectorAll("button")).some((b) => b.innerText.trim() === "Run tests"),
@@ -93,7 +104,7 @@ async function waitForRunner(page: Page, timeoutMs = 120_000): Promise<boolean> 
     if (e instanceof errors.TimeoutError) return false;
     throw e;
   }
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(SETTLE_AFTER_RENDER_MS);
   return true;
 }
 

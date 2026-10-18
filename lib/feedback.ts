@@ -8,7 +8,7 @@
 export const FEEDBACK_REPO = "zackhanni/whetstone";
 export const FEEDBACK_LABEL = "lesson-feedback";
 
-/** Where the problem is. `item` is a question/prompt/snippet id, or a reading example id. */
+/** Where the problem is. `item` is a question/prompt/snippet id, or a reading example or card id. */
 export type FeedbackTarget = { track: string; unit: string; block: string; item?: string };
 
 /** The `<!-- whetstone-feedback {...} -->` marker `/improve-lesson` parses out of an issue body. */

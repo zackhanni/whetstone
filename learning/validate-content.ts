@@ -1,7 +1,9 @@
 import { promises as fs } from "fs";
 import path from "path";
+import ts from "typescript";
 import { ZodError } from "zod";
 import { Catalog, Challenge, Track, Unit } from "./schema";
+import { TIERS } from "./tiers";
 import { Taxonomy, TAXONOMY, TAXONOMY_SLUGS } from "./taxonomy";
 import { RUNNER_DEPENDENCIES, SANDBOX_PACKAGES } from "./sandbox";
 import { parseFrontmatter } from "../lib/frontmatter";
@@ -23,8 +25,6 @@ export type ValidationReport = {
   errors: string[];
   warnings: string[];
 };
-
-const TIERS = ["simple", "medium", "complex"] as const;
 
 /** Mutable state for one run, threaded through the checks below. */
 type Run = {
@@ -51,7 +51,7 @@ const warn = (run: Run, text: string) => {
  * the field path and the reason in escaped quotes; `blocks.1.questions.0.answer: …` reads at a
  * glance. Anything else (a JSON syntax error, a missing file) keeps its message.
  */
-function describe(e: unknown): string {
+function describeError(e: unknown): string {
   if (e instanceof ZodError)
     return e.issues
       .map((i) => `${i.path.length ? i.path.join(".") : "(root)"}: ${i.message}`)
@@ -98,52 +98,6 @@ function checkSkills(run: Run, label: string, skills: string[]) {
 }
 
 /**
- * `src` with its comments blanked out, so a word like `from "the server"` in a comment can't be
- * read as an import. Strings and template literals are copied through untouched (a `//` inside
- * a URL string is not a comment). Newlines are kept so line-based checks still line up.
- */
-export function stripComments(src: string): string {
-  let out = "";
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i];
-    const next = src[i + 1];
-    if (c === "/" && next === "/") {
-      while (i < src.length && src[i] !== "\n") i++;
-    } else if (c === "/" && next === "*") {
-      i += 2;
-      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) {
-        if (src[i] === "\n") out += "\n";
-        i++;
-      }
-      i += 2;
-    } else if (c === '"' || c === "'" || c === "`") {
-      const quote = c;
-      out += src[i++];
-      while (i < src.length && src[i] !== quote) {
-        if (src[i] === "\\") out += src[i++];
-        out += src[i++];
-      }
-      out += src[i++] ?? "";
-    } else {
-      out += src[i++];
-    }
-  }
-  return out;
-}
-
-/**
- * The names of a grader's tests, in order: the first argument of every `it(…)` / `test(…)`
- * written as a plain string literal. A method call such as a regex's `.test("x")` is not a test.
- */
-export function testNames(src: string): string[] {
-  const names: string[] = [];
-  for (const m of stripComments(src).matchAll(/(?<![\w$.])(?:it|test)\s*\(\s*(["'`])((?:\\.|(?!\1)[^\\])*)\1/g))
-    names.push(m[2]);
-  return names;
-}
-
-/**
  * Characters that render as nothing (or as a line break the author never typed) and so can't be
  * seen in review: C0 controls other than tab/newline/CR, DEL, the Unicode line/paragraph
  * separators, and every format character (`\p{Cf}`: zero-width spaces and joiners, the word
@@ -171,76 +125,25 @@ function eachString(value: unknown, visit: (s: string) => void) {
 }
 
 /**
- * `src` (comments already stripped) with the text of every template literal blanked to spaces,
- * newlines kept. A multi-line template can hold a code sample whose line starts with
- * `import x from "y"`; that is text, not an import. Code inside `${…}` is kept, since it runs.
+ * Reads one content JSON file (catalog, track, unit or challenge meta) and parses it with `schema`.
+ * Every string is checked (checkText) BEFORE the schema runs, so an invisible character is still
+ * reported in a file the schema rejects. A read, JSON or schema error is reported under `label`
+ * and returns null; `where` names the file in a text problem.
  */
-function blankTemplateText(src: string): string {
-  let out = "";
-  let i = 0;
-  // Copies code through, to the end — or, inside `${…}`, to the `}` that closes the expression.
-  const code = (inExpression: boolean) => {
-    let depth = 0;
-    while (i < src.length) {
-      const c = src[i];
-      if (c === "`") {
-        out += src[i++];
-        template();
-      } else if (c === '"' || c === "'") {
-        out += src[i++];
-        while (i < src.length && src[i] !== c && src[i] !== "\n") {
-          if (src[i] === "\\") out += src[i++];
-          if (i < src.length) out += src[i++];
-        }
-        if (src[i] === c) out += src[i++];
-      } else if (c === "}" && inExpression && depth === 0) {
-        return;
-      } else {
-        if (c === "{") depth++;
-        if (c === "}") depth--;
-        out += src[i++];
-      }
-    }
-  };
-  // Blanks template text through the closing backtick, keeping each `${…}` expression as code.
-  const template = () => {
-    while (i < src.length) {
-      const c = src[i];
-      if (c === "`") {
-        out += src[i++];
-        return;
-      }
-      if (c === "$" && src[i + 1] === "{") {
-        out += "${";
-        i += 2;
-        code(true);
-        if (i < src.length) out += src[i++]; // the `}` that closes the expression
-      } else {
-        const width = c === "\\" ? 2 : 1; // an escape, e.g. \` , is blanked whole
-        for (const ch of src.slice(i, i + width)) out += ch === "\n" ? "\n" : " ";
-        i += width;
-      }
-    }
-  };
-  code(false);
-  return out;
-}
-
-/** Module specifiers imported by a file, in any of the four syntaxes we author with. */
-function importedModules(source: string): string[] {
-  const src = blankTemplateText(stripComments(source));
-  const specifiers: string[] = [];
-  // Static imports are statements, so they are matched only from the start of a line; a word
-  // like "import" or "from" inside a string literal (["import", "Plan: …"]) is not a statement,
-  // and neither is a line of template text (blanked above).
-  const patterns = [
-    /^\s*(?:import|export)\s[^;]*?\bfrom\s*["']([^"']+)["']/gm, // import x from "y" / export * from "y"
-    /^\s*import\s*["']([^"']+)["']/gm, // import "y"
-    /\bimport\s*\(\s*["']([^"']+)["']/g, // await import("y")
-    /\brequire\s*\(\s*["']([^"']+)["']/g, // require("y")
-  ];
-  for (const re of patterns) for (const m of src.matchAll(re)) specifiers.push(m[1]);
-  return specifiers;
+async function readContentJson<T>(
+  run: Run,
+  file: string,
+  schema: { parse(data: unknown): T },
+  { label, where }: { label: string; where: string },
+): Promise<T | null> {
+  try {
+    const raw: unknown = await readJson(file);
+    eachString(raw, (text) => checkText(run, where, text));
+    return schema.parse(raw);
+  } catch (e) {
+    fail(run, `${label}: ${describeError(e)}`);
+    return null;
+  }
 }
 
 /** "@scope/pkg/sub" -> "@scope/pkg"; "react-dom/client" -> "react-dom". */
@@ -253,7 +156,7 @@ function packageName(specifier: string): string {
  * jest-dom's matchers. Sandpack loads no `expect` extensions, so each one is a runtime
  * TypeError in the iframe — assert on plain values (`…textContent`, `…value`, `…disabled`).
  */
-const JEST_DOM_MATCHERS = [
+const JEST_DOM_MATCHERS = new Set([
   "toBeInTheDocument",
   "toBeVisible",
   "toBeEmptyDOMElement",
@@ -279,7 +182,97 @@ const JEST_DOM_MATCHERS = [
   "toHaveErrorMessage",
   "toContainElement",
   "toContainHTML",
-];
+]);
+
+/** The globals a test registers through: `it("name", fn)` and `test("name", fn)`. */
+const TEST_FUNCTIONS = new Set(["it", "test"]);
+/** `it.only("name", fn)` and `it.skip("name", fn)` still register a test with that name. */
+const TEST_MODIFIERS = new Set(["only", "skip"]);
+/** The spy/mock/fake-timer namespaces. Sandpack's runner defines neither. */
+const TEST_HELPER_GLOBALS = new Set(["vi", "jest"]);
+
+/** Whether calling `callee` registers one test: `it`, `test.only`, `it.each(table)`, … */
+function isTestFunction(callee: ts.Expression): boolean {
+  if (ts.isIdentifier(callee)) return TEST_FUNCTIONS.has(callee.text);
+  if (ts.isPropertyAccessExpression(callee) && TEST_MODIFIERS.has(callee.name.text))
+    return isTestFunction(callee.expression);
+  // `it.each(table)` returns the function that registers the test, so `it.each(table)("name", fn)`
+  // is a test call; `it.each(table)` itself is not (its argument is the table, not a name).
+  if (ts.isCallExpression(callee) && ts.isPropertyAccessExpression(callee.expression))
+    return callee.expression.name.text === "each" && isTestFunction(callee.expression.expression);
+  return false;
+}
+
+/** What the grader and import checks need from one challenge source file. */
+type SourceScan = {
+  /** Every module specifier: `import … from`, `import "x"`, `export … from`, `import("x")`, `require("x")`. */
+  imports: string[];
+  /** The name of every test call, in order, when written as a plain string (a template with `${}` is skipped). */
+  testNames: string[];
+  callsJestMock: boolean;
+  /** Any member of `vi` or `jest` is read (`vi.fn`, `jest.spyOn`, `jest.useFakeTimers`, …). */
+  usesTestHelpers: boolean;
+  /** The first jest-dom matcher called, as written after `expect(…).` (`toBeVisible` or `not.toBeVisible`). */
+  jestDomMatcher: string | null;
+};
+
+/**
+ * Reads a challenge source file with TypeScript's own parser, so a comment, a string, template or
+ * JSX text, or a regex literal is never read as code (a regex like `/\/*$/` or `/:\/\//` looks like
+ * a comment opening to anything less than a parser). Each check below reads the same parse.
+ */
+function scanSource(fileName: string, src: string): SourceScan {
+  const kind = fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const file = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, false, kind);
+  const scan: SourceScan = {
+    imports: [],
+    testNames: [],
+    callsJestMock: false,
+    usesTestHelpers: false,
+    jestDomMatcher: null,
+  };
+  let jestDomMatcherAt = Infinity;
+  const firstStringArgument = (call: ts.CallExpression) => {
+    const first = call.arguments[0];
+    return first && ts.isStringLiteralLike(first) ? first.text : null;
+  };
+
+  const visit = (node: ts.Node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      if (node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) scan.imports.push(node.moduleSpecifier.text);
+    } else if (ts.isImportEqualsDeclaration(node)) {
+      // import x = require("y")
+      const ref = node.moduleReference;
+      if (ts.isExternalModuleReference(ref) && ts.isStringLiteralLike(ref.expression)) scan.imports.push(ref.expression.text);
+    } else if (ts.isImportTypeNode(node)) {
+      // typeof import("y")
+      const arg = node.argument;
+      if (ts.isLiteralTypeNode(arg) && ts.isStringLiteralLike(arg.literal)) scan.imports.push(arg.literal.text);
+    } else if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      const firstString = firstStringArgument(node);
+      if (callee.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(callee) && callee.text === "require")) {
+        if (firstString !== null) scan.imports.push(firstString);
+      } else if (isTestFunction(callee)) {
+        if (firstString !== null) scan.testNames.push(firstString);
+      } else if (ts.isPropertyAccessExpression(callee)) {
+        const method = callee.name.text;
+        const receiver = callee.expression;
+        if (method === "mock" && ts.isIdentifier(receiver) && receiver.text === "jest") scan.callsJestMock = true;
+        if (JEST_DOM_MATCHERS.has(method) && callee.name.pos < jestDomMatcherAt) {
+          jestDomMatcherAt = callee.name.pos;
+          const negated = ts.isPropertyAccessExpression(receiver) && receiver.name.text === "not";
+          scan.jestDomMatcher = negated ? `not.${method}` : method;
+        }
+      }
+    } else if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      if (ts.isIdentifier(node.expression) && TEST_HELPER_GLOBALS.has(node.expression.text)) scan.usesTestHelpers = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return scan;
+}
 
 /**
  * The headless grader (`pnpm test:challenges`) resolves challenge imports from this repo's
@@ -303,14 +296,20 @@ function checkPinnedDevDependency(
 }
 
 /**
- * Readings and challenge READMEs are rendered with react-markdown (components/markdown.tsx),
- * NOT compiled as MDX — the `.mdx` extension is historical. A JSX/HTML tag or an
- * `import`/`export` line outside code therefore shows up as literal text on the page. Code is
- * stripped first: tags inside fenced or inline code are fine. `<!--more-->` (the "Go deeper"
- * split) is an HTML comment, not a tag.
+ * A fenced code block. Global, but only ever used with `replace`/`match`, which reset
+ * `lastIndex`, so sharing one instance is safe.
+ */
+const FENCED_CODE = /```[\s\S]*?```/g;
+
+/**
+ * Readings, cards and challenge READMEs are rendered with react-markdown
+ * (components/markdown.tsx), NOT compiled as MDX — the `.mdx` extension is historical. A
+ * JSX/HTML tag or an `import`/`export` line outside code therefore shows up as literal text on
+ * the page. Code is stripped first: tags inside fenced or inline code are fine. `<!--more-->`
+ * (the "Go deeper" split) is an HTML comment, not a tag.
  */
 function markdownProblem(body: string): string | null {
-  const prose = body.replace(/```[\s\S]*?```/g, "").replace(/`[^`\n]*`/g, "");
+  const prose = body.replace(FENCED_CODE, "").replace(/`[^`\n]*`/g, "");
   const tag = /<\/?[A-Za-z][\w.-]*(?=[\s/>])[^>]*>?/.exec(prose);
   if (tag)
     return `"${tag[0].slice(0, 40)}" outside code — this is Markdown, not MDX, so it renders as literal text; put code in backticks`;
@@ -324,9 +323,11 @@ function markdownProblem(body: string): string | null {
  * The app renders a challenge's title, its "Your task" heading and the acceptance checklist
  * from meta.json (components/challenge-block.tsx). A README that repeats any of them shows the
  * learner two copies, and the copies drift — three of ten did before this check existed.
+ * It also rejects a "Running" section and Markdown the renderer would show literally
+ * (markdownProblem).
  */
 function readmeProblems(readme: string): string[] {
-  const prose = readme.replace(/```[\s\S]*?```/g, "");
+  const prose = readme.replace(FENCED_CODE, "");
   const problems: string[] = [];
   if (/^#\s/m.test(prose)) problems.push("has a top-level # heading — the title comes from meta.json");
   if (/^\s*[-*]\s+\[[ xX]\]/m.test(prose))
@@ -341,6 +342,78 @@ function readmeProblems(readme: string): string[] {
 }
 
 /**
+ * A challenge's declared packages next to the repo's devDependencies. Passed as one named object
+ * because the two maps have the same type, so swapping them as positional arguments would compile.
+ */
+type ChallengeDependencies = {
+  declaredDependencies: Record<string, string>; // meta.json "dependencies"
+  devDependencies: Record<string, string>; // package.json devDependencies
+};
+
+/**
+ * Re-declaring a runner-provided package would silently swap the version every other challenge
+ * is tested against, so only genuinely extra packages may be declared — each pinned to the same
+ * version as its devDependency.
+ */
+function checkDeclaredDependencies(
+  run: Run,
+  label: string,
+  { declaredDependencies, devDependencies }: ChallengeDependencies,
+) {
+  for (const [pkg, version] of Object.entries(declaredDependencies)) {
+    if (SANDBOX_PACKAGES.has(pkg))
+      fail(run, `${label}: meta.json dependencies re-declares "${pkg}", which the runner always provides`);
+    else checkPinnedDevDependency(run, label, pkg, version, devDependencies);
+  }
+}
+
+/** One challenge file's bare imports that the sandbox can't resolve (relative imports are fine). */
+function importProblems(imports: string[], resolvable: Set<string>): string[] {
+  const problems: string[] = [];
+  for (const specifier of imports) {
+    if (specifier.startsWith(".") || specifier.startsWith("/")) continue;
+    const pkg = packageName(specifier);
+    if (resolvable.has(pkg)) continue;
+    if (pkg === "vitest") {
+      problems.push(`imports "${specifier}" — Sandpack tests are jest-style globals, not Vitest`);
+      continue;
+    }
+    problems.push(
+      `imports "${specifier}" — the sandbox only resolves ${[...resolvable].join(", ")}; declare it in meta.json "dependencies" or hand-roll a support module`,
+    );
+  }
+  return problems;
+}
+
+/**
+ * What one grader uses that Sandpack's runner doesn't have. The runner is jest-style, not
+ * Vitest, and ships no jest-dom / spies / module mocking.
+ */
+function graderProblems(scan: SourceScan): string[] {
+  const problems: string[] = [];
+  // No spy/mock/fake-timer library is loaded: `vi` and `jest` are undefined at runtime, so
+  // *any* member access on either throws — don't enumerate, reject the whole namespace.
+  if (scan.callsJestMock) {
+    problems.push("uses jest.mock — unavailable; add a settable seam module instead");
+  } else if (scan.usesTestHelpers) {
+    problems.push(
+      "uses a spy/fake-timer helper (vi.* / jest.*) — unavailable in the sandbox; patch the global by hand or add a settable seam",
+    );
+  }
+  // Sandpack keys its results list by test name alone (not describe + name), so a repeated
+  // name across describe blocks logs a React duplicate-key error and can drop a result row.
+  const seen = new Set<string>();
+  for (const name of scan.testNames) {
+    if (seen.has(name))
+      problems.push(`two tests are named "${name}" — Sandpack keys its results by test name, so every name in the file must be unique`);
+    seen.add(name);
+  }
+  if (scan.jestDomMatcher)
+    problems.push(`uses the jest-dom matcher ${scan.jestDomMatcher} — only plain matchers are available`);
+  return problems;
+}
+
+/**
  * The in-browser (Sandpack) challenge contract — see learning/PLAYBOOK.md. These used to be
  * browser-only discoveries: a missing App.tsx or a `vitest` import fails at *runtime*, inside
  * an iframe, long after authoring. Cheap to check here, so check here. Whether the starter
@@ -350,21 +423,13 @@ async function checkInBrowserChallenge(
   run: Run,
   slug: string,
   cDir: string,
+  names: string[], // every file in the folder (walk), since Sandpack loads nested files too
   entry: string,
-  declaredDependencies: Record<string, string>,
-  devDependencies: Record<string, string>,
+  dependencies: ChallengeDependencies,
 ) {
   const label = `challenge ${slug}`;
-  // Re-declaring a runner-provided package would silently swap the version every other
-  // challenge is tested against, so only genuinely extra packages may be declared.
-  for (const [pkg, version] of Object.entries(declaredDependencies)) {
-    if (SANDBOX_PACKAGES.has(pkg))
-      fail(run, `${label}: meta.json dependencies re-declares "${pkg}", which the runner always provides`);
-    else checkPinnedDevDependency(run, label, pkg, version, devDependencies);
-  }
-  const resolvable = new Set([...SANDBOX_PACKAGES, ...Object.keys(declaredDependencies)]);
-  // Sandpack loads the whole folder, nested files included, so scan the whole tree.
-  const names = await walk(cDir);
+  checkDeclaredDependencies(run, label, dependencies);
+  const resolvable = new Set([...SANDBOX_PACKAGES, ...Object.keys(dependencies.declaredDependencies)]);
   const read = (n: string) => fs.readFile(path.join(cDir, n), "utf8");
 
   for (const required of ["App.tsx", "solution.tsx"]) {
@@ -372,14 +437,10 @@ async function checkInBrowserChallenge(
   }
 
   const tests = names.filter((n) => n.endsWith(".test.tsx") || n.endsWith(".test.ts"));
-  if (tests.length === 0) fail(run, `${label}: no *.test.tsx grader`);
+  if (tests.length === 0) fail(run, `${label}: no *.test.tsx or *.test.ts grader`);
 
-  // `entry` may be a nested path, so resolve it rather than looking it up in `names`.
   if (names.includes("solution.tsx")) {
-    const [starter, solution] = await Promise.all([
-      fs.readFile(path.resolve(cDir, entry), "utf8"),
-      read("solution.tsx"),
-    ]);
+    const [starter, solution] = await Promise.all([read(entry), read("solution.tsx")]);
     if (starter.trim() === solution.trim())
       fail(run, `${label}: solution.tsx is identical to the starter`);
   }
@@ -388,62 +449,26 @@ async function checkInBrowserChallenge(
   for (const f of names.filter((n) => /\.(ts|tsx)$/.test(n))) {
     const src = await read(f);
     checkText(run, `${label}/${f}`, src);
-    for (const specifier of importedModules(src)) {
-      if (specifier.startsWith(".") || specifier.startsWith("/")) continue;
-      const pkg = packageName(specifier);
-      if (resolvable.has(pkg)) continue;
-      if (pkg === "vitest") {
-        fail(run, `${label}/${f}: imports "${specifier}" — Sandpack tests are jest-style globals, not Vitest`);
-        continue;
-      }
-      fail(
-        run,
-        `${label}/${f}: imports "${specifier}" — the sandbox only resolves ${[...resolvable].join(", ")}; declare it in meta.json "dependencies" or hand-roll a support module`,
-      );
-    }
-  }
-
-  // Sandpack's runner is jest-style, not Vitest, and ships no jest-dom / spies / module mocking.
-  const jestDom = new RegExp(`\\.(?:not\\.)?(?:${JEST_DOM_MATCHERS.join("|")})\\s*\\(`);
-  for (const t of tests) {
-    const src = await read(t);
-    // No spy/mock/fake-timer library is loaded: `vi` and `jest` are undefined at runtime, so
-    // *any* member access on either throws — don't enumerate, reject the whole namespace.
-    if (/\bjest\.mock\s*\(/.test(src)) {
-      fail(run, `${label}/${t}: uses jest.mock — unavailable; add a settable seam module instead`);
-    } else if (/\bvi\.\w|\bjest\.\w/.test(src)) {
-      fail(
-        run,
-        `${label}/${t}: uses a spy/fake-timer helper (vi.* / jest.*) — unavailable in the sandbox; patch the global by hand or add a settable seam`,
-      );
-    }
-    // Sandpack keys its results list by test name alone (not describe + name), so a repeated
-    // name across describe blocks logs a React duplicate-key error and can drop a result row.
-    const seen = new Set<string>();
-    for (const name of testNames(src)) {
-      if (seen.has(name))
-        fail(run, `${label}/${t}: two tests are named "${name}" — Sandpack keys its results by test name, so every name in the file must be unique`);
-      seen.add(name);
-    }
-    const matcher = jestDom.exec(src);
-    if (matcher)
-      fail(
-        run,
-        `${label}/${t}: uses the jest-dom matcher ${matcher[0].slice(1, -1).trim()} — only plain matchers are available`,
-      );
+    const scan = scanSource(f, src);
+    for (const problem of importProblems(scan.imports, resolvable)) fail(run, `${label}/${f}: ${problem}`);
+    if (tests.includes(f)) for (const problem of graderProblems(scan)) fail(run, `${label}/${f}: ${problem}`);
   }
 }
+
+/**
+ * The files loadChallenge (lib/content.ts) keeps out of a challenge's editable file set: README.md
+ * and solution.tsx are served separately, meta.json not at all.
+ */
+const HELD_BACK_FILES = new Set(["meta.json", "README.md", "solution.tsx"]);
 
 /** Validate one challenge folder: meta.json, README.md, its tags, its entry, the runner contract. */
 async function checkChallenge(run: Run, slug: string, devDependencies: Record<string, string>) {
   const cDir = path.join(run.root, "content", "challenges", slug);
-  let meta: Challenge;
-  try {
-    meta = Challenge.parse(await readJson(path.join(cDir, "meta.json")));
-  } catch (e) {
-    fail(run, `challenge ${slug}: ${describe(e)}`);
-    return;
-  }
+  const meta = await readContentJson(run, path.join(cDir, "meta.json"), Challenge, {
+    label: `challenge ${slug}`,
+    where: `challenge ${slug}/meta.json`,
+  });
+  if (!meta) return;
   checkSkills(run, `challenge ${slug}`, meta.skills);
   if (meta.slug !== slug) fail(run, `challenge ${slug}: meta.slug "${meta.slug}" does not match folder`);
 
@@ -458,23 +483,34 @@ async function checkChallenge(run: Run, slug: string, devDependencies: Record<st
     for (const problem of readmeProblems(readme)) fail(run, `challenge ${slug}/README.md: ${problem}`);
     checkText(run, `challenge ${slug}/README.md`, readme);
   }
-  eachString(meta, (text) => checkText(run, `challenge ${slug}/meta.json`, text));
 
-  // Mirror loadChallenge's contract: meta.entry must resolve inside the challenge dir.
+  // Mirror loadChallenge's contract: meta.entry must resolve inside the challenge dir, and must be
+  // the exact key (forward-slash path) of one of the files the loader serves as editable.
   const base = path.resolve(cDir);
   const entryPath = path.resolve(cDir, meta.entry);
   if (entryPath !== base && !entryPath.startsWith(base + path.sep)) {
     fail(run, `challenge ${slug}: entry "${meta.entry}" escapes the challenge directory`);
     return;
   }
-  try {
-    await fs.access(entryPath);
-  } catch {
+  const names = await walk(cDir);
+  const entryFile = path.relative(base, entryPath).split(path.sep).join("/");
+  if (!names.includes(entryFile)) {
     fail(run, `challenge ${slug}: entry file "${meta.entry}" not found`);
     return;
   }
+  if (meta.entry !== entryFile) {
+    fail(run, `challenge ${slug}: entry "${meta.entry}" must be written "${entryFile}" — the loader looks the entry up by its exact path in the folder`);
+    return;
+  }
+  if (HELD_BACK_FILES.has(entryFile)) {
+    fail(run, `challenge ${slug}: entry "${meta.entry}" is not a starter file — the loader keeps ${[...HELD_BACK_FILES].join(", ")} out of the editable files`);
+    return;
+  }
   if (meta.runner === "in-browser") {
-    await checkInBrowserChallenge(run, slug, cDir, meta.entry, meta.dependencies ?? {}, devDependencies);
+    await checkInBrowserChallenge(run, slug, cDir, names, meta.entry, {
+      declaredDependencies: meta.dependencies ?? {},
+      devDependencies,
+    });
   } else if (meta.dependencies) {
     fail(run, `challenge ${slug}: "dependencies" only applies to runner "in-browser"`);
   }
@@ -545,8 +581,8 @@ async function checkCards(run: Run, label: string, dir: string, seenIds: Set<str
   const cards = await checkExampleFolder(run, `${label}/cards`, dir, seenIds);
   if (cards.length === 0) fail(run, `${label}: cards block has no card files in ${path.basename(dir)}/`);
   for (const { file, body } of cards) {
-    const codeBlocks = body.match(/```[\s\S]*?```/g) ?? [];
-    const words = body.replace(/```[\s\S]*?```/g, "").split(/\s+/).filter(Boolean).length;
+    const codeBlocks = body.match(FENCED_CODE) ?? [];
+    const words = body.replace(FENCED_CODE, "").split(/\s+/).filter(Boolean).length;
     // A warning, not an error: the limit is a nudge toward the right block type, not a rule.
     if (words > CARD_MAX_WORDS || codeBlocks.length > CARD_MAX_CODE_BLOCKS)
       warn(
@@ -561,15 +597,11 @@ async function checkCards(run: Run, label: string, dir: string, seenIds: Set<str
  * track visible, so a folder missing from it — or a listed track with no folder — is an error.
  */
 async function checkCatalog(run: Run, trackFolders: string[]) {
-  let catalog: Catalog;
-  try {
-    const raw: unknown = await readJson(path.join(run.root, "content", "catalog.json"));
-    eachString(raw, (text) => checkText(run, "content/catalog.json", text));
-    catalog = Catalog.parse(raw);
-  } catch (e) {
-    fail(run, `content/catalog.json: ${describe(e)}`);
-    return;
-  }
+  const catalog = await readContentJson(run, path.join(run.root, "content", "catalog.json"), Catalog, {
+    label: "content/catalog.json",
+    where: "content/catalog.json",
+  });
+  if (!catalog) return;
   const listed = new Set<string>();
   for (const t of catalog.tracks) {
     if (listed.has(t)) fail(run, `content/catalog.json: track "${t}" is listed twice`);
@@ -585,72 +617,66 @@ async function checkCatalog(run: Run, trackFolders: string[]) {
 
 async function checkTrack(
   run: Run,
-  ts: string,
+  trackSlug: string,
   unitOwner: Map<string, string>,
   challengeSlugs: Set<string>,
   referencedChallenges: Set<string>,
 ) {
-  const tDir = path.join(run.root, "content", "tracks", ts);
-  let track: Track;
-  try {
-    const raw: unknown = await readJson(path.join(tDir, "track.json"));
-    eachString(raw, (text) => checkText(run, `track ${ts}/track.json`, text));
-    track = Track.parse(raw);
-  } catch (e) {
-    fail(run, `track ${ts}: ${describe(e)}`);
-    return;
-  }
+  const trackDir = path.join(run.root, "content", "tracks", trackSlug);
+  const track = await readContentJson(run, path.join(trackDir, "track.json"), Track, {
+    label: `track ${trackSlug}`,
+    where: `track ${trackSlug}/track.json`,
+  });
+  if (!track) return;
   info(run, `track: ${track.slug}`);
   // The description is rendered as plain text on the cards, so Markdown shows up literally.
   if (/`|\*\*|\]\(/.test(track.description))
-    warn(run, `track ${ts}: description contains Markdown (\`, ** or a link), which is shown as literal text`);
+    warn(run, `track ${trackSlug}: description contains Markdown (\`, ** or a link), which is shown as literal text`);
   // Links are built from the slug in the JSON and routes from the folder name, so a
   // mismatch builds fine and then 404s.
-  if (track.slug !== ts) fail(run, `track ${ts}: slug "${track.slug}" does not match its folder`);
+  if (track.slug !== trackSlug) fail(run, `track ${trackSlug}: slug "${track.slug}" does not match its folder`);
 
   // track.units is the ONLY thing that makes a unit visible: a folder left out of it is never
   // validated, built or shown.
   const listed = new Set<string>();
-  for (const us of track.units) {
-    if (listed.has(us)) fail(run, `track ${ts}: unit "${us}" is listed twice`);
-    listed.add(us);
+  for (const unitSlug of track.units) {
+    if (listed.has(unitSlug)) fail(run, `track ${trackSlug}: unit "${unitSlug}" is listed twice`);
+    listed.add(unitSlug);
   }
-  for (const folder of await subdirs(path.join(tDir, "units"))) {
+  for (const folder of await subdirs(path.join(trackDir, "units"))) {
     if (!listed.has(folder))
-      fail(run, `track ${ts}: units/${folder} is not in track.json "units", so it is never shown`);
+      fail(run, `track ${trackSlug}: units/${folder} is not in track.json "units", so it is never shown`);
   }
 
-  for (const us of listed) {
-    const uDir = path.join(tDir, "units", us);
+  for (const unitSlug of listed) {
+    const unitDir = path.join(trackDir, "units", unitSlug);
     // Unit slugs are unique across ALL tracks, so a unit can be addressed by its slug alone
-    // (progress, a cross-track feed, ratings) and can move between tracks without a collision.
-    const owner = unitOwner.get(us);
-    if (owner) fail(run, `unit ${ts}/${us}: slug "${us}" is already used by track ${owner}`);
-    unitOwner.set(us, ts);
+    // (a cross-track feed, ratings) and can move between tracks without a slug collision.
+    // Progress and drill history are still stored under track/unit, so a move orphans them
+    // until they are re-keyed (docs/handoff.md).
+    const owner = unitOwner.get(unitSlug);
+    if (owner) fail(run, `unit ${trackSlug}/${unitSlug}: slug "${unitSlug}" is already used by track ${owner}`);
+    unitOwner.set(unitSlug, trackSlug);
 
-    let unit: Unit;
-    try {
-      const raw: unknown = await readJson(path.join(uDir, "unit.json"));
-      eachString(raw, (text) => checkText(run, `unit ${ts}/${us}/unit.json`, text));
-      unit = Unit.parse(raw);
-    } catch (e) {
-      fail(run, `unit ${ts}/${us}: ${describe(e)}`);
-      continue;
-    }
-    if (unit.slug !== us) fail(run, `unit ${ts}/${us}: slug "${unit.slug}" does not match its folder`);
-    checkSkills(run, `unit ${ts}/${us}`, unit.skills);
+    const unit = await readContentJson(run, path.join(unitDir, "unit.json"), Unit, {
+      label: `unit ${trackSlug}/${unitSlug}`,
+      where: `unit ${trackSlug}/${unitSlug}/unit.json`,
+    });
+    if (!unit) continue;
+    if (unit.slug !== unitSlug) fail(run, `unit ${trackSlug}/${unitSlug}: slug "${unit.slug}" does not match its folder`);
+    checkSkills(run, `unit ${trackSlug}/${unitSlug}`, unit.skills);
 
-    const readingIds = new Set<string>(); // reading examples and cards share one id space
+    const exampleIds = new Set<string>(); // reading examples and cards share one id space
     for (const b of unit.blocks) {
-      if (b.type === "reading") await checkReadingTiers(run, us, path.join(uDir, b.dir), readingIds);
-      if (b.type === "cards") await checkCards(run, us, path.join(uDir, b.dir), readingIds);
+      if (b.type === "reading") await checkReadingTiers(run, unitSlug, path.join(unitDir, b.dir), exampleIds);
+      if (b.type === "cards") await checkCards(run, unitSlug, path.join(unitDir, b.dir), exampleIds);
       if (b.type === "challenge") {
         referencedChallenges.add(b.challengeSlug);
         if (!challengeSlugs.has(b.challengeSlug))
-          fail(run, `unit ${ts}/${us}: challenge "${b.challengeSlug}" has no folder in content/challenges/`);
+          fail(run, `unit ${trackSlug}/${unitSlug}: challenge "${b.challengeSlug}" has no folder in content/challenges/`);
       }
     }
-    info(run, `  unit: ${us} — ${unit.blocks.length} blocks ✓`);
+    info(run, `  unit: ${unitSlug} — ${unit.blocks.length} blocks ✓`);
   }
 }
 
@@ -684,7 +710,7 @@ export async function validateContent(root: string): Promise<ValidationReport> {
   try {
     Taxonomy.parse(TAXONOMY);
   } catch (e) {
-    fail(run, `taxonomy (learning/taxonomy.ts): ${describe(e)}`);
+    fail(run, `taxonomy (learning/taxonomy.ts): ${describeError(e)}`);
   }
 
   const devDependencies: Record<string, string> =
@@ -698,7 +724,7 @@ export async function validateContent(root: string): Promise<ValidationReport> {
   const challengeSlugs = new Set(await subdirs(path.join(root, "content", "challenges")));
   const referencedChallenges = new Set<string>();
   const unitOwner = new Map<string, string>();
-  for (const ts of trackFolders) await checkTrack(run, ts, unitOwner, challengeSlugs, referencedChallenges);
+  for (const trackSlug of trackFolders) await checkTrack(run, trackSlug, unitOwner, challengeSlugs, referencedChallenges);
 
   // Every challenge folder is validated, referenced or not, so a standalone challenge (such as
   // one imported from the job-test archive before a unit uses it) is still held to the contract.
@@ -713,8 +739,8 @@ export async function validateContent(root: string): Promise<ValidationReport> {
   // because the page it's on still renders.
   for (const { where, href } of run.appLinks) {
     const [, , track, unit, ...rest] = href.split("/");
-    const ok = rest.length === 0 && (unit ? unitOwner.get(unit) === track : trackFolders.includes(track));
-    if (!ok) fail(run, `${where}: links to ${href}, which is not a track or unit (expected /learn/<track>/<unit>)`);
+    const isKnownTarget = rest.length === 0 && (unit ? unitOwner.get(unit) === track : trackFolders.includes(track));
+    if (!isKnownTarget) fail(run, `${where}: links to ${href}, which is not a track or unit (expected /learn/<track>/<unit>)`);
   }
 
   checkOrphanTags(run);

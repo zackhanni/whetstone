@@ -17,7 +17,7 @@ export function TrackProgress({ unitIds }: { unitIds: string[] }) {
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-800">
         <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${pct}%` }} />
       </div>
-      <span className="shrink-0 text-xs text-slate-500">
+      <span className="shrink-0 text-xs text-slate-400">
         {done}/{total} done
       </span>
     </div>

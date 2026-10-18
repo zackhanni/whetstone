@@ -1,3 +1,6 @@
+/** Marks one blank in a fill-blank prompt's `code`; the schema checks there is one per blank. */
+export const BLANK_TOKEN = "___";
+
 /**
  * How a typed fill-blank answer is compared with an `accept` entry. Shared by the app's grader
  * (components/fill-blank-block.tsx) and the schema (learning/schema.ts), which rejects two

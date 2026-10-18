@@ -6,9 +6,9 @@ const CHIP = "rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-medium text
 
 /**
  * Display-only tag chips for a card. Condenses `skills` via `rollupForCard` (broadest-first, root
- * dimensions dropped) into a few visible chips plus a "+N more" pill. Rendered on the server and
- * safe inside a card's <Link> — the overflow uses a native `title` tooltip (no nested interactive
- * element). A tap-friendly Popover comes with the filter UI, where chips live outside links.
+ * dimensions dropped) into a few visible chips plus a "+N more" pill. Safe inside a card's
+ * <Link>: the "+N more" pill's tooltip trigger is a non-focusable <span> (HintTooltip
+ * focusable={false}), and an sr-only span repeats the full list for screen readers.
  */
 export function TagChips({
   skills,

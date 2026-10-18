@@ -315,16 +315,20 @@ Sandpack iframe:
   every unit folder in its track, and that unit slugs are unique across tracks. Every `skills`
   tag must be in the taxonomy, and the taxonomy must be acyclic (unused tags are warned about). It also checks the challenge
   contract for **every** challenge folder, referenced by a unit or not:
-  - the entry resolves inside the folder
+  - the entry is one of the folder's own files, written exactly as its path in the folder
+    (`Thing.tsx` or `src/Thing.tsx`, not `./Thing.tsx`) and not `README.md`, `solution.tsx` or
+    `meta.json`: that is the only entry the loader can serve as the editable file
   - `README.md` exists and holds only the problem and hints (no title, checklist, "Your task"
     or "Running" section)
   - `App.tsx`, `solution.tsx` and a `*.test.tsx`/`*.test.ts` grader exist
   - the solution differs from the starter
   - every bare import in every sandbox file (in `from` / `import "x"` / `import("x")` /
-    `require("x")` form; comments and template-literal text ignored) resolves to a sandbox
-    package or a declared dependency
+    `require("x")` form) resolves to a sandbox package or a declared dependency
   - the grader uses no jest-dom matcher and nothing from `vi.*` / `jest.*`
-  - every test name in a grader file is unique (Sandpack keys its results by name)
+  - every test name in a grader file is unique, `it.only` / `.skip` / `.each` forms included
+    (Sandpack keys its results by name)
+  - these last three read each file with TypeScript's parser, so text inside a comment, string,
+    template literal, JSX or regex literal never counts as code
   - (all content, including `catalog.json`, `track.json` and challenge code) no invisible
     characters (every Unicode format character, such as zero-width spaces, the word joiner, the
     BOM and bidi controls, plus U+2028/2029 and stray control characters), and every

@@ -41,33 +41,34 @@ Status key: ✅ done · 🔨 in progress · ⬜ not started.
 
 ## Content tracks (the learning backlog)
 
-Each track lists its planned units. A unit ≈ one `unit.json` + reading tiers + assessments (+ a
-challenge where the skill is codeable). Units marked _card_ are candidates for the lightweight
-`card` block (see Deferred) rather than a full mastery unit.
+Each track lists its units. A unit ≈ one `unit.json` + reading tiers + assessments (+ a
+challenge where the skill is codeable). Units marked _card_ are card units: one `cards` block,
+no assessments (PLAYBOOK → "Two kinds of unit").
 
-**How these get built:** author every new unit with the **`/new-lesson`** skill
-(`.claude/skills/new-lesson`) — it scaffolds against `learning/schema.ts`, follows
-`learning/PLAYBOOK.md`, and gates on `pnpm check` + `pnpm build`. Before the first unit of a
-**new** track, outline all of its units below (one line each: what it teaches that its
-neighbours don't). Edits to a unit that already
-shipped (feedback in `content/feedback/`, a wrong explanation, a better example) go through
-**`/improve-lesson`** (`.claude/skills/improve-lesson`) instead, which also fixes the schema/template
-when the problem is general and sweeps it across lessons. Both append a line to
-`docs/lesson-changelog.md`.
+**How these get built:** new units with **`/new-lesson`**; changes to shipped ones (a
+`lesson-feedback` issue, a wrong explanation, a better example) with **`/improve-lesson`**, which
+also fixes the schema or template when a problem is general. Both follow `learning/PLAYBOOK.md`,
+gate on `pnpm check` + `pnpm build`, and append a line to `docs/lesson-changelog.md`. Before the
+first unit of a **new** track, outline all of its units below (one line each: what it teaches
+that its neighbours don't).
 
-### Shipped
+Every challenge passes `pnpm test:challenges:browser` in real Sandpack (47/47, 2026-10-17),
+including the ones that use Web Crypto (`crypto.subtle`); each track's PR description has its
+starter/solution counts.
+
+### The first three tracks
 
 - ✅ **React Hooks & Rendering** — 7 units
   - ✅ useState, useEffect, useRef, memoization, controlled-vs-uncontrolled
   - ✅ **Debounced input & autosave with timers** (`debounced-input-and-autosave`) — `useRef` for the `setTimeout` handle, commit-on-blur, cancel-vs-flush on unmount, out-of-order saves, debounce vs throttle. Challenge: `debounce-autosave-title`. Sourced from the real `EditableTitle` snippet.
   - ✅ **Untangling a component with too many effects** (`untangling-effects`) — name each effect, derive → delete → fix deps/cleanup → extract; dep arrays, StrictMode double-invoke, prop→state sync vs `key`. Challenge: `untangle-description-editor`.
-  - ⬜ _next:_ re-run the audit against the actual `EditableDescription.tsx` once it's pasted into `content/`, and fold any effect kind the lesson doesn't cover into the medium reading.
+  - ⬜ _needs source:_ paste the real `EditableDescription.tsx` (sanitized) into `content/`, re-run the effect audit against it, and fold any effect kind the lesson doesn't cover into the medium reading.
 - ✅ **State & Data Flow** — 3 units
   - ✅ Choosing where state lives (local → lift → Context → client store → server state → URL)
   - ✅ **Context vs client store vs server state** (`context-vs-store-vs-server-state`) — who _owns_ a value, the failure mode of each wrong choice, and how one screen combines URL + query cache + store. Decision unit: reading + quiz + fill-blank, no challenge.
   - ✅ **Zustand basics** (`zustand-basics`) — `create`, atomic vs object selectors, `set` shallow-merge, `getState`/`setState` outside React, `persist` (`partialize`, `version`, hydration gate), testing a singleton. Challenge: `selector-store-subscription` (rebuild the hook on `useSyncExternalStore`).
   - ⬜ _now possible:_ a challenge that imports **real** `zustand` — challenges can declare pinned `dependencies` in `meta.json` (plus a matching devDependency). Worth it only if it teaches more than the hand-rolled store already does.
-- ✅ **Backend with NestJS** — 4 units
+- ✅ **Backend with NestJS** (`backend-nestjs`) — 7 units: these 4, and 3 more under Backend, network & data
   - ✅ **Nest vocabulary: the words before the wiring** (`nest-vocabulary`) — controller/service/module/provider, decorators as metadata that runs once, HTTP verbs + prefix-plus-path routes + `@Param`/`@Query`/`@Body`, the `constructor(private readonly x: T)` line unpacked, singleton = one shared instance, and a plain-words tour of middleware/guard/interceptor/pipe/filter. Authored from feedback that the DI unit assumed its own vocabulary.
   - ✅ **Modules, providers & the injector** (`nest-modules-and-providers`) — modules as registries, the four `@Module` keys, reading the "can't resolve dependencies" error, duplicate registration → two instances, tokens for interfaces, `useFactory`/`inject`, scopes vs state-on-a-singleton, `forwardRef` as a smell. No challenge (no `@nestjs/*` in the sandbox).
   - ✅ **DTOs & validation** (`nest-dtos-and-validation`) — the DTO as trust boundary, why the type alone validates nothing, `whitelist` as mass-assignment defence, coercion, `@ValidateNested` + `@Type`, `PartialType`, uniqueness as 409 in the service. Challenge: `nest-validation-pipe` (hand-rolled ValidationPipe).
@@ -76,15 +77,14 @@ when the problem is general and sweeps it across lessons. Both append a line to
 
 ### Frontend
 
-- ✅ **Data Fetching with TanStack** (`data-fetching-tanstack`), 6 units — TanStack Query v5 + TanStack Router v1, the library API (who *owns* server state is `context-vs-store-vs-server-state`'s job). Challenges import the real `@tanstack/react-query`.
+- ✅ **Data Fetching with TanStack** (`data-fetching-tanstack`), 6 units — TanStack Query v5 + TanStack Router v1, the library API (who *owns* server state is `context-vs-store-vs-server-state`'s job). Challenges import the real `@tanstack/react-query` (the first challenges to declare `dependencies`, which proved that feature in Sandpack).
   - ✅ **Query keys** (`query-keys`) — the key *is* the cache entry: array keys, deterministic hashing (object key order ignored, array order not), every `queryFn` input in the key, general→specific hierarchy and key factories, and what a prefix matches. Challenge: `query-keys-list-detail`.
   - ✅ **Query states** (`query-states`) — reading one query over time: `status` (is there data?) vs `fetchStatus` (is the `queryFn` running?), `isPending`/`isFetching`/`isLoading`, an error *with* data, empty vs loading, `placeholderData: keepPreviousData`, `staleTime` vs `gcTime`, the refetch triggers and the default `retry: 3`. Challenge: `query-states-todo-list`.
   - ✅ **Invalidation & cache writes** (`invalidation-and-cache-writes`) — the `QueryClient` calls you make after the server changed: `invalidateQueries` vs `refetchQueries` vs `setQueryData` vs `resetQueries`/`removeQueries`, query filters (prefix, `exact`, `type`, `predicate`), immutable writes, and when to write a response straight into the cache. Challenge: `cache-sync-handlers` (server-push handlers, DOM-free entry).
   - ✅ **Mutations** (`mutations`) — `useMutation` in a custom hook, `mutate` vs `mutateAsync`, hook-level vs call-level callbacks (call-level ones skip after unmount and fire once for consecutive calls), returning the invalidation promise to stay pending, `variables`/`reset`, no retries by default. Challenge: `mutation-save-button`.
   - ✅ **Optimistic updates** (`optimistic-updates`) — the cache recipe (`onMutate`: cancel, snapshot, write, return; roll back in `onError`; invalidate in `onSettled`), the v5 UI-only recipe via `variables`/`useMutationState`, and the races: an in-flight refetch and overlapping mutations. Challenge: `optimistic-toggle`.
   - ✅ **TanStack Router** (`tanstack-router`) — typed routes (code-based vs file-based), the registered router type that makes `Link`/`navigate` checked, `validateSearch` as typed URL state, `loaderDeps` + a loader that fills the Query cache before render (`queryClient.query({ …, staleTime: 'static' })`, formerly `ensureQueryData`). Challenge: `router-search-loader` (code-based routes on a memory history).
-  - ✅ Browser run of all six challenges (2026-10-17, Sandpack in Chrome): every starter fails its planted-bug tests and every solution passes. These are the first challenges that declare `dependencies` (`@tanstack/react-query` 5.104.1; `router-search-loader` also `@tanstack/react-router` 1.170.41), so the `dependencies` feature is now proven in the browser.
-- 🔨 **Async JavaScript & Timing** (`async-javascript`) — the framework-free language mechanics
+- ✅ **Async JavaScript & Timing** (`async-javascript`) — the framework-free language mechanics
   under the React units. `debounced-input-and-autosave` keeps the timer handle in a ref, unmount
   cleanup and the debounce-vs-throttle _choice_; `use-effect` keeps the `ignore` flag and abort in
   effect cleanup. These units link back to them and don't re-teach them.
@@ -111,21 +111,18 @@ when the problem is general and sweeps it across lessons. Both append a line to
     `AbortSignal.any()` (with support versions), telling `AbortError` from `TimeoutError` from a
     real failure, last-write-wins bugs, request ids vs aborting. Challenge:
     `latest-only-search-client`.
-  - ✅ Browser run of the four challenges (2026-10-17, in a background tab where Chrome throttles timers): every starter fails and every solution passes, except that `debounce-throttle-from-scratch`'s burst test hit Sandpack's 5 s test timeout because each throttled sleep took ~1 s. No assertion failed; a re-run in headless Chrome (visible page, no throttling) passes 11/11. The two timing-heavy graders now wait for a condition or count calls, instead of using a fixed wall-clock window.
 - ✅ **JavaScript & TypeScript Fundamentals** (`javascript-typescript-fundamentals`, first in the catalog) — 5 units, 4 challenges. The language layer every other track assumes. Intro/core, with an advanced edge in each complex tier.
   - ✅ **Maps, Sets, objects & arrays** (`maps-sets-objects-arrays`) — choosing the collection: `has`/`get` vs `includes`/`find` cost, object keys become strings while `Map` keys keep their type (SameValueZero), prototype keys like `"constructor"`, insertion order, `size`, a `Map` serialising to `{}`, dedupe with `Set`, `Object.groupBy`/`Map.groupBy` (ES2024), `WeakMap` in one line. Challenge: index/dedupe/count/serialise an order list.
   - ✅ **Shorthand syntax** (`shorthand-syntax`) — what each shorthand expands to: `?.`/`?.[]`/`?.()` short-circuiting the whole chain, `??` vs `||` on `0`/`""`/`false`, `??=`/`||=`/`&&=`, destructuring defaults (only `undefined` triggers them), rename, rest/spread, shorthand properties/methods, computed keys. Challenge: an options resolver that loses `0`, `""` and `null`.
   - ✅ **Equality & truthiness** (`equality-and-truthiness`) — values, not syntax: `===` vs `==` (the few coercions worth knowing), `Object.is` (NaN, -0), SameValueZero in `includes`, the falsy list and `{count && …}` rendering `0`, `null` vs `undefined` in TS (`?:` vs `| null`, `strictNullChecks`, JSON dropping `undefined`), objects compare by identity. React re-render identity stays in `memoization`.
   - ✅ **Narrowing & unions** (`narrowing-and-unions`) — types, not values: `typeof`/`in`/`instanceof`/equality narrowing, custom type guards as unchecked promises, discriminated unions + the `never` exhaustiveness check, enums vs unions (runtime objects, `const enum` under `isolatedModules`, TS 5.8 `erasableSyntaxOnly` and Node type stripping), `as const` objects, `satisfies`. Owns the enum language facts the Testing track links to. Challenge: parse an `unknown` payload into a discriminated union.
   - ✅ **Immutable updates** (`immutable-updates`) — changing data without changing the old copy: spread is shallow, nested updates, copying (`toSorted`/`toSpliced`/`with`, ES2023) vs mutating array methods, `structuredClone` and what it can't clone, `Object.freeze` is shallow, why mutation breaks React's `Object.is` bail-out and doubles a pushed item under StrictMode. Challenge: a todo reducer with planted mutations.
-  - ✅ Browser run of each new challenge (2026-10-17): starter fails and _Show solution_ passes in Sandpack for `index-orders-with-maps`, `resolve-player-options`, `narrow-unknown-events` and `todo-reducer-mutations`. `todo-reducer-mutations`' preview wraps itself in `<StrictMode>` on purpose (the doubled todo is the symptom).
 - ✅ **Dates & Time** (`dates-and-time`) — 5 units, in this order
   - ✅ **The Date object** (`date-api-basics`) — one machine, one zone: a `Date` is one number (ms since the epoch), the constructor forms and 0-indexed months, `getDate` vs `getDay`, setters that mutate and overflow (Jan 31 + 1 month), Invalid Date. Time zones are deliberately left to the next unit.
   - ✅ **UTC vs local time** (`utc-vs-local`) — one instant, many wall clocks: store UTC and render in the viewer's zone, `getHours` vs `getUTCHours`, offsets vs IANA zones, the server's zone vs the browser's (an SSR hydration mismatch), and a test that passes on UTC CI but fails on a laptop.
   - ✅ **Parsing & formatting** (`parsing-and-formatting`) — strings in and out: which ISO shapes parse as UTC and which as local, never parsing non-ISO strings with `Date`, `Intl.DateTimeFormat` (`timeZone`, `dateStyle`/`timeStyle`, `formatToParts`), `Intl.RelativeTimeFormat`.
   - ✅ **Date-only values & DST** (`date-only-and-dst`) — calendar dates that aren't instants: `YYYY-MM-DD` arithmetic in UTC days, 23- and 25-hour DST days, the date-only-vs-ISO-instant string prefix trap, and validating a real calendar date. Challenge: `date-only-helpers` (correct in every time zone).
   - ✅ _card:_ **Date libraries** (`date-libraries`) — when `Date` + `Intl` are enough, `date-fns` v4 (functions on `Date`), Luxon (a zone-carrying `DateTime`), `Temporal`'s shipping status, and why not Moment for new code.
-  - ✅ Browser run of `date-only-helpers` (2026-10-17): starter fails 9/13 with both "used local time" trap messages, _Show solution_ passes 13/13 in Sandpack. Test names must be unique across `describe` blocks — Sandpack keys its results list by name (duplicates log a React key error).
   - ⬜ _later:_ when Safari ships Temporal (MDN "Limited availability" as of October 2026), refresh `date-libraries` → `temporal-status`, and consider a `Temporal.PlainDate` variant of the date-only challenge.
 
 ### Backend, network & data
@@ -137,20 +134,16 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ **Auth over HTTP** (`auth-over-http`) — how credentials travel: cookie sessions vs `Authorization: Bearer`; decoding a JWT by hand (signed, not encrypted); verifying one (pin `alg`, check the signature, then `exp` in seconds); 401 + `WWW-Authenticate` vs 403; refresh tokens and rotation; cookie attributes as mechanics only. Challenge: `bearer-token-guard`.
   - ✅ **CORS & preflight** (`cors-and-preflight`) — the same-origin policy and CORS as the server relaxing it; simple vs preflighted requests from the Fetch standard's safelists; credentials vs `*`; an exact-match allow-list with `Vary: Origin`; why curl never sees CORS and why it is not server-side protection. Challenge: `cors-allowlist`.
   - ✅ **Sync vs async APIs** (`sync-vs-async-apis`) — `202 Accepted` + a status URL; polling vs long-polling vs SSE vs WebSockets; webhooks verified with an HMAC over the raw body and a replay window; at-least-once delivery → handlers that dedupe by event id and record it only after the work succeeds; queues between "accepted" and "done". Challenge: `idempotent-webhook-handler`.
-  - ✅ Browser run of all four challenges (2026-10-17, Sandpack in Chrome): starters fail (5/12, 4/9, 4/8, 4/6) and solutions pass. Web Crypto (`crypto.subtle`) works in the Sandpack iframe, so `bearer-token-guard` and `idempotent-webhook-handler` are proven there too.
-  - ✅ `request-response-anatomy` now links the HTTP status codes deck (`reference-cards/http-status-codes`).
 - ✅ **Next.js & the Network** (`nextjs-and-the-network`) — 4 units — targets Next.js 16 (App Router); each unit names what changed from 14/15 where an old habit would mislead
   - ✅ **Server Components, Server Actions & Route Handlers** (`server-components-actions-route-handlers`) — where each piece of code runs and what crosses the network: the `'use client'` boundary and serialisable props, a Server Action as a POST to the route that renders it (its own auth check; a `proxy.ts` redirect on that path eats it), Route Handlers for HTTP-shaped endpoints, `redirect()`/`notFound()` as throws a `catch` can swallow (`unstable_rethrow`). Which to reach for when. Challenge: `proxy-spares-server-actions`.
   - ✅ **Response headers, HTTP caching & compression** (`response-headers-caching-compression`) — the HTTP layer only (RFC 9111, not Next's server cache): `max-age` vs `s-maxage`, `private`/`public`, `no-cache` vs `no-store`, `stale-while-revalidate`, `ETag` + 304, `Vary`, gzip/brotli and who compresses; where Next 16 sets headers and which one wins (`next.config` `headers()` vs a Route Handler, on `next start` vs Vercel), and proving CDN caching with `x-vercel-cache`, not by reading `Cache-Control`. Challenge: `shared-cache-decision`.
   - ✅ **Next.js caching & revalidation** (`nextjs-caching-and-revalidation`) — Next's own server and client caches, not HTTP headers: Cache Components (`cacheComponents`, `use cache`, `cacheLife`, `cacheTag`), runtime APIs kept outside cached scopes, `updateTag` vs `revalidateTag(tag, 'max')` vs `revalidatePath` vs `refresh`, the client router cache; what changed from the Next 14/15 fetch-cache model; why a local `next start` is not evidence for Vercel.
   - ✅ **Streaming & Suspense** (`streaming-and-suspense`) — the response as a stream: static shell + `<Suspense>` holes (Partial Prerendering under Cache Components), `loading.tsx` vs granular boundaries, which `await` blocks the whole route, why the status code freezes at the first byte (`notFound()` mid-stream → 200 + `noindex`), and the buffering layers (nginx, compression, curl) that hide a working stream.
-  - ✅ Browser run of `proxy-spares-server-actions` (starter 2/6 fail, solution 6/6) and `shared-cache-decision` (starter 5/7 fail, solution 7/7) in Sandpack, 2026-10-17.
   - ⬜ _follow-up:_ confirm on a real Vercel deployment the header-priority claim in `response-headers-caching-compression` (a Route Handler's `Cache-Control` beats `next.config` `headers()` on Vercel, the reverse on `next start`). The `next start` half was reproduced against Next 16.2's own `sendResponse`; the Vercel half rests on Vercel's Cache-Control docs.
-- ✅ **Backend / NestJS** — 7 units: the first 4 under Shipped → Backend with NestJS, and these 3, appended after `nest-request-lifecycle` and written against Nest 12.1
+- ✅ **Backend / NestJS** — 7 units: the first 4 under The first three tracks → Backend with NestJS, and these 3, appended after `nest-request-lifecycle` and written against Nest 12.1
   - ✅ **Controllers & routing** (`nest-controllers-and-routing`) — what the vocabulary unit's verbs and `@Param` don't cover: Express matches routes in registration order (`:id` shadows `me`, and a pipe can't rescue it), Nest 12's opt-in `routeConflictPolicy` / `routeResolutionStrategy`, default statuses (POST 201, an empty DELETE is 200), `@HttpCode`/`@Header`/`@Redirect`, what `@Res()` hands over (sending, interceptor output, serialization) vs `passthrough: true`, and URI/header versioning with `defaultVersion` and `VERSION_NEUTRAL`. Decision unit with predict-output, no challenge.
   - ✅ **Caching & rate limits with Redis** (`nest-redis-caching-and-rate-limits`) — cache-aside done right (TTL in ms, invalidate after the write, never cache a failure, collapse concurrent misses), `CacheModule` on cache-manager v7 + `@keyv/redis`, why `CacheInterceptor` keys on the URL, `@nestjs/throttler` v6 per-route/per-IP buckets and why in-memory storage and an untrusted proxy break the limit, sessions in Redis, and fail-open vs fail-closed per use when Redis is down. The lifecycle unit's `ThrottlerGuard`-as-a-guard and cache short-circuit are referenced, not retaught. Challenge: `nest-cache-aside`.
   - ✅ **Microservices & messaging** (`nest-microservices-and-messaging`) — `@MessagePattern`/`send()` vs `@EventPattern`/`emit()`, `send()` cold vs `emit()` hot, what errors look like across the wire (`RpcException`), `timeout()` without cancelling the remote work, transports by delivery guarantee (at most once vs at least once), idempotent handlers (stable event id, atomic claim, release on failure, in-flight duplicates), and the dual-write problem behind the outbox. Challenge: `nest-idempotent-event-handler`.
-  - ✅ Browser run of `nest-cache-aside` and `nest-idempotent-event-handler` in Sandpack (2026-10-17): each starter fails 6/8, each solution passes 8/8.
   - ⬜ _recheck by 2027-01:_ `@nest-lab/throttler-storage-redis` 1.2.0 declares peers only up to Nest 11 (`npm install` on Nest 12 fails with `ERESOLVE`), and `@nestjs/idempotency` / `@nestjs/outbox` are 0.x — the Redis unit's medium reading and the messaging unit's complex readings name these versions.
   - ⬜ _docs vs behaviour, Nest 12.1.3:_ the controllers docs say `@Res()` loses `@HttpCode()`/`@Header()` (Nest still applies both before the handler), and the versioning docs say an unversioned route 404s once versioning is on (it's served without a version). Both hold on 11.2.7 too, and are noted in the controllers unit as checked-by-running; revisit if a Nest release changes either.
 - ✅ **Databases** (`databases`) — PostgreSQL 18 as the reference engine; 7 units, 2 challenges
@@ -161,7 +154,6 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ **N+1 queries** (`n-plus-one-queries`) — spotting N+1 (a query per row, ORM lazy loads, per-item loaders awaited in a loop), fixes (a join, one `= ANY($1)` batch mapped back by id, DataLoader-style same-tick batching), and paging: keyset vs `OFFSET`, and an unpaged read silently capped at 1,000 rows. Challenge: `batch-customer-loader`.
   - ✅ **Relational, document or graph?** (`relational-document-graph`) — decision unit: what each model makes cheap and expensive, embedding vs referencing in MongoDB, when a graph database pays (variable-depth traversals), recursive CTEs for shallow graphs, and Postgres `jsonb` as the middle ground (GIN, `@>`, no foreign keys inside JSON).
   - ✅ **Migrations** (`migrations`) — forward-only migrations, expand/contract for zero-downtime renames, ship DDL with the code that needs it, backfills in batches, lock hazards (`ACCESS EXCLUSIVE` + the lock queue + `lock_timeout`, `CREATE INDEX CONCURRENTLY`, fast `ADD COLUMN … DEFAULT` since PG 11, `NOT VALID` then `VALIDATE`), and irreversible changes.
-  - ✅ Browser run (2026-10-17, `pnpm test:challenges:browser`): `optimistic-stock-reservation` 4/7 fail → 7/7, `batch-customer-loader` 5/5 fail → 5/5.
 
 ### Quality, security & tooling
 
@@ -173,8 +165,6 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ **Designing for testability** (`designing-for-testability`) — pure core + thin shell, pass the clock/`fetch` in, extract logic out of components, module singletons that leak between tests, why same-module calls can't be `vi.mock`ed; the real rule behind "you can't use enums in tests" (Node type stripping + `erasableSyntaxOnly` reject `enum`, ambient `const enum` breaks per-file transpilers, a factory mock drops the enum export) — verified, links to `narrowing-and-unions` for the language side. Challenge: make a resend-code cooldown testable.
   - ✅ **Vitest in practice** (`vitest-in-practice`) — `vitest.config.ts` (`include`, `environment` + the per-file comment, `globals`, `setupFiles` vs `globalSetup`, `pool` forks vs threads), coverage (v8, `include`, what a percentage doesn't prove), snapshots and reviewing `-u`, watch vs run, reporters that hide passing tests' logs (the agent reporter, `silent: 'passed-only'`), what changes in Vitest 5.
   - ✅ **Playwright end-to-end** (`playwright-e2e`) — `getByRole` first, strict locators, auto-waiting and web-first assertions vs `waitForTimeout`/`isVisible()`, `webServer.reuseExistingServer` attaching to another app on the same port, clicking before hydration (a native form GET), traces on retry, `storageState` setup projects, fixtures. No challenge (no browser in the sandbox).
-  - ✅ Browser run (2026-10-17, `pnpm test:challenges:browser`): `hand-rolled-spy` 7/8 fail → 8/8, `testable-resend-cooldown` 9/9 fail → 9/9 after the PR #40 review added the failed-send test (the missing-export message shows per test, no bundle error).
-  - ✅ Cross-track links (`/learn/javascript-typescript-fundamentals/narrowing-and-unions`, `/learn/dates-and-time/utc-vs-local`) resolve: both tracks are below this one in the PR stack.
   - ⬜ _later:_ when the repo moves to Vitest 5, sweep the track — it names Vitest 4 behaviour that 5 changes (un-awaited `.resolves` fails, `clearMocks` on by default, `v4.vitest.dev` source links).
 - ✅ **Web Security** (`web-security`) — 6 units (4 mastery units with 3 challenges, 2 card units) — attacks and their defences. Boundary: how credentials travel (cookie sessions vs bearer tokens, JWTs, cookie attributes as mechanics) is `auth-over-http`; CORS is `cors-and-preflight`; Server Actions mechanics are the Next.js track's. This track covers what attackers do with those mechanisms and how to stop them.
   - ✅ **XSS** (`xss`) — injected script runs as the page, with the user's session, so it beats every other defence; stored / reflected / DOM-based by where the payload lives; what React escapes (text, attribute values) and what it doesn't (`dangerouslySetInnerHTML`, URL schemes — React 19 blocks only `javascript:`); escaping vs sanitising (DOMPurify) vs allow-listing a URL scheme. Challenge: `xss-safe-profile-card` (React + RTL).
@@ -183,7 +173,6 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ **Secrets & config** (`secrets-and-config`) — `NEXT_PUBLIC_` inlined into the client bundle at build and frozen; unprefixed vars, `server-only`, and the props / return values that still leak; failing closed on a missing secret; `.env*.local` and `.gitignore`; a committed secret is leaked — rotate first; grep the built bundle. No challenge (judgment + recall).
   - ✅ _card:_ **Security headers** (`security-headers`) — HSTS (+ preload), `nosniff`, `Referrer-Policy`, `frame-ancestors` vs `X-Frame-Options`, `Permissions-Policy`, COOP, CORP, headers to drop; one card each with the header line.
   - ✅ _card:_ **OWASP Top 10:2025** (`owasp-top-10`) — one card per item of the 2025 edition, each with what it looks like in a TS/React/Node app.
-  - ✅ Browser run (2026-10-17, `pnpm test:challenges:browser`): `xss-safe-profile-card` 3/4 fail → 4/4, `csp-header-builder` 4/6 → 6/6, `csrf-request-guard` 5/8 → 8/8.
 - ✅ **Developer Tooling — Terminal, Git & GitHub** (`developer-tooling`; macOS + zsh, bash differences named; flag lookups live in reference-cards `common-cli-flags`, curl in http-and-apis)
   - ✅ **Terminal survival kit** (`terminal-survival-kit`) — how the shell turns a line into a program run: cwd and paths, quoting and expansion (`~`, globs, zsh's "no matches found"), zsh not word-splitting an unquoted `$VAR` (bash does), redirection order (`> f 2>&1`) and pipes, exit codes with `&&`/`||`/`pipefail`, env vars, `export` and `PATH` lookup (zsh's `path` is tied to `PATH`). No challenge.
   - ✅ **SSH keys & the GitHub CLI** (`ssh-and-github-cli`) — how git proves who you are to GitHub: HTTPS + token vs SSH remotes, `ssh-keygen -t ed25519` + passphrase + agent/Keychain, `~/.ssh/config` (first value wins; multi-account `Host` aliases), `ssh -T` (exits 1 on success), fine-grained vs classic PATs, `gh auth login` needs a terminal (`GH_TOKEN` for automation), the `gh repo clone` / `gh pr create|checkout|view` loop. No challenge.
@@ -191,7 +180,6 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ **Git recovery** (`git-recovery`) — undo at the right layer: `restore` / `restore --staged`, `commit --amend`, `reset --soft/--mixed/--hard` (what each moves; untracked files survive `--hard`), `stash` (a path-limited stash of an unchanged file saves nothing, and the next `pop` applies an older stash), `revert` for pushed history, `reflog`/`ORIG_HEAD` to bring "lost" commits back. Challenge: `git-reset-model` (DOM-free model of the three trees).
   - ✅ **Rebase vs merge** (`rebase-vs-merge`) — fast-forward vs merge commit vs rebase (replays `upstream..branch` as new commits, drops merges and already-applied patches), `pull` on divergent branches, conflicts (markers, `zdiff3`, ours/theirs flip during a rebase), the golden rule, `--force-with-lease` + `--force-if-includes`, squash-merged stack bases → `rebase --onto`, `--update-refs`. Challenge: `rebase-replay-set` (which commits a rebase replays).
   - ✅ **Pull request workflow** (`pull-request-workflow`) — the GitHub side: small focused PRs, commit messages, draft PRs, review states and replying, required checks and branch protection as gates, merge methods, hand-built stacked PRs drained bottom-up (retarget the child before its base branch is deleted; `gh pr merge --delete-branch` can close it), GitHub's native stacks (public preview, July 2026). No challenge.
-  - ✅ Browser run (2026-10-17, `pnpm test:challenges:browser`): `git-reset-model` 4/8 fail → 8/8, `rebase-replay-set` 4/7 fail → 7/7.
   - ⬜ _follow-up:_ GitHub's native stacked PRs were in public preview when `pull-request-workflow` was written (changelog 2026-07-30); re-check the docs when they reach GA, and re-check cli/cli#1168 (`gh pr merge --delete-branch` closing child PRs).
 - ✅ **Reference Cards** (`reference-cards`) — 3 units; lookup decks, one idea per card; each deck blooms only where drilling pays
   - ✅ **HTTP status codes** (`http-status-codes`) — the per-code lookup: 200/201/204, the redirect family (301/302/303/307/308: permanent vs temporary × method kept or not), 304, 400 vs 422, 401 vs 403, 404 vs 410, 405 (+ `Allow`), 409, 415, 429 (+ `Retry-After`), 500, and 502 vs 503 vs 504 (who failed: the gateway's upstream, this server, or the wait). Bloomed with a "which code for this situation?" quiz + fill-blank. Doesn't re-teach status _classes_ (http-and-apis → `request-response-anatomy`) or Nest's exception mapping (`nest-request-lifecycle`).
@@ -204,31 +192,24 @@ when the problem is general and sweeps it across lessons. Both append a line to
   - ✅ **A framework for any design** (`design-framework`) — the order of work: functional vs non-functional requirements (an availability target as a downtime budget, dependencies multiply), back-of-envelope estimates with every assumption and step written down, the API and data model that fall out of them, then the hot path. Worked example: a URL shortener end to end (301 vs 302 and who caches what, counter vs random vs hash keys, collision odds). Decision unit with estimate-style predict items; no challenge.
   - ✅ **Caching, replicas & shards** (`caching-and-scaling`) — read path vs write path; which cache layer (browser, CDN, app, DB) owns which data; sizing the cache's working set and the database for its miss rate; the races cache-aside leaves (stale sets fixed with a lease, fleet-wide stampedes); read replicas and read-your-writes under replication lag; partition keys (hash vs range, hot keys); why `hash % N` reshuffles almost every key and consistent hashing moves ~1/N; queues to level write load; CAP and PACELC in plain terms. Challenge: a consistent-hash shard router (sort order, wrap-around, virtual nodes, removal).
   - ✅ **Arguing a trade-off** (`design-tradeoffs`) — the shape of a trade-off argument (options, the deciding number, what you give up, what would change your mind); fan-out on write vs on read for a feed, and the hybrid for huge accounts; rate-limiting algorithms (token bucket vs fixed and sliding windows) and keeping a shared bucket's update atomic; retries that multiply across layers, backoff with jitter; back-pressure, bounded queues and load shedding. Challenge: a token-bucket rate limiter driven by a fake clock.
-  - ✅ Browser run (2026-10-17, `pnpm test:challenges:browser`): `consistent-hash-router` 5/6 fail → 6/6, `token-bucket-rate-limiter` 4/6 fail → 6/6.
-  - ✅ Sibling units named in the readings are links (`/learn/<track>/<unit>`), all resolving within this PR stack.
-- ✅ **Infrastructure** (`infrastructure`) — three units, outlined and written 2026-10-17 (not yet browser-checked or merged). Boundaries: schema migrations themselves are the Databases track's (`databases/migrations`); secret *leaks* (bundles, git history) are Web Security's; Playwright is Testing's; PR etiquette is Developer Tooling's.
+- ✅ **Infrastructure** (`infrastructure`) — 3 units, 3 challenges. Boundaries: schema migrations themselves are the Databases track's (`databases/migrations`); secret *leaks* (bundles, git history) are Web Security's; Playwright is Testing's; PR etiquette is Developer Tooling's.
   - ✅ **Terraform basics** (`terraform-basics`) — declarative config (provider, resource, data source, variable, output, module); state as the map from address to real object, kept in a locked remote backend and never hand-edited; reading a plan (`~`, `-/+`, `+/-`, and why a replace counts as one add plus one destroy); drift and `-refresh-only`; `moved` and `import` blocks instead of destroy-and-recreate; one root module per environment rather than CLI workspaces. Challenge: `terraform-plan-gate` (summary line + approval gate over `terraform show -json` output, fixtures from real Terraform 1.16.6 plans).
   - ✅ **Environments & CI/CD** (`environments-and-ci-cd`) — what differs between dev, preview, staging and production (config, secrets, data — a preview must not share the production database); GitHub Actions anatomy (`on`, jobs, steps, `needs`, `permissions`, `environment`, OIDC); when a workflow runs at all (`branches` matches a PR's *base*, `paths-ignore` skips only when every file matches, retargeting a PR doesn't re-trigger it); `concurrency`; minutes as a budget (each job rounds up to a whole minute); deploy order when a release needs a schema change, and what a rollback does and doesn't undo. Challenge: `ci-dry-run` (PR base-branch filter, default activity types, `paths-ignore`, concurrency replacement, per-job minute rounding).
   - ✅ **Observability basics** (`observability-basics`) — logs vs metrics vs traces and what each answers; structured logs that carry the trace ID; counter / gauge / histogram and label cardinality; spans, status and context propagation with OpenTelemetry (`traceparent`); why an average hides the tail, percentiles and cumulative `le` buckets; golden signals / RED / USE and alerting on symptoms (SLO burn rate), not causes. Challenge: `latency-percentiles` (numeric sort, nearest rank, cumulative `le` buckets, no answer between bounds).
-  - ✅ Browser run (2026-10-17, `pnpm test:challenges:browser`): `terraform-plan-gate` 10/12 fail → 12/12, `ci-dry-run` 5/11 → 11/11, `latency-percentiles` 5/7 → 7/7.
   - ⬜ _follow-up:_ `concurrency.queue: max` (GitHub, May 2026) is described in prose only, because `actionlint` 1.7.12 — the latest release — still rejects the key; add a validated YAML example once it's supported.
-
-### Sourcing note
-
-Some brain-dump items still need real source material before authoring: `EditableDescription.tsx`
-should be pasted in (sanitized) so the effect-audit unit can be checked against the real thing, and
-the `curl` signup/login exchange is the worked example for the `curl` unit. The `EditableTitle`
-snippet has already been turned into `debounced-input-and-autosave`.
 
 ## Deferred / cross-cutting
 
-- ✅ **Cards & variable lesson depth (v1, 2026-10-17)** — a `cards` block (a deck of one-idea cards), derived Card / Lesson / Full depth, card units complete on visit. Shared cards and the swipe feed are still ⬜. Was: a lightweight `card` block (info + example, flash-card style) so a "lesson" can range from a reminder to a full mastery unit, and cards can _bloom_ by appending blocks. Inline first; graduate to referenced/shared cards (challenge pattern) only when reuse is real. Proposal: `docs/cards-and-lesson-depth.md`.
-- ⬜ zod 3 → 4 migration (`schema.ts`, `validate.ts`)
+- ✅ **Cards & variable lesson depth (v1, 2026-10-17)** — a `cards` block (a deck of one-idea cards), derived Card / Lesson / Full depth, card units complete on visit. Inline only: shared/referenced cards wait for real reuse, and the swipe feed is ⬜. Design: `docs/cards-and-lesson-depth.md`.
+- ⬜ zod 3 → 4 migration (`learning/schema.ts`, `learning/taxonomy.ts`, `learning/validate-content.ts`)
 - ⬜ TypeScript 5 → 6
-- ⬜ **Context → Zustand** for progress + drill history — the trigger fired when the interests store landed (the first Zustand store). Plan: `docs/zustand-migration.md`.
-- ⬜ Pick-N / difficulty-mix quizzes (schema already supports the shape)
+- ⬜ **Progress + drill history → Zustand** — progress is on Context, drill history on direct localStorage reads in `UnitView`; the trigger fired when the interests store landed (the first Zustand store). Plan: `docs/zustand-migration.md`.
+- ⬜ Pick-N / difficulty-mix quizzes (a non-breaking addition: an optional `present` field and per-item difficulty; PLAYBOOK → "Designed to grow")
 - ⬜ More "Go deeper" reading tiers across units
 - ✅ CI — `vercel.json` makes every Vercel build run `pnpm check && pnpm build`, so a failing gate fails the PR's preview and blocks production, with no GitHub Actions minutes (2026-10-17)
+- ⬜ Owner actions from the 2026-10-17 skills pass: turn on Dependabot alerts (`docs/security-audit.md` S5); after the branch deploys, submit the sitemap in Search Console, check a unit page in the Rich Results Test, and review Vercel Firewall bot rules (`docs/seo.md` → Owner actions).
+- ⬜ Accessibility not covered yet: a screen-reader pass, zoom/reflow, and the interest-filter dialog's focus return (`docs/pagespeed-audit.md`, round 1).
+- ⬜ Note in code that `accept`/`acceptable` and `prompt`/`question` name the same concepts across content fields (a note, not a rename; `docs/readability-audit.md` → Not applied).
 
 ## Planned features (design later)
 
@@ -252,15 +233,14 @@ in a single-item, "reveal after answer" mode. Readings and challenges are exclud
   over tracks → units → blocks), tagged by skill so the feed can be filtered by track/skill.
 - **Progress semantics.** Feed answers probably shouldn't count toward _unit completion_ (it's
   cross-unit) — track them as their own thing: a "practiced N today" count / streak. Pairs with a
-  future streaks/XP store (and is a likely trigger for the Context → Zustand switch).
+  future streaks/XP store.
 - **Session shape.** Endless scroll vs a capped "10-card session" with a little summary at the end.
 - **Interaction.** Mobile-first vertical snap-scroll; arrow-key (↑/↓) navigation on desktop; no
   timer (each card self-grades on answer).
 - **Persistence.** Per-item "seen/answered/last-result" state — localStorage first, Supabase later
   (same local-first → cloud path as progress).
 
-## Conventions (quick reference)
+## Conventions
 
-- Content in `content/`; schema `learning/schema.ts`; pedagogy `learning/PLAYBOOK.md`.
-- shadcn: never edit `components/ui/*` — wrap or re-theme (see `docs/shadcn-local-patches.md`).
-- Gates: `pnpm check` (lint + typecheck + validate + test) and `pnpm build`.
+In `AGENTS.md` (gates, where things live, patterns to avoid); authoring judgment in
+`learning/PLAYBOOK.md`.

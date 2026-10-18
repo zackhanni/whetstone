@@ -1,8 +1,8 @@
 /**
  * What an in-browser (Sandpack) challenge can import, in one place. Three readers depend on it
  * agreeing: the runner (`components/challenge-runner.tsx`) installs these into the iframe, the
- * validator (`scripts/validate.ts`) rejects any other bare import, and the headless grader
- * (`scripts/check-challenges.ts`) runs the same tests against the same versions from
+ * validator (`learning/validate-content.ts`) rejects any other bare import, and the headless
+ * grader (`scripts/check-challenges.ts`) runs the same tests against the same versions from
  * `node_modules` — so `package.json` must list every pinned package below as a devDependency at
  * the identical version (`pnpm validate` checks that too).
  *

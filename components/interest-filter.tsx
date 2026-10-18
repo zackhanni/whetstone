@@ -17,7 +17,7 @@ const SHEET =
  * tag. That's what lets a learner drill to `useEffect` and select only it, never selecting `react`.
  */
 function TagBranch({ slug, depth }: { slug: string; depth: number }) {
-  const [open, setOpen] = useState(depth === 0); // top-level dimensions start expanded
+  const [expanded, setExpanded] = useState(depth === 0); // top-level dimensions start expanded
   const selected = useInterestsStore((s) => s.selected.includes(slug));
   const toggle = useInterestsStore((s) => s.toggle);
   const kids = childrenOf(slug);
@@ -28,12 +28,12 @@ function TagBranch({ slug, depth }: { slug: string; depth: number }) {
         {kids.length > 0 ? (
           <button
             type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-label={`${open ? "Collapse" : "Expand"} ${labelOf(slug)}`}
-            className="grid size-5 shrink-0 place-items-center rounded text-slate-500 hover:text-slate-300"
+            onClick={() => setExpanded((o) => !o)}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${labelOf(slug)}`}
+            className="grid size-5 shrink-0 place-items-center rounded text-slate-400 hover:text-slate-300"
           >
-            <span className={cn("transition-transform", open && "rotate-90")} aria-hidden>
+            <span className={cn("transition-transform", expanded && "rotate-90")} aria-hidden>
               ▸
             </span>
           </button>
@@ -54,7 +54,7 @@ function TagBranch({ slug, depth }: { slug: string; depth: number }) {
           {labelOf(slug)}
         </button>
       </div>
-      {open && kids.length > 0 && (
+      {expanded && kids.length > 0 && (
         <ul className="mt-1.5 space-y-1.5">
           {kids.map((k) => (
             <TagBranch key={k} slug={k} depth={depth + 1} />
@@ -72,7 +72,8 @@ export function InterestFilter() {
   const clear = useInterestsStore((s) => s.clear);
   // Only show the count after mount — the server renders 0, and reading persisted state during the
   // first client render would mismatch.
-  const badge = mounted && count > 0 ? ` · ${count}` : "";
+  const hasSelection = mounted && count > 0;
+  const badge = hasSelection ? ` · ${count}` : "";
 
   return (
     <Dialog.Root>
@@ -87,22 +88,22 @@ export function InterestFilter() {
               <Dialog.Title className="text-sm font-semibold text-slate-100">
                 Filter what I want to learn
               </Dialog.Title>
-              <Dialog.Description id="interest-filter-desc" className="text-xs text-slate-500">
+              <Dialog.Description id="interest-filter-desc" className="text-xs text-slate-400">
                 Pick a broad tag for everything under it, or drill in for something specific.
-                Expanding (▸) doesn&apos;t select — tap a tag to select it.
+                Expanding (▸) doesn&apos;t select. Tap a tag to select it.
               </Dialog.Description>
             </div>
-            <Dialog.Close className="text-slate-500 hover:text-slate-300" aria-label="Close">
+            <Dialog.Close className="text-slate-400 hover:text-slate-300" aria-label="Close">
               ✕
             </Dialog.Close>
           </div>
 
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>{mounted && count > 0 ? `${count} selected` : "Nothing selected — showing everything"}</span>
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>{hasSelection ? `${count} selected` : "Nothing selected, so everything shows"}</span>
             <button
               type="button"
               onClick={clear}
-              disabled={!mounted || count === 0}
+              disabled={!hasSelection}
               className="rounded px-2 py-1 text-slate-400 enabled:hover:text-slate-200 disabled:opacity-40"
             >
               Clear all

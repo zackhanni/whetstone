@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { matches } from "@/lib/tags";
+import { matchesInterests } from "@/lib/tags";
 import { TagChips } from "@/components/tag-chips";
 import { TrackProgress } from "@/components/track-progress";
 import { useInterestsStore } from "@/lib/stores/interests-store";
@@ -28,7 +28,7 @@ function TrackCard({ track, dimmed }: { track: CatalogTrack; dimmed?: boolean })
     >
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-slate-100">{track.title}</h3>
-        <span className="shrink-0 text-xs text-slate-500">
+        <span className="shrink-0 text-xs text-slate-400">
           {track.unitCount} unit{track.unitCount === 1 ? "" : "s"}
         </span>
       </div>
@@ -61,7 +61,7 @@ export function TrackCatalog({ tracks }: { tracks: CatalogTrack[] }) {
 
   const matched: CatalogTrack[] = [];
   const rest: CatalogTrack[] = [];
-  for (const t of tracks) (matches(t.skills, selected) ? matched : rest).push(t);
+  for (const t of tracks) (matchesInterests(t.skills, selected) ? matched : rest).push(t);
 
   return (
     <div className="space-y-3">
@@ -70,12 +70,12 @@ export function TrackCatalog({ tracks }: { tracks: CatalogTrack[] }) {
       ))}
       {matched.length === 0 && (
         <p className="rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400 ring-1 ring-slate-800">
-          No tracks match your filter yet — here&apos;s everything else.
+          No tracks match your filter yet. Here&apos;s everything else.
         </p>
       )}
       {rest.length > 0 && (
         <>
-          <div className="flex items-center gap-3 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <div className="flex items-center gap-3 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
             <span>More tracks</span>
             <span className="h-px flex-1 bg-slate-800" />
           </div>

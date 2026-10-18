@@ -1,10 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { UnitBundle, Tier, ReadingExample } from "@/lib/content";
+import type { UnitBundle, Tier, MdxFile } from "@/lib/content";
+import type { Block } from "@/learning/schema";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { WhetstoneButton } from "./whetstone-button";
-import { loadAttempts, saveAttempt, bestOf, type DrillAttempt } from "@/lib/drill-history";
+import {
+  loadAttempts,
+  saveAttempt,
+  bestOf,
+  isBetterAttempt,
+  type DrillAttempt,
+} from "@/lib/drill-history";
+import { unitProgressId } from "@/lib/progress";
 import { useProgress } from "@/components/progress-provider";
 import { ReadingBlock } from "./reading-block";
 import { InlineMarkdown } from "./inline-markdown";
@@ -19,27 +27,30 @@ import { UnitRefProvider } from "./flag-link";
 type Mode = "browse" | "drill";
 type Result = { correct: boolean; answered: boolean };
 
-const LABELS: Record<string, string> = {
+const BLOCK_LABEL: Record<string, string> = {
   reading: "Read",
   cards: "Cards",
   quiz: "Quiz",
   "fill-blank": "Fill in the blank",
   "predict-output": "Predict the output",
   challenge: "Challenge",
-};
+} satisfies Record<Block["type"], string>;
 
-const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const formatClock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 export function UnitView({ bundle }: { bundle: UnitBundle }) {
   const [mode, setMode] = useState<Mode>("browse");
   const [finished, setFinished] = useState(false);
   const [results, setResults] = useState<Record<string, Result>>({});
+  // Bumped by every reset. It keys the assessment blocks, so a new attempt remounts them with
+  // empty answers instead of showing the previous attempt's answers over an empty tally.
+  const [attempt, setAttempt] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [history, setHistory] = useState<DrillAttempt[]>([]);
   const { record } = useProgress();
 
-  const drillId = `${bundle.track.slug}/${bundle.unit.slug}`;
+  const unitId = unitProgressId(bundle.track.slug, bundle.unit.slug);
   const unitRef = useMemo(
     () => ({ track: bundle.track.slug, unit: bundle.unit.slug }),
     [bundle.track.slug, bundle.unit.slug],
@@ -48,8 +59,8 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
     // Load saved attempts on the client only (localStorage): empty on the server + first
     // render, then hydrate — so it's not a render-time setState.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHistory(loadAttempts(drillId));
-  }, [drillId]);
+    setHistory(loadAttempts(unitId));
+  }, [unitId]);
 
   useEffect(() => {
     if (mode !== "drill" || finished || startedAt == null) return;
@@ -57,17 +68,18 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
     return () => clearInterval(id);
   }, [mode, finished, startedAt]);
 
-  function reset(drill: boolean) {
+  function resetAttempt(nextMode: Mode) {
     setFinished(false);
     setResults({});
+    setAttempt((n) => n + 1);
     setElapsed(0);
-    setStartedAt(drill ? Date.now() : null);
+    setStartedAt(nextMode === "drill" ? Date.now() : null);
   }
 
   function switchMode(m: Mode) {
-    if (m === mode) return; // re-clicking the active mode shouldn't wipe progress
+    if (m === mode) return; // defensive: the ToggleGroup never re-sends the current mode
     setMode(m);
-    reset(m === "drill");
+    resetAttempt(m);
   }
 
   const onResult = useCallback((key: string, r: Result) => {
@@ -93,23 +105,19 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
   const best = bestOf(history);
   const current = history[0] ?? null;
   const priorBest = bestOf(history.slice(1));
-  const isNewBest =
-    current != null &&
-    (priorBest == null ||
-      current.score > priorBest.score ||
-      (current.score === priorBest.score && current.timeSec < priorBest.timeSec));
+  const isNewBest = current != null && (priorBest == null || isBetterAttempt(current, priorBest));
 
   // Persist per-unit progress (visited on mount, answered as they go) for the dashboard.
   // Writes through the shared ProgressProvider so the dashboard reflects it live on navigation.
   useEffect(() => {
-    record(drillId, answeredCount, total);
-  }, [record, drillId, answeredCount, total]);
+    record(unitId, answeredCount, total);
+  }, [record, unitId, answeredCount, total]);
 
   return (
     <UnitRefProvider value={unitRef}>
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
         <header className="max-w-3xl space-y-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">{bundle.track.title}</div>
+          <div className="text-xs uppercase tracking-wide text-slate-400">{bundle.track.title}</div>
           <h1 className="text-2xl font-bold text-slate-50">{bundle.unit.title}</h1>
           <div className="flex flex-wrap items-center gap-3">
             {/* Nothing to drill in a unit with no questions (e.g. only cards). */}
@@ -117,38 +125,41 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
               <ToggleGroup
                 type="single"
                 value={mode}
+                // Radix sends "" when the pressed item is clicked again; ignore it so a re-click
+                // doesn't wipe the attempt.
                 onValueChange={(v) => v && switchMode(v as Mode)}
                 variant="outline"
                 size="sm"
               >
                 <ToggleGroupItem
                   value="browse"
-                  className="capitalize data-[state=on]:bg-sky-600 data-[state=on]:text-white"
+                  className="capitalize data-[state=on]:bg-sky-700 data-[state=on]:text-white"
                 >
                   Browse
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="drill"
-                  className="capitalize data-[state=on]:bg-sky-600 data-[state=on]:text-white"
+                  className="capitalize data-[state=on]:bg-sky-700 data-[state=on]:text-white"
                 >
                   Drill
                 </ToggleGroupItem>
               </ToggleGroup>
             )}
             {mode === "drill" && (
-              <span className="tabular-nums text-sm text-slate-400">⏱ {fmt(elapsed)}</span>
+              <span className="tabular-nums text-sm text-slate-400">⏱ {formatClock(elapsed)}</span>
             )}
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-slate-400">
               {DEPTH_LABEL[depth]} · ~{bundle.unit.estimatedMinutes} min
             </span>
           </div>
           {mode === "drill" && (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-400">
               Drill mode: answers stay hidden until you finish. Then you get your score and time.
+              Predict-output snippets are the exception: reveal each one and mark it yourself.
             </p>
           )}
           <div className="rounded-lg bg-slate-900/40 p-3 ring-1 ring-slate-800">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               After this unit you can
             </div>
             <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-slate-300">
@@ -164,18 +175,21 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
         {bundle.unit.blocks.map((block) => {
           // Drill mode hides the teaching material — you're testing recall, not reading.
           if ((block.type === "reading" || block.type === "cards") && mode === "drill") return null;
+          // Only the graded blocks start over with each attempt; a challenge keeps the learner's
+          // code across a mode switch.
+          const isGraded = block.type === "quiz" || block.type === "fill-blank" || block.type === "predict-output";
           return (
             <section
-              key={block.id}
+              key={isGraded ? `${block.id}:${attempt}` : block.id}
               className={`space-y-3${block.type === "challenge" ? "" : " max-w-3xl"}`}
             >
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {LABELS[block.type] ?? block.type}
-            </div>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              {BLOCK_LABEL[block.type] ?? block.type}
+            </h2>
             {block.type === "reading" && (
               <ReadingBlock
                 blockId={block.id}
-                readings={bundle.readings[block.id] as Record<Tier, ReadingExample[]>}
+                readings={bundle.readings[block.id] as Record<Tier, MdxFile[]>}
               />
             )}
             {block.type === "cards" && <CardsBlock blockId={block.id} cards={bundle.cards[block.id]} />}
@@ -188,7 +202,6 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
             {block.type === "predict-output" && (
               <PredictOutputBlock
                 block={block}
-                mode={mode}
                 forceReveal={forceReveal}
                 onResult={onResult}
               />
@@ -203,9 +216,9 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
         {/* The official docs the unit was checked against. Teaching material, so not in drill. */}
         {mode === "browse" && (
           <section className="max-w-3xl space-y-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Further reading
-            </div>
+            </h2>
             <ul className="list-disc space-y-1 pl-5 text-sm">
               {bundle.unit.sources.map((src) => (
                 <li key={src.url}>
@@ -230,7 +243,7 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
               setFinished(true);
               setElapsed(finalSec);
               setHistory(
-                saveAttempt(drillId, {
+                saveAttempt(unitId, {
                   score: correctCount,
                   total,
                   timeSec: finalSec,
@@ -249,27 +262,27 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
                 {correctCount} / {total}
               </div>
               <div className="text-sm text-slate-400">
-                answered {answeredCount} · time {fmt(elapsed)}
+                answered {answeredCount} · time {formatClock(elapsed)}
               </div>
               {best && (
-                <div className="mt-1 text-xs text-slate-500">
-                  {isNewBest ? "🎉 New best!" : `Best: ${best.score}/${best.total} · ${fmt(best.timeSec)}`}
+                <div className="mt-1 text-xs text-slate-400">
+                  {isNewBest ? "🎉 New best!" : `Best: ${best.score}/${best.total} · ${formatClock(best.timeSec)}`}
                 </div>
               )}
             </div>
 
             {history.length > 1 && (
               <div className="border-t border-slate-800 pt-3 text-left">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                   Recent attempts
                 </div>
                 <ul className="space-y-1 text-sm text-slate-400">
                   {history.slice(0, 5).map((a, i) => (
                     <li key={a.at} className="flex justify-between">
                       <span>
-                        {a.score}/{a.total} · {fmt(a.timeSec)}
+                        {a.score}/{a.total} · {formatClock(a.timeSec)}
                       </span>
-                      <span className="text-slate-600">
+                      <span className="text-slate-400">
                         {i === 0 ? "just now" : new Date(a.at).toLocaleDateString()}
                       </span>
                     </li>
@@ -278,7 +291,7 @@ export function UnitView({ bundle }: { bundle: UnitBundle }) {
               </div>
             )}
 
-            <WhetstoneButton size="sm" onClick={() => reset(true)}>
+            <WhetstoneButton size="sm" onClick={() => resetAttempt("drill")}>
               Retry
             </WhetstoneButton>
           </div>

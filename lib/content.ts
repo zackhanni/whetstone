@@ -9,14 +9,14 @@ import {
   type Unit,
   type Challenge,
 } from "@/learning/schema";
+import { TIERS } from "@/learning/tiers";
 import { parseFrontmatter } from "./frontmatter";
 import { unitDepth, type Depth } from "./depth";
 
 const ROOT = process.cwd();
-const TIERS = ["simple", "medium", "complex"] as const;
 export type Tier = (typeof TIERS)[number];
 
-export type ReadingExample = { id: string; title: string; body: string };
+export type MdxFile = { id: string; title: string; body: string };
 export type ChallengeBundle = {
   meta: Challenge;
   readme: string;
@@ -27,8 +27,8 @@ export type ChallengeBundle = {
 export type UnitBundle = {
   track: { slug: string; title: string };
   unit: Unit;
-  readings: Record<string, Record<Tier, ReadingExample[]>>; // keyed by reading block id
-  cards: Record<string, ReadingExample[]>; // keyed by cards block id
+  readings: Record<string, Record<Tier, MdxFile[]>>; // keyed by reading block id
+  cards: Record<string, MdxFile[]>; // keyed by cards block id
   challenges: Record<string, ChallengeBundle>; // keyed by challengeSlug
 };
 
@@ -47,7 +47,7 @@ function resolveWithin(base: string, ...segments: string[]): string {
 }
 
 /** The `*.mdx` files in one folder, ordered by filename — a reading tier or a deck of cards. */
-async function loadExamples(dir: string): Promise<ReadingExample[]> {
+async function loadExamples(dir: string): Promise<MdxFile[]> {
   let files: string[] = [];
   try {
     files = (await fs.readdir(dir)).filter((f) => f.endsWith(".mdx")).sort();
@@ -62,14 +62,14 @@ async function loadExamples(dir: string): Promise<ReadingExample[]> {
   );
 }
 
-async function loadReadingTiers(dir: string): Promise<Record<Tier, ReadingExample[]>> {
+async function loadReadingTiers(dir: string): Promise<Record<Tier, MdxFile[]>> {
   const entries = await Promise.all(
-    TIERS.map(async (tier): Promise<[Tier, ReadingExample[]]> => [
+    TIERS.map(async (tier): Promise<[Tier, MdxFile[]]> => [
       tier,
       await loadExamples(path.join(dir, tier)),
     ]),
   );
-  return Object.fromEntries(entries) as Record<Tier, ReadingExample[]>;
+  return Object.fromEntries(entries) as Record<Tier, MdxFile[]>;
 }
 
 /**
@@ -100,7 +100,7 @@ async function loadChallenge(slug: string): Promise<ChallengeBundle> {
   resolveWithin(cDir, meta.entry); // ensure the editable entry stays inside the challenge dir
 
   // Include nested helper files too, keyed by forward-slash relative path (what Sandpack
-  // expects). walkFiles avoids Dirent.parentPath for broader Node compatibility.
+  // expects).
   const all = await walkFiles(cDir);
   const files: Record<string, string> = {};
   let readme = "";
@@ -194,15 +194,15 @@ export const loadTrack = cache(async (trackSlug: string): Promise<TrackDetail> =
   const trackDir = resolveWithin(path.join(ROOT, "content", "tracks"), trackSlug);
   const track = TrackSchema.parse(await readJson(path.join(trackDir, "track.json")));
   const units = await Promise.all(
-    track.units.map(async (us) => {
-      const u = UnitSchema.parse(await readJson(path.join(trackDir, "units", us, "unit.json")));
+    track.units.map(async (unitSlug) => {
+      const unit = UnitSchema.parse(await readJson(path.join(trackDir, "units", unitSlug, "unit.json")));
       return {
-        slug: u.slug,
-        title: u.title,
-        difficulty: u.difficulty,
-        estimatedMinutes: u.estimatedMinutes,
-        skills: u.skills,
-        depth: unitDepth(u.blocks.map((b) => b.type)),
+        slug: unit.slug,
+        title: unit.title,
+        difficulty: unit.difficulty,
+        estimatedMinutes: unit.estimatedMinutes,
+        skills: unit.skills,
+        depth: unitDepth(unit.blocks.map((b) => b.type)),
       };
     }),
   );
