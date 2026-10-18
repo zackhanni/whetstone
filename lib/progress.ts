@@ -11,7 +11,16 @@ export type UnitProgress = {
   at: number; // last-activity timestamp, for "continue where you left off"
 };
 
+// keyed by "track/unit", which is the stored key
 export type ProgressMap = Record<string, UnitProgress>;
+
+/**
+ * A unit's id in the progress map, and the suffix of its drill-history key. It is saved in
+ * learners' browsers, so its format can't change without a migration.
+ */
+export function unitProgressId(trackSlug: string, unitSlug: string): string {
+  return `${trackSlug}/${unitSlug}`;
+}
 
 const KEY = "whetstone:progress";
 // Bump when the *meaning* of stored data changes structurally; add a case in `readMap`.
@@ -19,7 +28,7 @@ const KEY = "whetstone:progress";
 // would formalize once we outgrow Context — see docs/zustand-migration.md.
 const VERSION = 1;
 
-type Stored = { v: number; units: ProgressMap };
+type Stored = { v: number; units: ProgressMap }; // v: the VERSION of the blob
 
 function isValidProgress(v: unknown): v is UnitProgress {
   if (typeof v !== "object" || v === null) return false;
@@ -112,21 +121,21 @@ export function nextEntry(
   now: number,
 ): UnitProgress {
   // Always the unit's CURRENT question count, even 0: falling back to the stored total would
-  // leave a unit that became cards-only stuck incomplete. (The only caller, UnitView, always
-  // passes the real count.)
-  const effTotal = clampCount(total);
+  // leave a unit that became cards-only stuck incomplete. (Its only caller, recordProgress, gets
+  // the count from UnitView, which always passes the real one.)
+  const currentTotal = clampCount(total);
   // High-water mark so refreshing mid-drill doesn't lose progress — but never above the
   // *current* total, so removing questions can't leave a stale >100% / falsely-complete entry.
-  const bestAnswered = Math.min(effTotal, Math.max(prev?.answered ?? 0, clampCount(answered)));
+  const bestAnswered = Math.min(currentTotal, Math.max(prev?.answered ?? 0, clampCount(answered)));
   return {
     visited: true,
     answered: bestAnswered,
-    total: effTotal,
+    total: currentTotal,
     // Recompute against the current total (not sticky): adding questions correctly reverts a
     // unit to in-progress; removing them can complete it. Never latched to stale content.
     // A unit with no questions (only cards) has nothing to answer, so visiting completes it —
     // otherwise its track could never reach 100% and "Continue" would point at it forever.
-    completed: effTotal > 0 ? bestAnswered >= effTotal : true,
+    completed: currentTotal > 0 ? bestAnswered >= currentTotal : true,
     at: now,
   };
 }

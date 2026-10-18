@@ -55,8 +55,9 @@ themselves.
 
 That trigger has fired. The interest filter (`lib/stores/interests-store.ts`) is the second
 persisted store and the first Zustand one: `persist` for storage, `useMounted()` as the gate.
-Progress and drill history are still on Context — moving them to Zustand is planned, not done,
-and `docs/zustand-migration.md` holds the plan. A trigger tells you when to start a migration;
+Progress is still on Context, and drill history is read straight from localStorage by the unit
+page (`lib/drill-history.ts`). Moving both to Zustand is planned, not done, and
+`docs/zustand-migration.md` holds the plan. A trigger tells you when to start a migration;
 it doesn't make the old code wrong overnight, so the two containers live side by side until
 the port lands.
 

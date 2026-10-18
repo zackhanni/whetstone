@@ -5,7 +5,7 @@ import {
   descendantsOf,
   dimensions,
   expandSelection,
-  matches,
+  matchesInterests,
   rollupForCard,
   subtreeOf,
 } from "./tags";
@@ -66,33 +66,33 @@ describe("downward closure", () => {
   });
 });
 
-describe("matches — the filtering rule", () => {
+describe("matchesInterests — the filtering rule", () => {
   const useRefLesson = ["react", "hooks", "useRef", "refs", "dom"];
   const useEffectLesson = ["react", "hooks", "useEffect", "data-fetching"];
 
   it("a broad selection matches every descendant lesson", () => {
-    expect(matches(useRefLesson, ["react"])).toBe(true);
-    expect(matches(useEffectLesson, ["react"])).toBe(true);
+    expect(matchesInterests(useRefLesson, ["react"])).toBe(true);
+    expect(matchesInterests(useEffectLesson, ["react"])).toBe(true);
   });
 
   it("a leaf selection matches only that leaf — not its siblings", () => {
-    expect(matches(useEffectLesson, ["useEffect"])).toBe(true);
-    expect(matches(useRefLesson, ["useEffect"])).toBe(false);
+    expect(matchesInterests(useEffectLesson, ["useEffect"])).toBe(true);
+    expect(matchesInterests(useRefLesson, ["useEffect"])).toBe(false);
   });
 
   it("an empty selection matches everything (no filter)", () => {
-    expect(matches(useRefLesson, [])).toBe(true);
+    expect(matchesInterests(useRefLesson, [])).toBe(true);
   });
 
   it("is a union (OR) across the selected tags", () => {
     // useRef lesson matches because `dom` is selected, even though `useEffect` is not on it.
-    expect(matches(useRefLesson, ["useEffect", "dom"])).toBe(true);
+    expect(matchesInterests(useRefLesson, ["useEffect", "dom"])).toBe(true);
   });
 
   it("honours multi-parent tags from either parent", () => {
     // `context` sits under both `react` and `state-management`.
-    expect(matches(["context"], ["state-management"])).toBe(true);
-    expect(matches(["context"], ["react"])).toBe(true);
+    expect(matchesInterests(["context"], ["state-management"])).toBe(true);
+    expect(matchesInterests(["context"], ["react"])).toBe(true);
   });
 });
 

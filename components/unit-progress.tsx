@@ -3,7 +3,7 @@
 import { useProgress } from "@/components/progress-provider";
 
 /** Per-unit status shown on the track index: not started / % bar / completed. */
-export function UnitProgress({ unitId }: { unitId: string }) {
+export function UnitProgressStatus({ unitId }: { unitId: string }) {
   const { map, ready } = useProgress();
 
   if (!ready) {
@@ -16,7 +16,7 @@ export function UnitProgress({ unitId }: { unitId: string }) {
   }
   const p = map[unitId];
   if (!p?.visited) {
-    return <span className="text-xs text-slate-600">Not started</span>;
+    return <span className="text-xs text-slate-400">Not started</span>;
   }
   if (p.completed) {
     return <span className="text-xs font-medium text-emerald-400">✓ Completed</span>;
@@ -27,7 +27,7 @@ export function UnitProgress({ unitId }: { unitId: string }) {
       <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-800">
         <div className="h-full rounded-full bg-sky-500" style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-xs text-slate-500">{pct}%</span>
+      <span className="text-xs text-slate-400">{pct}%</span>
     </div>
   );
 }

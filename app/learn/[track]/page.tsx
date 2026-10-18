@@ -1,8 +1,13 @@
 import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { loadTrack, listTrackSlugs } from "@/lib/content";
-import { UnitProgress } from "@/components/unit-progress";
+import { UnitProgressStatus } from "@/components/unit-progress";
 import { TagChips } from "@/components/tag-chips";
 import { DEPTH_LABEL } from "@/lib/depth";
+import { unitProgressId } from "@/lib/progress";
+import type { Unit } from "@/learning/schema";
+import { JsonLd } from "@/components/json-ld";
+import { breadcrumbJsonLd, clipDescription, pageMetadata, plainText } from "@/lib/seo";
 
 export const dynamicParams = false;
 
@@ -10,11 +15,21 @@ export async function generateStaticParams() {
   return (await listTrackSlugs()).map((track) => ({ track }));
 }
 
-const DIFFICULTY: Record<string, string> = {
+export async function generateMetadata({ params }: { params: Promise<{ track: string }> }) {
+  const { track } = await params;
+  const detail = await loadTrack(track);
+  return pageMetadata({
+    title: detail.title,
+    description: clipDescription(plainText(detail.description)),
+    path: `/learn/${track}`,
+  });
+}
+
+const DIFFICULTY_LABEL: Record<string, string> = {
   intro: "Intro",
   core: "Core",
   advanced: "Advanced",
-};
+} satisfies Record<Unit["difficulty"], string>;
 
 export default async function TrackPage({ params }: { params: Promise<{ track: string }> }) {
   const { track } = await params;
@@ -23,8 +38,10 @@ export default async function TrackPage({ params }: { params: Promise<{ track: s
   const detail = await loadTrack(track);
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-12">
-      <Link href="/" className="text-sm text-slate-500 hover:text-slate-300">
-        ← Whetstone
+      <JsonLd data={breadcrumbJsonLd([{ name: detail.title, path: `/learn/${track}` }])} />
+      <Link href="/" className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-300">
+        <ChevronLeft className="size-4 shrink-0" aria-hidden />
+        Whetstone
       </Link>
 
       <header className="space-y-2">
@@ -41,15 +58,15 @@ export default async function TrackPage({ params }: { params: Promise<{ track: s
             >
               <div className="flex items-center justify-between gap-3">
                 <h2 className="font-semibold text-slate-100">
-                  <span className="text-slate-500">{i + 1}.</span> {u.title}
+                  <span className="text-slate-400">{i + 1}.</span> {u.title}
                 </h2>
-                <span className="shrink-0 text-xs text-slate-500">
-                  {DEPTH_LABEL[u.depth]} · {DIFFICULTY[u.difficulty] ?? u.difficulty} · ~{u.estimatedMinutes} min
+                <span className="shrink-0 text-xs text-slate-400">
+                  {DEPTH_LABEL[u.depth]} · {DIFFICULTY_LABEL[u.difficulty] ?? u.difficulty} · ~{u.estimatedMinutes} min
                 </span>
               </div>
               <TagChips skills={u.skills} className="mt-2" />
               <div className="mt-2">
-                <UnitProgress unitId={`${detail.slug}/${u.slug}`} />
+                <UnitProgressStatus unitId={unitProgressId(detail.slug, u.slug)} />
               </div>
             </Link>
           </li>

@@ -8,3 +8,6 @@ coverage/
 *.log
 *.tsbuildinfo
 next-env.d.ts
+
+# /pagespeed local measurement state
+.pagespeed/

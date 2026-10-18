@@ -17,7 +17,9 @@ export function Markdown({ children }: { children: string }) {
           blockquote: (p) => (
             <blockquote className="border-l-2 border-sky-500 pl-3 italic text-slate-300" {...p} />
           ),
-          a: (p) => <a className="text-sky-400 underline" {...p} />,
+          // A new tab, like InlineMarkdown's links: following a link from a reading or an
+          // explanation shouldn't throw away the answers in progress on this page.
+          a: (p) => <a className="text-sky-400 underline" target="_blank" rel="noreferrer" {...p} />,
           pre: (p) => (
             <pre
               className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-sm text-slate-200 ring-1 ring-slate-800"

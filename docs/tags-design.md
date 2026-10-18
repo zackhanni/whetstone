@@ -1,17 +1,16 @@
 # Tags & Interest Filtering — Design
 
-> Status: **built** — all five build steps shipped (PR #9). Kept as the design record: a
-> hierarchical, validated tag taxonomy layered on the `skills` field, plus an "interest filter"
-> that reorders the catalog to what a learner wants to study. "Planned dimensions" (near the end)
-> is the one living section: update it as tracks land.
+> Built (PR #9). The design record for the tag taxonomy over the `skills` field
+> (`learning/taxonomy.ts`, `lib/tags.ts`) and the interest filter that reorders the catalog.
+> "Planned dimensions" (near the end) is the living section: the roots, and where a new one goes.
 
 ## The core idea
 
-We already have a tag system: `skills: string[]` on units and challenges (and, until schema v2,
-on tracks) in `learning/schema.ts`. It is flat and free-text — `use-effect` is tagged
-`["react","hooks","useEffect","data-fetching"]`, mixing a broad tag, a mid tag, and a leaf,
-with the hierarchy only implied. This design **formalizes** that field; it does not add a
-parallel `tags` field.
+Tags are the `skills: string[]` field on units and challenges (`learning/schema.ts`; tracks lost
+theirs in schema v2). Before this design it was flat and free-text: `use-effect` is tagged
+`["react","hooks","useEffect","data-fetching"]`, mixing a broad tag, a mid tag and a leaf, with
+the hierarchy only implied. The design **formalizes** that field (a closed vocabulary plus a
+hierarchy); it does not add a parallel `tags` field.
 
 The one decision that makes everything else easy: **separate association from hierarchy.**
 
@@ -26,8 +25,8 @@ _computed_ by walking the tree, never by re-tagging lessons with every ancestor.
 - **Filter behavior: soft.** Matching tracks float to the top; the rest drop below a
   "More tracks" divider, dimmed but visible. Empty selection = show everything. Revisit
   hard-hide once the catalog is large.
-- **Hierarchy shape: multi-parent DAG.** A tag (`testing`, `typescript`, `data-fetching`) may
-  sit under more than one dimension. The validator must reject cycles.
+- **Hierarchy shape: multi-parent DAG.** A tag (`http`, `auth`, `caching`) may sit under
+  more than one dimension. The validator must reject cycles.
 - **Tag source of truth: unit-level.** Only units (and challenges) carry `skills`. A track's
   displayed tags are the deduped union of its units' skills, so track and unit tags can never
   drift. Schema v2 removed `track.skills` outright: nothing read it, and it had already drifted
@@ -38,35 +37,25 @@ _computed_ by walking the tree, never by re-tagging lessons with every ancestor.
 
 ## Data model
 
-New registry — `learning/taxonomy.ts`, zod-validated like `schema.ts`:
-
-```ts
-export const TagNode = z.object({
-  slug: z.string().min(1),                    // "useEffect" — matches what content uses in `skills`
-  label: z.string().min(1),                   // human label, may change freely
-  parents: z.array(z.string()).default([]),   // [] = a top-level dimension (frontend/backend/…)
-});
-// registry = TagNode[]; roots (no parents) are the "dimensions".
-```
-
-Example rows:
+The registry is `learning/taxonomy.ts`: an array of `TagNode` (`slug`, the value content uses in
+`skills`; `label`, free to change; `parents`, `[]` for a root), parsed through `Taxonomy`, which
+rejects duplicate slugs, unknown parents and cycles. Roots are the "dimensions". Example rows:
 
 ```
-{ slug: "frontend",  label: "Frontend" }
-{ slug: "backend",   label: "Backend" }
+{ slug: "frontend",  label: "Frontend",  parents: [] }
 { slug: "react",     label: "React",     parents: ["frontend"] }
 { slug: "hooks",     label: "Hooks",     parents: ["react"] }
 { slug: "useEffect", label: "useEffect", parents: ["hooks"] }
-{ slug: "testing",   label: "Testing",   parents: ["frontend", "backend"] }
+{ slug: "http",      label: "HTTP",      parents: ["backend", "web"] }
 ```
 
-**Closed vocabulary.** `scripts/validate.ts` gains one check: every skill used anywhere in
-content must exist in the taxonomy. This kills tag sprawl and typos (`useeffect` vs
-`useEffect`) — the classic tag-system failure — and matches the repo's fail-loud ethos. The
-validator also **rejects cycles** in the DAG and **warns** on orphan tags (defined but used by
-nothing).
+**Closed vocabulary.** `pnpm validate` (`learning/validate-content.ts`) fails on any skill that
+isn't in the taxonomy. This kills tag sprawl and typos (`useeffect` vs `useEffect`), the classic
+tag-system failure, and matches the repo's fail-loud ethos. It also **warns** on orphan tags
+(defined, but used by nothing, directly or through a descendant).
 
-Cap depth at ~3–4 levels (dimension → area → topic → API). Deeper makes the picker a chore.
+Keep the tree shallow; deeper makes the picker a chore. The design aimed at 3–4 levels; the
+deepest chains are 5 today (`cleanup`, `query-keys`, `optimistic-updates`).
 
 ## Matching semantics — downward closure
 
@@ -113,15 +102,18 @@ A user can expand to `useEffect`, select only `useEffect`, and never have `react
 Later: **tri-state parent chip** (indeterminate when some-but-not-all descendants are chosen) —
 a visual hint only; the stored selection is the exact set of tapped tags.
 
-Placement v1: a shadcn `Sheet`/drawer opened from a "Filter" button on the landing page.
-Graduate to a profile section later — same persisted store, no rework.
+Placement: a right-side drawer (a Radix `Dialog` styled as a sheet, `components/interest-filter.tsx`)
+opened from a "Filter interests" button on the home page. Graduate to a profile section later — same
+persisted store, no rework.
 
 ## Card display
 
-- **Track card:** deduped union of its units' skills, **rolled up** — prefer mid-level
-  ancestors ("React · Hooks") plus one or two specifics, capped at ~3–4 chips, then `+N more`.
-- **Unit card:** the unit's own leaf skills.
-- **`+N more`:** shadcn `Tooltip` (hover) / `Popover` (tap) listing the remainder.
+- **Track card:** the deduped union of its units' skills, condensed by `rollupForCard`
+  (`lib/tags.ts`): roots dropped, broadest first (by depth, then authoring order), at most 4
+  chips, then `+N more`. It shows tags the units carry; it doesn't add ancestors they lack.
+- **Unit card:** the unit's own skills, through the same rollup.
+- **`+N more`:** a hover tooltip (`HintTooltip`, not focusable because the chip sits inside the
+  card's link) plus a screen-reader-only list. No Popover.
 
 ## Persistence
 
@@ -129,9 +121,8 @@ Selected tags are a new persisted client store — **localStorage first**, mirro
 moving to a `user_preferences` row when Supabase auth lands (Phase 2). Design the store's
 interface so the backend swap is invisible to components.
 
-This is a second persisted store beyond progress — the documented **trigger for the
-Context → Zustand switch** (`docs/zustand-migration.md`). Prefer pulling that trigger here over
-adding a second Context.
+It became the first Zustand store (`lib/stores/interests-store.ts`), which fired the trigger for
+moving progress off Context (`docs/zustand-migration.md`).
 
 ### SSR hydration gate (`useMounted`) — and whether Supabase removes it
 
@@ -162,41 +153,34 @@ when it migrates.
 
 ## Authoring impact
 
-- **`/new-lesson`:** require tags from the taxonomy; adding a missing taxonomy node is its own
-  commit (mirrors the `schemaVersion`-bump discipline).
-- **PLAYBOOK checklist:** upgrade "Skills tagged…" to "tags exist in the taxonomy and sit at the
-  right altitude (leaf where specific, broad where the lesson is broad)."
-- **`docs/lesson-changelog.md`:** taxonomy edits get a line.
+The rules live in `learning/PLAYBOOK.md` → "Tags are a checked registry" (and its checklist) and
+in `/new-lesson`'s "Tags first" step: every tag must be in the taxonomy, new tags go in first with
+real `parents`, tag at the right altitude, and taxonomy edits get a `docs/lesson-changelog.md`
+line.
 
 ## Planned dimensions
 
-Roots (dimensions) are the top row of the interest filter, so they should be few and stable.
-The first two were `frontend` and `backend`; every row marked **landed** below is a root too. The
-backlog in `docs/ROADMAP.md` needs more. The list below is where new roots should go, so that each
-authoring session doesn't invent its own.
-**Add a root only when a lesson needs it** (an unused root is an orphan warning):
+Roots (dimensions) are the top row of the interest filter, so they stay few and stable. There
+are ten, and every planned one has landed:
 
-| Root (slug) | For tracks like | Re-parent when it lands |
-| --- | --- | --- |
-| `languages` → `javascript`, `typescript` — **landed** with `javascript-typescript-fundamentals` | JS & TS fundamentals, Async JS & Timing, Dates & Time | `async` gains `javascript` as a parent — **done** with `async-javascript` (and `AbortController` gains `async`) |
-| `web` — **landed** with `data-fetching-tanstack` (with the shared `caching` node under `web` + `backend`) | HTTP & APIs, Next.js & the Network, CORS/caching | `http` gains `web` — **done** with `http-and-apis` |
-| `security` — **landed** with `http-and-apis` | Web Security (XSS, CSP, CSRF, OWASP) | `auth` gains `security` — **done** |
-| `testing` — **landed** with `testing-and-quality` | Testing & Quality (Vitest, Playwright) | — |
-| `databases` — **landed** with `databases` | Databases | — |
-| `tooling` — **landed** with `http-and-apis` (`curl`); Terminal, Git & GitHub tags with `developer-tooling` | Terminal, Git & GitHub | — |
-| `system-design` — **landed** with `systems-design`; `infrastructure` — **landed** with `infrastructure` | Capstone tracks | `architecture` gains `system-design` — **done** (and `rate-limiting` too) |
+| Root | Serves |
+| --- | --- |
+| `frontend`, `backend` | the first two |
+| `languages` (→ `javascript`, `typescript`) | JS & TS Fundamentals, Async JavaScript (`async` also sits under `javascript`), Dates & Time |
+| `web` (with the shared `caching` node under `web` + `backend`) | Data Fetching, HTTP & APIs (`http` also under `web`), Next.js & the Network |
+| `security` | Web Security; `auth` sits under it too |
+| `databases` | Databases |
+| `testing` | Testing & Quality |
+| `tooling` | `curl`; Terminal, Git & GitHub |
+| `system-design` | Systems Design; `architecture` and `rate-limiting` sit under it too |
+| `infrastructure` | Infrastructure |
 
-Re-parenting is free: a tag gaining a parent changes no content file, because units store only
-the leaf tag.
+**Add a root only when a lesson needs it** (an unused root is an orphan warning), and list it
+here so each authoring session doesn't invent its own. Re-parenting is free: a tag gaining a
+parent changes no content file, because units store only the leaf tag.
 
 ## Build order
 
-1. `learning/taxonomy.ts` + seed current tags into the DAG; add the validator check
-   (integrity, cycles, orphan warning). No UI.
-2. Pure `lib/tags.ts`: `descendantsOf(slug)`, `matches(unitSkills, selected)`,
-   `rollupForCard(skills)`. Unit-testable, no React.
-3. Display-only: tag chips + `+N more` on unit and track cards. (Value, zero interactivity.)
-4. Interests store (localStorage; decide Zustand here) + filter drawer with expand≠select.
-5. Wire the store to soft-filter/reorder the landing catalog + empty state + "Clear all".
-
-Steps 1–3 are independently shippable and reversible.
+Shipped in five steps in PR #9: the registry and its validator check, pure `lib/tags.ts`
+(`descendantsOf`, `matchesInterests`, `rollupForCard`), display-only chips, the interests store
+and filter drawer, then the catalog's soft filter.

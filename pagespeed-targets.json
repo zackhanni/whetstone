@@ -1,0 +1,14 @@
+{
+  "$comment": "Tiered measurement targets for the /pagespeed skill (see its targets.md). Three page templates: home, track, unit. Unit pages differ by block mix, so tier 2 takes one challenge unit (lazy-loads Sandpack) and one card unit (no assessments). Local origin uses :3418 because :3002 is the dev server and another app owns :3000.",
+  "origins": {
+    "local": "http://127.0.0.1:3418",
+    "deployed": "https://whetstone-tawny.vercel.app"
+  },
+  "tier1": [{ "path": "/", "label": "home" }],
+  "tier2": [
+    { "path": "/learn/react-hooks-and-rendering", "label": "track", "renderMode": "static" },
+    { "path": "/learn/react-hooks-and-rendering/use-state-and-functional-updates", "label": "unit-challenge", "renderMode": "static" },
+    { "path": "/learn/reference-cards/http-status-codes", "label": "unit-cards", "renderMode": "static" }
+  ],
+  "tier3": []
+}

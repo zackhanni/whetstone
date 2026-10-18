@@ -7,42 +7,37 @@ import { FlagLink } from "./flag-link";
 import { WhetstoneButton } from "./whetstone-button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import type { Block } from "@/learning/schema";
 
-type Snippet = {
-  id: string;
-  code: string;
-  question: string;
-  answer: string;
-  acceptable?: string[];
-  explanation: string;
-};
+type PredictOutputBlockData = Extract<Block, { type: "predict-output" }>;
+type Snippet = PredictOutputBlockData["snippets"][number];
 
-type Mode = "browse" | "drill";
 type OnResult = (key: string, r: { correct: boolean; answered: boolean }) => void;
 
 function SnippetView({
-  s,
+  item,
   blockId,
-  mode,
   forceReveal,
   onResult,
 }: {
-  s: Snippet;
+  item: Snippet;
   blockId: string;
-  mode: Mode;
   forceReveal: boolean;
   onResult: OnResult;
 }) {
   const [val, setVal] = useState("");
-  const [checked, setChecked] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
   const [selfCorrect, setSelfCorrect] = useState<boolean | null>(null);
-  const revealed = mode === "browse" ? checked : forceReveal;
-  const inputId = `${blockId}-${s.id}`;
+  // Unlike a quiz, a snippet can be revealed during a drill: it is self-graded, and a grade
+  // given after Finish would never reach the saved attempt. So Finish locks the grade instead.
+  const revealed = hasSubmitted || forceReveal;
+  const isGradeLocked = forceReveal;
+  const inputId = `${blockId}-${item.id}`;
 
   // A free-text prediction can't be fuzzy-matched honestly, so it's self-assessed against
-  // the shown answer. The score reflects the learner's own ✓/✗.
+  // the shown answer. The score, in both modes, reflects the learner's own ✓/✗.
   useEffect(() => {
-    onResult(`${blockId}:${s.id}`, {
+    onResult(`${blockId}:${item.id}`, {
       correct: selfCorrect === true,
       answered: val.trim() !== "" || selfCorrect !== null,
     });
@@ -52,15 +47,15 @@ function SnippetView({
   return (
     <div className="space-y-3">
       <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-sm text-slate-200 ring-1 ring-slate-800">
-        {s.code}
+        {item.code}
       </pre>
       <div className="flex items-start justify-between gap-3">
         <Label htmlFor={inputId} className="block font-medium text-slate-100">
           <span>
-            <InlineMarkdown>{s.question}</InlineMarkdown>
+            <InlineMarkdown>{item.question}</InlineMarkdown>
           </span>
         </Label>
-        <FlagLink block={blockId} item={s.id} />
+        <FlagLink block={blockId} item={item.id} />
       </div>
       <Textarea
         id={inputId}
@@ -72,8 +67,8 @@ function SnippetView({
         className="bg-slate-800 text-slate-100"
       />
 
-      {mode === "browse" && !checked && (
-        <WhetstoneButton size="sm" disabled={!val.trim()} onClick={() => setChecked(true)}>
+      {!hasSubmitted && !forceReveal && (
+        <WhetstoneButton size="sm" disabled={!val.trim()} onClick={() => setHasSubmitted(true)}>
           Reveal
         </WhetstoneButton>
       )}
@@ -81,22 +76,23 @@ function SnippetView({
       {revealed && (
         <div className="space-y-2 rounded-lg bg-slate-800/60 p-3 text-sm">
           <div className="text-slate-200">
-            <span className="font-semibold text-sky-300">Answer:</span> {s.answer}
+            <span className="font-semibold text-sky-300">Answer:</span> {item.answer}
           </div>
           {/* Self-graded, so show the other phrasings that count before the learner marks ✓/✗. */}
-          {s.acceptable && s.acceptable.length > 0 && (
+          {item.acceptable && item.acceptable.length > 0 && (
             <div className="text-slate-300">
               <span className="font-semibold text-sky-300">Also counts:</span>{" "}
-              {s.acceptable.join(" · ")}
+              {item.acceptable.join(" · ")}
             </div>
           )}
-          <Markdown>{s.explanation}</Markdown>
+          <Markdown>{item.explanation}</Markdown>
           <div className="flex items-center gap-2 pt-1">
             <span className="text-slate-400">Did you get it?</span>
             <WhetstoneButton
               size="xs"
               tone={selfCorrect === true ? "success" : "neutral"}
               variant={selfCorrect === true ? "default" : "outline"}
+              disabled={isGradeLocked}
               onClick={() => setSelfCorrect(true)}
             >
               ✓ Yes
@@ -105,11 +101,17 @@ function SnippetView({
               size="xs"
               tone={selfCorrect === false ? "danger" : "neutral"}
               variant={selfCorrect === false ? "default" : "outline"}
+              disabled={isGradeLocked}
               onClick={() => setSelfCorrect(false)}
             >
               ✗ No
             </WhetstoneButton>
           </div>
+          {isGradeLocked && selfCorrect === null && (
+            <div className="text-xs text-slate-400">
+              Not graded: reveal and mark a snippet before you finish for it to count.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -118,12 +120,10 @@ function SnippetView({
 
 export function PredictOutputBlock({
   block,
-  mode,
   forceReveal,
   onResult,
 }: {
-  block: { id: string; snippets: Snippet[] };
-  mode: Mode;
+  block: PredictOutputBlockData;
   forceReveal: boolean;
   onResult: OnResult;
 }) {
@@ -132,9 +132,8 @@ export function PredictOutputBlock({
       {block.snippets.map((s) => (
         <SnippetView
           key={s.id}
-          s={s}
+          item={s}
           blockId={block.id}
-          mode={mode}
           forceReveal={forceReveal}
           onResult={onResult}
         />

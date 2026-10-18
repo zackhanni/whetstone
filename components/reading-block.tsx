@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Markdown } from "./markdown";
 import { Accordion } from "./accordion";
 import { FlagLink } from "./flag-link";
-import type { ReadingExample, Tier } from "@/lib/content";
+import type { MdxFile, Tier } from "@/lib/content";
+import { TIERS } from "@/learning/tiers";
 
 const TIER_META: Record<Tier, { label: string; color: string }> = {
   simple: { label: "Simple", color: "text-emerald-400" },
@@ -12,14 +14,14 @@ const TIER_META: Record<Tier, { label: string; color: string }> = {
   complex: { label: "Complex", color: "text-rose-400" },
 };
 
-function ExampleCard({ ex, blockId }: { ex: ReadingExample; blockId: string }) {
+function ExampleView({ ex, blockId }: { ex: MdxFile; blockId: string }) {
   // Content after a <!--more--> marker becomes optional "go deeper" reading.
   const [main, ...rest] = ex.body.split("<!--more-->");
   const more = rest.join("<!--more-->").trim();
   return (
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">
-        <h4 className="font-semibold text-slate-100">{ex.title}</h4>
+        <h3 className="font-semibold text-slate-100">{ex.title}</h3>
         <FlagLink block={blockId} item={ex.id} />
       </div>
       <Markdown>{main.trim()}</Markdown>
@@ -38,7 +40,7 @@ function TierSection({
   blockId,
 }: {
   tier: Tier;
-  examples: ReadingExample[];
+  examples: MdxFile[];
   blockId: string;
 }) {
   const [idx, setIdx] = useState(0);
@@ -60,7 +62,7 @@ function TierSection({
               disabled={i === 0}
               className="disabled:opacity-30"
             >
-              ←
+              <ChevronLeft className="size-4" aria-hidden />
             </button>
             <span>
               {i + 1} / {examples.length}
@@ -72,12 +74,12 @@ function TierSection({
               disabled={i === examples.length - 1}
               className="disabled:opacity-30"
             >
-              →
+              <ChevronRight className="size-4" aria-hidden />
             </button>
           </div>
         )}
       </div>
-      <ExampleCard ex={examples[i]} blockId={blockId} />
+      <ExampleView ex={examples[i]} blockId={blockId} />
     </div>
   );
 }
@@ -87,11 +89,11 @@ export function ReadingBlock({
   readings,
 }: {
   blockId: string;
-  readings: Record<Tier, ReadingExample[]>;
+  readings: Record<Tier, MdxFile[]>;
 }) {
   return (
     <div className="space-y-4">
-      {(["simple", "medium", "complex"] as Tier[]).map((t) => (
+      {TIERS.map((t) => (
         <TierSection key={t} tier={t} examples={readings[t]} blockId={blockId} />
       ))}
     </div>

@@ -95,7 +95,7 @@ html {
   --card-foreground: #f1f5f9;
   --popover: #0f172a;
   --popover-foreground: #f1f5f9;
-  --primary: #0284c7; /* sky-600 */
+  --primary: #0369a1; /* sky-700: white text on sky-600 is 4.1:1, under WCAG AA's 4.5 */
   --primary-foreground: #ffffff;
   --secondary: #1e293b; /* slate-800 */
   --secondary-foreground: #f1f5f9;
@@ -114,7 +114,7 @@ html {
   --chart-5: #f43f5e;
   --sidebar: #0f172a;
   --sidebar-foreground: #f1f5f9;
-  --sidebar-primary: #0284c7;
+  --sidebar-primary: #0369a1;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #1e293b;
   --sidebar-accent-foreground: #f1f5f9;
@@ -132,4 +132,11 @@ html {
   html {
     @apply font-sans;
   }
+}
+
+/* Sandpack's editor file tabs show no focus (keyboard pass, 2026-10-17): its generated class sets
+   `outline-style: none` with more specificity than any selector here, hence !important. */
+.sp-tab-button:focus-visible {
+  outline: 2px solid var(--ring) !important;
+  outline-offset: -2px;
 }

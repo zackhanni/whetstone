@@ -15,6 +15,8 @@ before 2026-10-17 predate this rule.
 
 ## Entries
 
+- 2026-10-17 — state-and-data-flow/choosing-where-state-lives — complex reading: drill history is read from localStorage by the unit page, not held on Context (found by /condense).
+- 2026-10-17 — authoring system — validator parses challenge code with TypeScript (no misreads from comments or regexes), rejects an entry the loader can't serve, checks text in an invalid meta.json.
 - 2026-10-17 — PR #41/#42 review — git, ssh, systems-design and CI fixes; unit titles as link text; validator catches all format chars, track/catalog/code text, skips template imports.
 - 2026-10-17 — authoring system — validator rejects invisible characters and unresolved `/learn/` links, scans imports by statement; PLAYBOOK notes; unit slugs in readings become links (PR #33).
 - 2026-10-17 — taxonomy — new `infrastructure` root with 11 tags (Terraform, CI/CD, observability); every planned dimension has now landed (PR #32).

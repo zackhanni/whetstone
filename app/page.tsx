@@ -1,10 +1,12 @@
-import type { ReactNode } from "react";
 import { listTrackSlugs, loadTrack, type TrackDetail } from "@/lib/content";
-import { ContinueLearning, type UnitRef } from "@/components/continue-learning";
+import { unitProgressId } from "@/lib/progress";
+import { ContinueLearning, type UnitLink } from "@/components/continue-learning";
 import { InterestFilter } from "@/components/interest-filter";
 import { TrackCatalog, type CatalogTrack } from "@/components/track-catalog";
+import { JsonLd } from "@/components/json-ld";
+import { pageMetadata, SITE_DESCRIPTION, websiteJsonLd } from "@/lib/seo";
 
-const MESSAGE_CLASS = "rounded-xl bg-slate-900/40 p-4 text-sm text-slate-400 ring-1 ring-slate-800";
+export const metadata = pageMetadata({ description: SITE_DESCRIPTION, path: "/" });
 
 export default async function Home() {
   const slugs = await listTrackSlugs();
@@ -12,9 +14,9 @@ export default async function Home() {
   // a catalog with that track silently missing. A broken track.json fails the build instead.
   const details: TrackDetail[] = await Promise.all(slugs.map((s) => loadTrack(s)));
 
-  const allUnits: UnitRef[] = details.flatMap((d) =>
+  const allUnits: UnitLink[] = details.flatMap((d) =>
     d.units.map((u) => ({
-      id: `${d.slug}/${u.slug}`,
+      id: unitProgressId(d.slug, u.slug),
       track: d.slug,
       unit: u.slug,
       unitTitle: u.title,
@@ -29,19 +31,13 @@ export default async function Home() {
     title: d.title,
     description: d.description,
     unitCount: d.units.length,
-    unitIds: d.units.map((u) => `${d.slug}/${u.slug}`),
-    skills: [...new Set(d.units.flatMap((u) => u.skills))], // deduped union (matches CatalogTrack.skills contract)
+    unitIds: d.units.map((u) => unitProgressId(d.slug, u.slug)),
+    skills: [...new Set(d.units.flatMap((u) => u.skills))],
   }));
-
-  const tracksContent: ReactNode =
-    slugs.length === 0 ? (
-      <p className={MESSAGE_CLASS}>No tracks yet — check back soon.</p>
-    ) : (
-      <TrackCatalog tracks={catalogTracks} />
-    );
 
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-12">
+      <JsonLd data={websiteJsonLd()} />
       <header className="space-y-2">
         <h1 className="text-3xl font-bold text-slate-50">Whetstone</h1>
         <p className="text-slate-400">Sharpen any skill through deliberate practice.</p>
@@ -51,10 +47,10 @@ export default async function Home() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tracks</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Tracks</h2>
           <InterestFilter />
         </div>
-        {tracksContent}
+        <TrackCatalog tracks={catalogTracks} />
       </section>
     </main>
   );

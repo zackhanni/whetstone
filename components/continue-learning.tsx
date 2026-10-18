@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useProgress } from "@/components/progress-provider";
 
-export type UnitRef = {
+export type UnitLink = {
   id: string;
   track: string;
   unit: string;
@@ -12,14 +12,17 @@ export type UnitRef = {
 };
 
 /** "Continue where you left off": the most recently-touched incomplete unit, else the
- *  first unstarted/incomplete one. Renders nothing until the shared read has run. */
-export function ContinueLearning({ units }: { units: UnitRef[] }) {
+ *  first unstarted/incomplete one. */
+export function ContinueLearning({ units }: { units: UnitLink[] }) {
   const { map, ready } = useProgress();
-  if (!ready) return null;
+  // Until progress is read (server render and first client render), show the first unit, which
+  // is the right card for a new learner. Rendering nothing here instead made the card appear
+  // after hydration and push the track list 148 px down (home CLS 0.137).
+  if (!ready) return units[0] ? <ContinueCard target={units[0]} /> : null;
 
-  let resume: UnitRef | null = null;
+  let resume: UnitLink | null = null;
   let resumeAt = -1;
-  let firstIncomplete: UnitRef | null = null;
+  let firstIncomplete: UnitLink | null = null;
   for (const u of units) {
     const p = map[u.id];
     if (!firstIncomplete && !p?.completed) firstIncomplete = u;
@@ -31,6 +34,10 @@ export function ContinueLearning({ units }: { units: UnitRef[] }) {
 
   const target = resume ?? firstIncomplete;
   if (!target) return null;
+  return <ContinueCard target={target} />;
+}
+
+function ContinueCard({ target }: { target: UnitLink }) {
   return (
     <Link
       href={`/learn/${target.track}/${target.unit}`}

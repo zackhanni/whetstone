@@ -7,9 +7,10 @@ import { z } from "zod";
  * matches all React content" is computed by walking the tree, never by re-tagging lessons with
  * every ancestor.
  *
- * Design: docs/tags-design.md. A multi-parent DAG (a tag may have >1 parent), ~4 levels deep at
- * most. Roots (no parents) are the top-level "dimensions". Adding a node is its own commit when a
- * lesson needs a tag that isn't here yet (mirrors the schemaVersion-bump discipline).
+ * Design: docs/tags-design.md. A multi-parent DAG (a tag may have >1 parent), 5 levels deep at
+ * most today. Roots (no parents) are the top-level "dimensions". Add a node when a lesson needs a
+ * tag that isn't here yet, before tagging content with it (PLAYBOOK → "Tags are a checked
+ * registry").
  */
 
 export const TagNode = z.object({
@@ -86,7 +87,7 @@ export type Taxonomy = z.infer<typeof Taxonomy>;
  * component `state`; `context` is a React feature and a state-management approach).
  */
 export const TAXONOMY: TagNode[] = [
-  // Dimensions (roots)
+  // Dimensions (roots). Later roots are declared in their track's section below.
   { slug: "frontend", label: "Frontend", parents: [] },
   { slug: "backend", label: "Backend", parents: [] },
 
@@ -98,8 +99,8 @@ export const TAXONOMY: TagNode[] = [
     label: "State Management",
     parents: ["frontend"],
   },
-  // Architecture spans both dimensions: "where does this responsibility live?" is the same
-  // question in a component tree and in a module graph.
+  // Architecture spans frontend, backend and system design: "where does this responsibility
+  // live?" is the same question in a component tree and in a module graph.
   {
     slug: "architecture",
     label: "Architecture",

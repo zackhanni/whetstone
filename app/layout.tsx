@@ -4,12 +4,16 @@ import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ProgressProvider } from "@/components/progress-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/seo";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
+// Defaults for every route; each page adds its own title, description, canonical and Open Graph
+// through pageMetadata() (lib/seo.ts).
 export const metadata: Metadata = {
-  title: "Whetstone",
-  description: "Sharpen any skill through deliberate practice.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: SITE_NAME, template: `%s · ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -10,16 +10,11 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { shuffle } from "@/lib/shuffle";
+import type { Block } from "@/learning/schema";
 
-type Option = { id: string; text: string };
-type Question = {
-  id: string;
-  prompt: string;
-  options: Option[];
-  answer: string | string[];
-  explanation: string;
-  shuffleOptions?: boolean;
-};
+type QuizBlockData = Extract<Block, { type: "quiz" }>;
+type Question = QuizBlockData["questions"][number];
+type Option = Question["options"][number];
 
 type Mode = "browse" | "drill";
 type OnResult = (key: string, r: { correct: boolean; answered: boolean }) => void;
@@ -41,85 +36,115 @@ function rowClass(revealed: boolean, sel: boolean, isAns: boolean) {
   );
 }
 
+function marker(revealed: boolean, sel: boolean, isAns: boolean) {
+  if (revealed && isAns) return <span className="ml-auto text-emerald-400">✓</span>;
+  if (revealed && sel && !isAns) return <span className="ml-auto text-rose-400">✗</span>;
+  return null;
+}
+
+/**
+ * One option. Declared at module level, not inside QuestionView: a component defined inside
+ * another is a new type on every render, so React remounted every row on each selection (and
+ * each drill-timer tick) and keyboard focus fell back to <body>.
+ */
+function OptionRow({
+  id,
+  option,
+  multi,
+  isSelected,
+  isAnswer,
+  revealed,
+  onToggle,
+}: {
+  id: string;
+  option: Option;
+  multi: boolean;
+  isSelected: boolean;
+  isAnswer: boolean;
+  revealed: boolean;
+  onToggle: (isChecked: boolean) => void;
+}) {
+  return (
+    <Label htmlFor={id} className={rowClass(revealed, isSelected, isAnswer)}>
+      {multi ? (
+        <Checkbox
+          id={id}
+          checked={isSelected}
+          disabled={revealed}
+          onCheckedChange={(c) => onToggle(c === true)}
+        />
+      ) : (
+        <RadioGroupItem id={id} value={option.id} />
+      )}
+      <span>
+        <InlineMarkdown>{option.text}</InlineMarkdown>
+      </span>
+      {marker(revealed, isSelected, isAnswer)}
+    </Label>
+  );
+}
+
 function QuestionView({
-  q,
+  item,
   blockId,
   mode,
   forceReveal,
   onResult,
 }: {
-  q: Question;
+  item: Question;
   blockId: string;
   mode: Mode;
   forceReveal: boolean;
   onResult: OnResult;
 }) {
-  const [options, setOptions] = useState(q.options);
+  const [options, setOptions] = useState(item.options);
   useEffect(() => {
     // Client-only shuffle after mount: server + first client render stay in canonical order
     // (no hydration mismatch), then randomize once mounted.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setOptions(q.shuffleOptions === false ? q.options : shuffle(q.options));
-  }, [q]);
+    setOptions(item.shuffleOptions === false ? item.options : shuffle(item.options));
+  }, [item]);
 
-  const multi = Array.isArray(q.answer);
-  const answerSet = new Set(Array.isArray(q.answer) ? q.answer : [q.answer]);
+  const multi = Array.isArray(item.answer);
+  const answerSet = new Set(Array.isArray(item.answer) ? item.answer : [item.answer]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [checked, setChecked] = useState(false);
-  const revealed = mode === "browse" ? checked : forceReveal;
-  const correct = isCorrect(q, selected);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const revealed = mode === "browse" ? hasSubmitted : forceReveal;
+  const correct = isCorrect(item, selected);
+  const hasAnswer = selected.length > 0;
 
   useEffect(() => {
-    onResult(`${blockId}:${q.id}`, { correct, answered: selected.length > 0 });
+    onResult(`${blockId}:${item.id}`, { correct, answered: hasAnswer });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
-  const marker = (sel: boolean, isAns: boolean) => {
-    if (revealed && isAns) return <span className="ml-auto text-emerald-400">✓</span>;
-    if (revealed && sel && !isAns) return <span className="ml-auto text-rose-400">✗</span>;
-    return null;
-  };
-
-  function Row({ o }: { o: Option }) {
-    const sel = selected.includes(o.id);
-    const isAns = answerSet.has(o.id);
-    const id = `${blockId}-${q.id}-${o.id}`;
-    return (
-      <Label htmlFor={id} className={rowClass(revealed, sel, isAns)}>
-        {multi ? (
-          <Checkbox
-            id={id}
-            checked={sel}
-            disabled={revealed}
-            onCheckedChange={(c) =>
-              setSelected((s) => (c === true ? [...s, o.id] : s.filter((x) => x !== o.id)))
-            }
-          />
-        ) : (
-          <RadioGroupItem id={id} value={o.id} />
-        )}
-        <span>
-          <InlineMarkdown>{o.text}</InlineMarkdown>
-        </span>
-        {marker(sel, isAns)}
-      </Label>
-    );
-  }
+  const renderOption = (o: Option) => (
+    <OptionRow
+      key={o.id}
+      id={`${blockId}-${item.id}-${o.id}`}
+      option={o}
+      multi={multi}
+      isSelected={selected.includes(o.id)}
+      isAnswer={answerSet.has(o.id)}
+      revealed={revealed}
+      onToggle={(isChecked) =>
+        setSelected((s) => (isChecked ? [...s, o.id] : s.filter((x) => x !== o.id)))
+      }
+    />
+  );
 
   return (
     <div className="space-y-3">
       <div className="flex items-start justify-between gap-3">
         <p className="font-medium text-slate-100">
-          <InlineMarkdown>{q.prompt}</InlineMarkdown>
+          <InlineMarkdown>{item.prompt}</InlineMarkdown>
         </p>
-        <FlagLink block={blockId} item={q.id} />
+        <FlagLink block={blockId} item={item.id} />
       </div>
 
       {multi ? (
         <div className="grid gap-2">
-          {options.map((o) => (
-            <Row key={o.id} o={o} />
-          ))}
+          {options.map(renderOption)}
         </div>
       ) : (
         <RadioGroup
@@ -127,14 +152,12 @@ function QuestionView({
           disabled={revealed}
           onValueChange={(v) => setSelected([v])}
         >
-          {options.map((o) => (
-            <Row key={o.id} o={o} />
-          ))}
+          {options.map(renderOption)}
         </RadioGroup>
       )}
 
-      {mode === "browse" && !checked && (
-        <WhetstoneButton size="sm" disabled={selected.length === 0} onClick={() => setChecked(true)}>
+      {mode === "browse" && !hasSubmitted && (
+        <WhetstoneButton size="sm" disabled={!hasAnswer} onClick={() => setHasSubmitted(true)}>
           Check
         </WhetstoneButton>
       )}
@@ -145,7 +168,7 @@ function QuestionView({
             {correct ? "Correct" : "Not quite"}
           </span>
           <div className="mt-1">
-            <Markdown>{q.explanation}</Markdown>
+            <Markdown>{item.explanation}</Markdown>
           </div>
         </div>
       )}
@@ -159,7 +182,7 @@ export function QuizBlock({
   forceReveal,
   onResult,
 }: {
-  block: { id: string; questions: Question[] };
+  block: QuizBlockData;
   mode: Mode;
   forceReveal: boolean;
   onResult: OnResult;
@@ -175,7 +198,7 @@ export function QuizBlock({
       {questions.map((q) => (
         <QuestionView
           key={q.id}
-          q={q}
+          item={q}
           blockId={block.id}
           mode={mode}
           forceReveal={forceReveal}

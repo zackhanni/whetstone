@@ -2,8 +2,9 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /**
- * The learner's selected interest tags — the first Zustand store in the app (progress/drill-history
- * stay on Context for now; see docs/zustand-migration.md). `selected` holds the raw tag slugs the
+ * The learner's selected interest tags — the first Zustand store in the app (progress stays on
+ * Context, and drill history on direct localStorage reads in UnitView, for now; see
+ * docs/zustand-migration.md). `selected` holds the raw tag slugs the
  * user tapped in the filter; matching against content expands each downward (see lib/tags.ts).
  *
  * Local-first: persisted to localStorage, migrates to a user_preferences row with Supabase auth.
