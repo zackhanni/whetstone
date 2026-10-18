@@ -103,7 +103,10 @@ export function ChallengeRunner({ bundle }: { bundle: ChallengeBundle }) {
           <SandpackCodeEditor showLineNumbers showTabs style={{ height: 460 }} />
           {/* Both panels stay mounted and the tab only hides one. Each panel registers its
               bundler client when it mounts; one that mounts after Sandpack has started gets a
-              client the provider never wires up, so swapping panels left "Run tests" empty. */}
+              client the provider never wires up, so swapping panels left "Run tests" empty.
+              The tests keep Sandpack's default watch mode, so they also rerun on edits while the
+              preview shows. Turning it off would leave the panel idle: with watch off, Sandpack
+              doesn't run the tests on start, and our "Run tests" tab only switches panels. */}
           <SandpackPreview style={{ height: 460, display: tab === "preview" ? undefined : "none" }} />
           <SandpackTests style={{ height: 460, display: tab === "tests" ? undefined : "none" }} />
         </SandpackLayout>

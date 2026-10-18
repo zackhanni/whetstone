@@ -31,10 +31,14 @@ production domain. Nothing sensitive is served (no backend, no data). **Decision
 2026-10-17): keep it public and indexable**; `/seo` added to the skills pass.
 
 **S2 — Next.js advisories (Low, OWASP A06).** `pnpm audit --prod` listed 17 Next.js advisories
-fixed in 16.3.8, among them three critical RCEs. Every one needs a feature this app doesn't use
-(server actions, middleware/proxy, image optimization, `next/og`, rewrites, a custom server,
-Windows hosting) or affects only `next dev`. Upgraded to **16.3.8** (17 days old at the time; 16.4.2
-was 2 days old and is skipped on purpose), with `eslint-config-next` to match.
+fixed in 16.3.8, among them three critical RCEs. Every one but the `next/og` RCE needs a feature
+this app doesn't use (server actions, middleware/proxy, image optimization, rewrites, a custom
+server, Windows hosting) or affects only `next dev`. `next/og` *is* used: the `/seo` round (same
+day, after this audit) added `app/opengraph-image.tsx`, which renders with `ImageResponse`. That
+advisory needs attacker-controlled values in the image; this one is prerendered at build time from
+the site's name, description and catalog counts, takes no request input, and 16.3.8 includes the
+fix (patched in 16.3.6). Upgraded to **16.3.8** (17 days old at the time; 16.4.2 was 2 days old and
+is skipped on purpose), with `eslint-config-next` to match.
 
 **S3 — shadcn CLI as a runtime dependency (Low).** Only `shadcn/tailwind.css` is used, at build
 time. Moved to `devDependencies` at the same 4.11.0 (Vercel installs dev dependencies; the build
@@ -64,10 +68,14 @@ Turn on in GitHub → Settings → Code security (owner action; a repo setting).
 ### Coverage record
 
 - **Entry points:** 0 route handlers, 0 server actions, no `proxy.ts`/middleware; 102 static pages.
+  The `/seo` round added three metadata routes, all prerendered at build with no request input:
+  `/opengraph-image` (`next/og`, see S2), `/sitemap.xml` and `/robots.txt`.
 - **Secrets:** no environment variables in code or in the Vercel project; no tracked `.env`; git
   history (239 commits) scanned for key formats: one hit, the HTTP lesson's demo JWT.
 - **Rendering:** `react-markdown` 10.1 without `rehype-raw` (no raw HTML; the default URL transform
-  drops `javascript:` links); no `eval` or `new Function` in app code. One `dangerouslySetInnerHTML`, added by the `/seo` round the same day: `components/json-ld.tsx`, JSON from repo content with `<` escaped.
+  drops `javascript:` links); no `eval` or `new Function` in app code. One
+  `dangerouslySetInnerHTML`, added by the `/seo` round the same day: `components/json-ld.tsx`,
+  JSON from repo content with `<` escaped.
 - **Client storage:** every localStorage read is guarded (`try`/`catch`, shape checks); writes
   ignore quota and private-mode errors.
 - **Links out:** Flag links build the GitHub URL with `URLSearchParams` from content ids.

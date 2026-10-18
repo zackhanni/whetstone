@@ -141,8 +141,15 @@ function resolveTargets() {
 
   const out = [];
   for (const tier of tiers) {
-    for (const t of cfg[tier] ?? []) {
-      out.push({ label: t.label ?? t.path, tier, url: origin.replace(/\/$/, "") + t.path });
+    // Resolved exactly as lh-run.mjs and psi.mjs do (bare string entries, absolute URLs, the
+    // labelFromUrl fallback), so this page's report shares their label and joins to them.
+    for (const entry of cfg[tier] ?? []) {
+      const path = entry.path ?? entry;
+      out.push({
+        label: slug(entry.label ?? labelFromUrl(path)),
+        tier,
+        url: /^https?:\/\//.test(path) ? path : origin.replace(/\/$/, "") + path,
+      });
     }
   }
   if (!out.length) die(`no targets for tier(s) ${tiers.join(",")}`);
