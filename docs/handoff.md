@@ -29,6 +29,11 @@ in `AGENTS.md` → "Working with this repo".
   - `/condense` round 1: six docs condensed in place (941 → 836 lines) and 40 stale facts
     corrected, among them a Zustand migration plan that would have overwritten saved progress
     (`docs/zustand-migration.md`); one lesson sentence about drill history fixed with it.
+- **Live since 2026-10-18 (main 3330f0b), checked on production:** security headers and CSP
+  served, 0 CSP violations and 0 console errors on the four measured pages, all 47 challenges pass
+  in real Sandpack against the live site, the UI bug repros pass, robots.txt, the 100-URL sitemap,
+  the preview image and per-page metadata serve. PSI lab: accessibility, best practices and SEO
+  100 on all four pages, performance 92-99 (one run each).
 - Gates: `pnpm check` (about 30 s, including the headless grader) and `pnpm build`; every Vercel
   build runs both. A new or changed challenge also gets `pnpm test:challenges:browser <slug>`:
   real Sandpack in headless Chrome. It isn't in `pnpm check` because it needs a running server
@@ -36,15 +41,14 @@ in `AGENTS.md` → "Working with this repo".
 
 ## Next up
 
-1. Production spot-check: one challenge per new track (_Run tests_ fails, _Show solution_
-   passes), a card unit, a cross-track `/learn/…` link.
-2. Once the skills pass is deployed: a console check on production for CSP violations (preview
-   deployments block Vercel's toolbar by design), then the owner actions listed in
+1. Make every reading example part of the server HTML (`docs/seo.md` → "Found after deploy"):
+   today only each tier's first example renders server-side, so the rest, and the cross-track
+   links in them, are invisible to crawlers that don't run JavaScript. Then the owner actions in
    `docs/ROADMAP.md` → "Deferred / cross-cutting".
-3. App follow-ups the content phase surfaced (UI, not content): render predict-output answers as
+2. App follow-ups the content phase surfaced (UI, not content): render predict-output answers as
    Markdown/preformatted (backticks and multi-line output show literally today), and stop long
    `code` spans in a challenge's acceptance-criteria list wrapping into boxes.
-4. A validator check for a `/learn/` link whose text is a slug in backticks. PLAYBOOK forbids it
+3. A validator check for a `/learn/` link whose text is a slug in backticks. PLAYBOOK forbids it
    but nothing catches it, and one sweep added 50 of them.
 
 ## Open items

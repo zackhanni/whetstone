@@ -207,7 +207,8 @@ starter/solution counts.
 - ⬜ Pick-N / difficulty-mix quizzes (a non-breaking addition: an optional `present` field and per-item difficulty; PLAYBOOK → "Designed to grow")
 - ⬜ More "Go deeper" reading tiers across units
 - ✅ CI — `vercel.json` makes every Vercel build run `pnpm check && pnpm build`, so a failing gate fails the PR's preview and blocks production, with no GitHub Actions minutes (2026-10-17)
-- ⬜ Owner actions from the 2026-10-17 skills pass: turn on Dependabot alerts (`docs/security-audit.md` S5); after the branch deploys, submit the sitemap in Search Console, check a unit page in the Rich Results Test, and review Vercel Firewall bot rules (`docs/seo.md` → Owner actions).
+- ⬜ Owner actions from the 2026-10-17 skills pass (deployed 2026-10-18): turn on Dependabot alerts (`docs/security-audit.md` S5); submit the sitemap in Search Console, check a unit page in the Rich Results Test, and review Vercel Firewall bot rules (`docs/seo.md` → Owner actions).
+- ⬜ **Every reading example in the server HTML** — the reading block renders one example per tier and swaps the rest in on "Next example", so only the first example of each tier is in the HTML that crawlers read; the others (and their cross-track links) are only in the client payload. Render all of them and hide the inactive ones, keeping the one-at-a-time view (`docs/seo.md` → Found after deploy).
 - ⬜ Accessibility not covered yet: a screen-reader pass, zoom/reflow, and the interest-filter dialog's focus return (`docs/pagespeed-audit.md`, round 1).
 - ⬜ Note in code that `accept`/`acceptable` and `prompt`/`question` name the same concepts across content fields (a note, not a rename; `docs/readability-audit.md` → Not applied).
 

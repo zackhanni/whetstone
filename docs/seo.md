@@ -69,6 +69,18 @@ practices 100 on all four measured pages. The CSP still logs 0 violations with t
 page. `pnpm check` (143 tests) and `pnpm build` green; `lib/seo.test.ts` covers the description
 clipping and the metadata shape.
 
+### Found after deploy (2026-10-18)
+
+Checked on production (main 3330f0b): titles, canonicals, Open Graph, JSON-LD, robots.txt, the
+100-URL sitemap and the preview image all serve; PSI lab SEO 100 on the four measured pages.
+
+**Open: only the first reading example of each tier is in the server HTML.** The reading block
+shows one example per tier and swaps in the next on "Next example", so on
+`/learn/async-javascript/cancellation-and-races` the second simple and complex examples (with
+their links to `/learn/react-hooks-and-rendering/...`) are absent from the HTML, present only in
+the React payload. Google renders JavaScript and may still read them; most AI crawlers don't. Fix
+idea: render every example and hide the inactive ones with CSS, so the view stays one at a time.
+
 ### Owner actions
 
 - After this ships: submit `https://whetstone-tawny.vercel.app/sitemap.xml` in Google Search
